@@ -159,6 +159,43 @@ class QueryBuilderTest {
         assertThat(backend.last().where()).isNull();
     }
 
+    @Test
+    @DisplayName("or 分组：OR(AND(..), AND(..)) 不被拍平成四元 OR（point-mall TransactionRepository 的贷/借两组条件）")
+    void orOfAndGroupsStayNested() {
+        Predicate<Order> credit = Path.of(Order::getCreditId)
+                .eq(1L)
+                .and(Path.of(Order::getCreditType).eq("CUSTOMER"));
+        Predicate<Order> debit = Path.of(Order::getDebitId)
+                .eq(1L)
+                .and(Path.of(Order::getDebitType).eq("CUSTOMER"));
+
+        query().where(credit.or(debit)).list();
+
+        Logical or = (Logical) backend.last().where();
+        assertThat(or.operator()).isEqualTo(LogicalOperator.OR);
+        assertThat(or.operands()).hasSize(2).allSatisfy(operand -> {
+            assertThat(operand).isInstanceOf(Logical.class);
+            assertThat(((Logical) operand).operator()).isEqualTo(LogicalOperator.AND);
+            assertThat(((Logical) operand).operands()).hasSize(2);
+        });
+    }
+
+    @Test
+    @DisplayName("or 分组嵌在顶层 AND 里：外层的其它条件不被卷进 OR")
+    void orGroupStaysInsideTopLevelAnd() {
+        Predicate<Order> left = Path.of(Order::getCreditId).eq(1L);
+        Predicate<Order> right = Path.of(Order::getDebitId).eq(1L);
+
+        query().where(Order::getOrgId).eq(7L).where(left.or(right)).list();
+
+        Logical and = (Logical) backend.last().where();
+        assertThat(and.operator()).isEqualTo(LogicalOperator.AND);
+        assertThat(and.operands()).hasSize(2);
+        assertThat(and.operands().getFirst()).isEqualTo(new Comparison(path("orgId"), ComparisonOperator.EQ, 7L));
+        assertThat(and.operands().get(1)).isInstanceOf(Logical.class);
+        assertThat(((Logical) and.operands().get(1)).operator()).isEqualTo(LogicalOperator.OR);
+    }
+
     // ----------------------------------------------------------------- select
 
     @Test
@@ -440,6 +477,10 @@ class QueryBuilderTest {
         private String status;
         private Integer age;
         private Instant createdAt;
+        private Long creditId;
+        private Long debitId;
+        private String creditType;
+        private String debitType;
 
         public Long getId() {
             return id;
@@ -463,6 +504,22 @@ class QueryBuilderTest {
 
         public Instant getCreatedAt() {
             return createdAt;
+        }
+
+        public Long getCreditId() {
+            return creditId;
+        }
+
+        public Long getDebitId() {
+            return debitId;
+        }
+
+        public String getCreditType() {
+            return creditType;
+        }
+
+        public String getDebitType() {
+            return debitType;
         }
     }
 }
