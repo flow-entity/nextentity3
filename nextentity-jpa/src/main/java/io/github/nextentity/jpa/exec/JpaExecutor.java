@@ -59,7 +59,7 @@ public final class JpaExecutor implements Executor<JpaQuery> {
         QuerySpec spec = query.spec();
         if (spec.aggregate()) {
             throw new UnsupportedOperationException(
-                    "分组/聚合查询的 count 没有调用点，未实现（2.2.3 走子查询计数：" + spec.entityType().getName() + "）");
+                    "分组/聚合规格的 count 未实现（2.2.3 走子查询计数：" + spec.entityType().getName() + "）");
         }
         CriteriaBuilder builder = entityManager.getCriteriaBuilder();
         CriteriaQuery<Long> countQuery = builder.createQuery(Long.class);

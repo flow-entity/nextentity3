@@ -93,8 +93,9 @@ class ArchitectureTest {
 
     /// 公开接口保持窄。
     ///
-    /// `api` 包目前还没有接口（首个接口落地即生效），因此显式允许空集合：
-    /// 这条规则是休眠状态，不是「看起来在守」的空转。
+    /// `api` 现有 29 个公开接口，规则常驻生效。不设 `allowEmptyShould(true)`：
+    /// 若某天规则匹配不到任何接口（包名漂移、过滤器被改坏、`api` 被误删），
+    /// ArchUnit 会直接失败，那正是应该红的时候。
     @ArchTest
     static final ArchRule API_INTERFACES_STAY_NARROW = classes()
             .that()
@@ -102,7 +103,6 @@ class ArchitectureTest {
             .and()
             .resideInAPackage("io.github.nextentity.api..")
             .should(haveAtMostPublicMethods(6))
-            .allowEmptyShould(true)
             .because("接口方法超过 6 个说明边界切错了；应拆成两个窄接口，而不是加第 7 个方法");
 
     /// `api` 是契约层：不得反向依赖任何内部模块。
