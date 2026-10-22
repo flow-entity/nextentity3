@@ -1,6 +1,7 @@
 package io.github.nextentity.testing;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -48,6 +49,14 @@ public abstract class TerminalConsistencyTest<T extends Item> extends Consistenc
         T single = query().where(nameRef()).eq(CHERRY_NAME).single();
 
         assertThat(single.id()).isEqualTo(CHERRY_ID);
+    }
+
+    /// `single()` 命中多行时抛 `IllegalStateException`（消息是 api `Collector` 的公开契约）。
+    @Test
+    void singleThrowsIllegalStateWhenMoreThanOneRow() {
+        assertThatThrownBy(() -> query().where(scoreRef()).ge(10).single())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("found more than one result, expected one");
     }
 
     /// `count()` 统计过滤后的行数。
