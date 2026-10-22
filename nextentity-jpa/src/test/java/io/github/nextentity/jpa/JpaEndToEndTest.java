@@ -3,11 +3,20 @@ package io.github.nextentity.jpa;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.nextentity.api.LockMode;
+import io.github.nextentity.core.spec.AggregateFunction;
+import io.github.nextentity.core.spec.AggregateProjection;
 import io.github.nextentity.core.spec.AttributePath;
+import io.github.nextentity.core.spec.Between;
 import io.github.nextentity.core.spec.Comparison;
 import io.github.nextentity.core.spec.ComparisonOperator;
+import io.github.nextentity.core.spec.Constant;
 import io.github.nextentity.core.spec.EntitySelection;
+import io.github.nextentity.core.spec.In;
+import io.github.nextentity.core.spec.Logical;
+import io.github.nextentity.core.spec.LogicalOperator;
 import io.github.nextentity.core.spec.NullCheck;
+import io.github.nextentity.core.spec.Ordering;
 import io.github.nextentity.core.spec.PathProjection;
 import io.github.nextentity.core.spec.QuerySpec;
 import io.github.nextentity.core.spec.Spec;
@@ -32,6 +41,7 @@ import org.hibernate.SessionFactory;
 import org.hibernate.cfg.Configuration;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /// 端到端：`QuerySpec` → Criteria（JpaCompiler）→ H2 真实执行（JpaExecutor）。
@@ -66,8 +76,21 @@ class JpaEndToEndTest {
             entityManager.persist(empty);
             entityManager.persist(alice);
             entityManager.persist(bob);
-            entityManager.persist(
-                    new ShopOrder(100L, alice, OrderStatus.PAID, new BigDecimal("12.30"), new Note("vip")));
+            return null;
+        });
+    }
+
+    /// 每个用例前重建订单数据：更新用例会改金额与版本号，不能让它污染其它用例的断言。
+    @BeforeEach
+    void resetOrders() {
+        inTx(entityManager -> {
+            entityManager.createQuery("delete from ShopOrder").executeUpdate();
+            entityManager.persist(new ShopOrder(
+                    100L,
+                    entityManager.getReference(Customer.class, 10L),
+                    OrderStatus.PAID,
+                    new BigDecimal("12.30"),
+                    new Note("vip")));
             entityManager.persist(new ShopOrder(101L, null, OrderStatus.CREATED, new BigDecimal("5.00"), null));
             return null;
         });
@@ -155,6 +178,139 @@ class JpaEndToEndTest {
                     .isInstanceOf(OptimisticLockException.class);
             return null;
         });
+    }
+
+    @Test
+    void predicatesAcrossOperators() {
+        assertThat(ids(query(comparison("status", ComparisonOperator.NE, OrderStatus.PAID))))
+                .containsExactly(101L);
+        assertThat(ids(query(comparison("amount", ComparisonOperator.GT, new BigDecimal("6")))))
+                .containsExactly(100L);
+        assertThat(ids(query(comparison("amount", ComparisonOperator.GE, new BigDecimal("5")))))
+                .containsExactly(100L, 101L);
+        assertThat(ids(query(comparison("amount", ComparisonOperator.LT, new BigDecimal("6")))))
+                .containsExactly(101L);
+        assertThat(ids(query(comparison("amount", ComparisonOperator.LE, new BigDecimal("5")))))
+                .containsExactly(101L);
+        // note 是 @Convert 字段：能命中说明值交给 Hibernate 转换，jpa 侧没有再转一次
+        assertThat(ids(query(comparison("note", ComparisonOperator.LIKE, "v%"))))
+                .containsExactly(100L);
+
+        AttributePath status = AttributePath.of(ShopOrder.class, "status");
+        assertThat(ids(query(new In(status, List.<Object>of(OrderStatus.CREATED), false))))
+                .containsExactly(101L);
+        assertThat(ids(query(new In(status, List.<Object>of(OrderStatus.CREATED), true))))
+                .containsExactly(100L);
+        assertThat(ids(query(new Between(
+                        AttributePath.of(ShopOrder.class, "amount"), new BigDecimal("5"), new BigDecimal("13")))))
+                .containsExactly(100L, 101L);
+        assertThat(ids(query(Constant.TRUE))).containsExactly(100L, 101L);
+        assertThat(ids(query(Constant.FALSE))).isEmpty();
+
+        Spec paid = comparison("status", ComparisonOperator.EQ, OrderStatus.PAID);
+        Spec cheap = comparison("amount", ComparisonOperator.LT, new BigDecimal("6"));
+        assertThat(ids(query(new Logical(LogicalOperator.OR, List.of(paid, cheap)))))
+                .containsExactly(100L, 101L);
+        assertThat(ids(query(new Logical(LogicalOperator.AND, List.of(paid, cheap)))))
+                .isEmpty();
+        assertThat(ids(query(new Logical(LogicalOperator.NOT, List.of(paid))))).containsExactly(101L);
+    }
+
+    @Test
+    void orderingAndWindow() {
+        QuerySpec descending = new QuerySpec(
+                ShopOrder.class,
+                new EntitySelection(),
+                null,
+                List.of(),
+                List.of(new Ordering(AttributePath.of(ShopOrder.class, "id"), Ordering.Direction.DESC)),
+                Window.NONE,
+                null);
+        assertThat(ids(descending)).containsExactly(101L, 100L);
+
+        QuerySpec secondPage = new QuerySpec(
+                ShopOrder.class,
+                new EntitySelection(),
+                null,
+                List.of(),
+                List.of(new Ordering(AttributePath.of(ShopOrder.class, "id"), Ordering.Direction.ASC)),
+                new Window(1, 1),
+                null);
+        assertThat(ids(secondPage)).containsExactly(101L);
+    }
+
+    @Test
+    void groupByAndAggregates() {
+        AttributePath status = AttributePath.of(ShopOrder.class, "status");
+        AttributePath amount = AttributePath.of(ShopOrder.class, "amount");
+        QuerySpec grouped = new QuerySpec(
+                ShopOrder.class,
+                new ValueSelection(
+                        List.of(
+                                new PathProjection(status),
+                                new AggregateProjection(AggregateFunction.COUNT, amount),
+                                new AggregateProjection(AggregateFunction.SUM, amount)),
+                        false),
+                null,
+                List.of(status),
+                List.of(),
+                Window.NONE,
+                null);
+        List<Object[]> rows = inTx(entityManager ->
+                executor(entityManager).list(compiler(entityManager).compile(grouped)));
+        assertThat(rows).hasSize(2);
+        assertThat(rows).allSatisfy(row -> assertThat(row[1]).isEqualTo(1L));
+
+        QuerySpec maxAmount = new QuerySpec(
+                ShopOrder.class,
+                new ValueSelection(List.of(new AggregateProjection(AggregateFunction.MAX, amount)), false),
+                null,
+                List.of(),
+                List.of(),
+                Window.NONE,
+                null);
+        List<BigDecimal> max = inTx(entityManager ->
+                executor(entityManager).list(compiler(entityManager).compile(maxAmount)));
+        assertThat(max).hasSize(1);
+        assertThat(max.getFirst()).isEqualByComparingTo("12.30");
+
+        QuerySpec distinctStatus = new QuerySpec(
+                ShopOrder.class,
+                new ValueSelection(List.of(new AggregateProjection(AggregateFunction.COUNT_DISTINCT, status)), false),
+                null,
+                List.of(),
+                List.of(),
+                Window.NONE,
+                null);
+        List<Long> distinct = inTx(entityManager ->
+                executor(entityManager).list(compiler(entityManager).compile(distinctStatus)));
+        assertThat(distinct).containsExactly(2L);
+    }
+
+    @Test
+    void lockAppliesForUpdate() {
+        QuerySpec locked = new QuerySpec(
+                ShopOrder.class,
+                new EntitySelection(),
+                comparison("id", ComparisonOperator.EQ, 100L),
+                List.of(),
+                List.of(),
+                Window.NONE,
+                LockMode.PESSIMISTIC_WRITE);
+        List<ShopOrder> orders = inTx(entityManager ->
+                executor(entityManager).list(compiler(entityManager).compile(locked)));
+        assertThat(orders).extracting(ShopOrder::getId).containsExactly(100L);
+    }
+
+    private static Comparison comparison(String attribute, ComparisonOperator operator, Object value) {
+        return new Comparison(AttributePath.of(ShopOrder.class, attribute), operator, value);
+    }
+
+    private static List<Long> ids(QuerySpec spec) {
+        return inTx(entityManager ->
+                executor(entityManager).<ShopOrder>list(compiler(entityManager).compile(spec)).stream()
+                        .map(ShopOrder::getId)
+                        .toList());
     }
 
     private static QuerySpec query(Spec where) {
