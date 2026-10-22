@@ -31,7 +31,7 @@ public class VersionedEntity {
         this.version = version;
     }
 
-    public Long idValue() {
+    public Long id() {
         return id;
     }
 

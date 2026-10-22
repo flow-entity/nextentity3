@@ -6,6 +6,7 @@ import io.github.nextentity.api.Path;
 import io.github.nextentity.api.model.Tuple2;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
@@ -70,6 +71,19 @@ public abstract class ProjectionConsistencyTest<T extends Item> extends Consiste
                 .list();
 
         assertThat(sum).containsExactly(50);
+    }
+
+    /// `selectDistinct` 单列去重：point-mall 的调用点都是单列投影 + `list()`
+    /// （`DigitalCardRepository:85`、`OrderImportRecordRepository:71`）。
+    ///
+    /// `DISTINCT` 把 `NULL` 当作一个分组（SQL 标准，H2/MySQL 一致），所以夹具的两个空 `note`
+    /// 只会出现一次——这既是去重的证据，也解释了消费方为什么总在非空列上去重。
+    @Test
+    void selectDistinctCollapsesDuplicateValues() {
+        List<String> notes = query().selectDistinct(noteRef()).list();
+
+        assertThat(notes).hasSize(3);
+        assertThat(notes.stream().filter(Objects::nonNull).toList()).containsExactlyInAnyOrder(NOTE_1, NOTE_2);
     }
 
     /// `groupBy` + 聚合：point-mall 的 6 处分组查询都是 `select(key, count) … groupBy(key)` 这个形状，
