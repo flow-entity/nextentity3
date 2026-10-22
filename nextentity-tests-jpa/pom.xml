@@ -39,6 +39,14 @@
             <artifactId>h2</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- SQL 快照需要真实的 Hibernate（StatementInspector 是 Hibernate 的 SPI）。
+             版本对齐 point-mall：Spring Boot 4.0.0 管理 Hibernate 7.1.8.Final。 -->
+        <dependency>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-core</artifactId>
+            <version>${hibernate.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>mysql</artifactId>
@@ -50,6 +58,13 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <properties>
+        <!-- 对齐 point-mall：Spring Boot 4.0.0 管理的 Hibernate 版本 -->
+        <hibernate.version>7.1.8.Final</hibernate.version>
+        <!-- 没有 main 字节码，不跑二进制扫描 -->
+        <spotbugs.skip>true</spotbugs.skip>
+    </properties>
 
     <build>
         <plugins>
