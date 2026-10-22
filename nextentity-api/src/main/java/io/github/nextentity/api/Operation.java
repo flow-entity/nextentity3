@@ -2,9 +2,10 @@ package io.github.nextentity.api;
 
 /// 表达式值上可能出现的运算。
 ///
-/// 只收录 point-mall 有真实调用点的算子：`notLike`/`notContains`/`notStartsWith`/`notEndsWith`
-/// /`avg`/`min` 零命中，因此没有对应常量。布尔常量（`TRUE`/`FALSE`）也不在此列：
-/// "恒真"由「不实现 `Op` 的 `Predicate`」表达，"恒假"由后端从 `IN` + 空参推导。
+/// 只收录有真实调用点的算子：`notLike`/`notContains`/`notStartsWith`/`notEndsWith`/`avg`/`min`
+/// 没有调用点，因此没有对应常量；需要时按「新能力只落一处」补——常量 + 后端分支 + 一条一致性用例。
+/// 布尔常量（`TRUE`/`FALSE`）也不在此列："恒真"由「不实现 `Op` 的 `Predicate`」表达，
+/// "恒假"由后端从 `IN` + 空参推导。
 ///
 /// 这个枚举是 **值到 AST 的线格式**，不是第二套 AST：把常量翻译成 `core.spec` 节点是后端的
 /// 唯一职责，且后端必须用**无 `default` 的 `switch` 表达式**遍历，新增常量会让后端编译失败。
@@ -49,7 +50,7 @@ public enum Operation {
     /// 子串匹配，通配符（`%v%`）由后端加。
     CONTAINS,
 
-    /// LIKE 匹配，模式自带通配符（调用方用 `AppRepository.likePattern()` 包 `%`）。
+    /// LIKE 匹配，模式自带通配符：本常量不添加 `%`，只有 `CONTAINS` 系列才展开成 `%value%`。
     LIKE,
 
     /// 逻辑与；`arguments()` 为子条件。

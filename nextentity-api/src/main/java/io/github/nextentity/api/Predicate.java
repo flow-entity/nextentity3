@@ -11,20 +11,20 @@ public interface Predicate<T> extends Expression<T, Boolean> {
 
     /// 与另一个布尔表达式做逻辑与。
     ///
-    /// @param other 另一个条件
-    /// @return 组合后的谓词
+    /// @param other 另一个布尔表达式，非 `null`
+    /// @return 组合后的谓词；保留分组，不会把嵌套条件拍平
     Predicate<T> and(Expression<T, Boolean> other);
 
     /// 与另一个布尔表达式做逻辑或。
     ///
-    /// @param other 另一个条件
-    /// @return 组合后的谓词
+    /// @param other 另一个布尔表达式，非 `null`
+    /// @return 组合后的谓词；保留分组，不会把嵌套条件拍平
     Predicate<T> or(Expression<T, Boolean> other);
 
     /// 与一条属性路径上的条件做逻辑或。
     ///
-    /// @param ref 属性路径
+    /// @param ref 属性路径，非 `null`
     /// @param <N> 属性值类型
-    /// @return 属性算子
+    /// @return 属性算子：先选算子，再追加到整条 `or` 条件上
     <N> PathOperator<T, N, Predicate<T>> or(PathRef<T, N> ref);
 }

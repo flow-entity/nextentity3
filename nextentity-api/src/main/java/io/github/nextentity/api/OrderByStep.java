@@ -11,13 +11,13 @@ public interface OrderByStep<T, U> {
 
     /// 按方法引用形式的属性排序。
     ///
-    /// @param ref 参与排序的属性
-    /// @return 排序方向
+    /// @param ref 排序属性，非 `null`；签名已限定为可比较属性
+    /// @return 排序方向：必须紧跟 `asc()` / `desc()`
     OrderOperator<T, U> orderBy(PathRef<T, ? extends Comparable<?>> ref);
 
     /// 按属性路径（`Path.of(...)` / `EntityPath.of(...)` 的结果）排序。
     ///
-    /// @param path 参与排序的属性路径
-    /// @return 排序方向
+    /// @param path 属性路径，非 `null`；嵌套路径会先 join 再排序
+    /// @return 排序方向：必须紧跟 `asc()` / `desc()`
     OrderOperator<T, U> orderBy(Path<T, ? extends Comparable<?>> path);
 }

@@ -7,11 +7,11 @@ public interface Nullness<B> {
 
     /// 为 `null`。
     ///
-    /// @return 下一步
+    /// @return 同一条查询的下一步：条件累加在同一构建器上
     B isNull();
 
     /// 不为 `null`。
     ///
-    /// @return 下一步
+    /// @return 同一条查询的下一步：条件累加在同一构建器上
     B isNotNull();
 }

@@ -10,7 +10,7 @@ public interface LockStep<T> extends Collector<T> {
 
     /// 以给定锁模式执行查询。
     ///
-    /// @param mode 锁模式
-    /// @return 终止操作
+    /// @param mode 锁模式，非 `null`；只作用于取行的方法，`count()` / `exists()` 会清掉锁
+    /// @return 终止操作（`Collector`），锁随后端渲染
     Collector<T> lock(LockMode mode);
 }

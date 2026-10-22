@@ -11,33 +11,33 @@ public interface Whereable<T, SELF extends Whereable<T, SELF>> {
 
     /// 追加一个已经组合好的布尔表达式（例如 `Predicate` 变量）。
     ///
-    /// @param expression 条件
-    /// @return 下一步
+    /// @param expression 条件，非 `null`；与既有条件做 `AND`
+    /// @return 同一条查询的下一步：条件累加在同一构建器上
     SELF where(Expression<T, Boolean> expression);
 
     /// 追加一条方法引用形式的属性条件。
     ///
-    /// @param ref 方法引用形式的属性
+    /// @param ref 方法引用形式的属性，非 `null`
     /// @param <N> 属性值类型
-    /// @return 属性算子
+    /// @return 属性算子：先选算子，再追加到条件上
     <N> PathOperator<T, N, ? extends SELF> where(PathRef<T, N> ref);
 
     /// 追加一条字符串方法引用形式的属性条件。
     ///
-    /// @param ref 方法引用形式的字符串属性
-    /// @return 字符串算子
+    /// @param ref 方法引用形式的字符串属性，非 `null`
+    /// @return 字符串算子：先选算子，再追加到条件上
     StringOperator<T, ? extends SELF> where(PathRef.StringRef<T> ref);
 
     /// 追加一条属性路径（`Path.of(...)` / `EntityPath.of(...)` 的结果）上的条件。
     ///
-    /// @param path 属性路径
+    /// @param path 属性路径，非 `null`；由 `refs()` 解析，不当作 lambda
     /// @param <N> 属性值类型
-    /// @return 属性算子
+    /// @return 属性算子：先选算子，再追加到条件上
     <N> PathOperator<T, N, ? extends SELF> where(Path<T, N> path);
 
     /// 追加一条字符串属性路径上的条件。
     ///
-    /// @param path 字符串属性路径
-    /// @return 字符串算子
+    /// @param path 字符串属性路径，非 `null`
+    /// @return 字符串算子：先选算子，再追加到条件上
     StringOperator<T, ? extends SELF> where(StringPath<T> path);
 }

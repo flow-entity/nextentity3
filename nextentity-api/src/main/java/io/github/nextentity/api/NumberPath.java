@@ -10,6 +10,6 @@ public interface NumberPath<T, U extends Number> extends Path<T, U> {
 
     /// 求和。
     ///
-    /// @return 求和投影
+    /// @return `SUM(路径)` 表达式；无行时结果为 `null`（不是 `0`）
     Expression<T, U> sum();
 }

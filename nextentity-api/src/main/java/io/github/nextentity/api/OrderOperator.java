@@ -8,11 +8,11 @@ public interface OrderOperator<T, U> {
 
     /// 升序。
     ///
-    /// @return 下一步
+    /// @return 同一条查询的下一步；多列排序按调用顺序累积
     BaseWhereStep<T, U> asc();
 
     /// 降序。
     ///
-    /// @return 下一步
+    /// @return 同一条查询的下一步；多列排序按调用顺序累积
     BaseWhereStep<T, U> desc();
 }

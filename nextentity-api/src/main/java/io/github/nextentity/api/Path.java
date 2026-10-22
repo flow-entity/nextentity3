@@ -22,20 +22,20 @@ public interface Path<T, U>
 
     /// 由方法引用得到属性路径。
     ///
-    /// @param ref 方法引用形式的属性
+    /// @param ref 方法引用形式的属性，非 `null`
     /// @param <T> 根实体类型
     /// @param <U> 属性值类型
-    /// @return 属性路径
+    /// @return 链长为 1 的属性路径
     static <T, U> Path<T, U> of(PathRef<T, U> ref) {
         return new PathValues.Root<>(ref);
     }
 
     /// 由数值方法引用得到数值属性路径（可求和）。
     ///
-    /// @param ref 方法引用形式的数值属性
+    /// @param ref 方法引用形式的数值属性，非 `null`
     /// @param <T> 根实体类型
     /// @param <U> 数值类型
-    /// @return 数值属性路径
+    /// @return 链长为 1 的数值路径（比通用路径多 `sum()`）
     static <T, U extends Number> NumberPath<T, U> of(PathRef.NumberRef<T, U> ref) {
         return new PathValues.NumberRoot<>(ref);
     }

@@ -20,7 +20,7 @@ final class Conditions {
     /// 条件被短路时的返回值：**不实现 `Op`**，后端遇到它即视为"无附加条件"。
     ///
     /// @param <T> 根实体类型
-    /// @return 恒真占位条件
+    /// @return 单例占位谓词：所有短路条件共用同一个实例，可用 `==` 比较
     @SuppressWarnings("unchecked")
     static <T> Predicate<T> alwaysTrue() {
         return (Predicate<T>) ALWAYS_TRUE;

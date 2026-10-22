@@ -12,8 +12,8 @@ public interface PathRef<T, R> extends Serializable, Expression<T, R> {
 
     /// 从实体上读取该属性的值。
     ///
-    /// @param entity 实体实例
-    /// @return 属性值
+    /// @param entity 实体实例，非 `null`；只读取，不修改实体
+    /// @return 属性值，可为 `null`
     R apply(T entity);
 
     /// 字符串属性引用。

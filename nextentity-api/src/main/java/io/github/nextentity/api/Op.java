@@ -10,7 +10,7 @@ import java.util.List;
 /// `arguments()` 的内容随 `operation()` 变化：
 ///
 /// - 比较/区间/包含类：一个比较值（`IN`/`NOT_IN` 为一个集合，`BETWEEN` 为两个值）
-/// - `IS_NULL`/`IS_NOT_NULL`/`COUNT`/`COUNT_DISTINCT`/`MAX`/`SUM`/`TRUE`：空
+/// - `IS_NULL`/`IS_NOT_NULL`/`COUNT`/`COUNT_DISTINCT`/`MAX`/`SUM`：空
 /// - `AND`/`OR`：子条件（`Expression<T, Boolean>`）
 ///
 /// 用 `sealed` 封闭实现集合：`Op` 是「值 → AST」的线格式，语义由后端按 `operation()` 穷尽解释，
@@ -19,16 +19,16 @@ public sealed interface Op permits Conditions.Leaf, Conditions.AbstractAggregate
 
     /// 运算种类。
     ///
-    /// @return 运算种类
+    /// @return 运算种类；后端按它穷尽分派（`switch` 不写 `default`）
     Operation operation();
 
     /// 属性路径链，从根属性到叶子属性。
     ///
-    /// @return 不可变路径链
+    /// @return 不可变链，根→叶；聚合运算返回的是被聚合的路径
     List<PathRef<?, ?>> refs();
 
     /// 运算参数，含义见类型注释。
     ///
-    /// @return 不可变参数列表
+    /// @return 不可变参数列表；形态随 `operation()` 变化
     List<Object> arguments();
 }

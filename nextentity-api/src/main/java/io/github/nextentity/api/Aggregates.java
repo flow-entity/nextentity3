@@ -12,16 +12,16 @@ public interface Aggregates<T, U> {
 
     /// 计数。
     ///
-    /// @return 计数投影
+    /// @return `COUNT(路径)` 表达式；无行时结果为 `0`（不是 `null`）
     Expression<T, Long> count();
 
     /// 去重计数。
     ///
-    /// @return 去重计数投影
+    /// @return `COUNT(DISTINCT 路径)` 表达式；`null` 不计入，因此可能小于 `count()`
     Expression<T, Long> countDistinct();
 
     /// 最大值。
     ///
-    /// @return 最大值投影
+    /// @return `MAX(路径)` 表达式；无行时结果为 `null`
     Expression<T, U> max();
 }
