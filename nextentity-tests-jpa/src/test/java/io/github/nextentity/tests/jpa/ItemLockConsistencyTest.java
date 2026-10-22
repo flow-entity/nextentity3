@@ -3,6 +3,7 @@ package io.github.nextentity.tests.jpa;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.nextentity.api.LockMode;
+import io.github.nextentity.testing.ItemStatus;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -26,7 +27,7 @@ class ItemLockConsistencyTest {
     /// 锁命中一行，语句含 `for update`。
     @Test
     void pessimisticWriteLockReadsRowAndEmitsForUpdate() {
-        support.seedData(List.of(support.newItem(1L, "apple", 10, null)));
+        support.seedData(List.of(support.newItem(1L, "apple", 10, null, ItemStatus.NEW)));
         support.clearSql();
 
         List<ItemEntity> rows = support.inTransaction(() -> support.query()
@@ -42,7 +43,7 @@ class ItemLockConsistencyTest {
     /// 锁无命中时返回空，不抛异常。
     @Test
     void pessimisticWriteLockOnMissingRowReturnsEmpty() {
-        support.seedData(List.of(support.newItem(1L, "apple", 10, null)));
+        support.seedData(List.of(support.newItem(1L, "apple", 10, null, ItemStatus.NEW)));
 
         List<ItemEntity> rows = support.inTransaction(() -> support.query()
                 .where(support.idRef())

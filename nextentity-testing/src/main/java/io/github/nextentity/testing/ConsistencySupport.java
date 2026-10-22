@@ -36,8 +36,9 @@ public interface ConsistencySupport<T extends Item> {
     /// @param name  名称
     /// @param score 数值或 `null`
     /// @param note  文本或 `null`
+    /// @param status 枚举状态
     /// @return 实体实例
-    T newItem(long id, String name, Integer score, String note);
+    T newItem(long id, String name, Integer score, String note, ItemStatus status);
 
     /// 主键属性引用。
     ///
@@ -58,4 +59,9 @@ public interface ConsistencySupport<T extends Item> {
     ///
     /// @return 方法引用形式的文本
     PathRef.StringRef<T> noteRef();
+
+    /// 枚举属性引用。
+    ///
+    /// @return 方法引用形式的枚举
+    PathRef<T, ItemStatus> statusRef();
 }

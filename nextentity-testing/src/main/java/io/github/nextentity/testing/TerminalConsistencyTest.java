@@ -91,6 +91,16 @@ public abstract class TerminalConsistencyTest<T extends Item> extends Consistenc
         assertThat(rows).extracting(Item::id).containsExactly(APPLE_ID, BANANA_ID, CHERRY_ID, APPLE_PIE_ID);
     }
 
+    /// 枚举 `orderBy`：按枚举存储形态排序（`@Enumerated(STRING)` 下即字典序，同值之间不区分先后）。
+    @Test
+    void orderByEnumIsAscending() {
+        List<T> rows = query().orderBy(statusRef()).asc().list();
+
+        assertThat(rows)
+                .extracting(Item::status)
+                .containsExactly(ItemStatus.ACTIVE, ItemStatus.DONE, ItemStatus.NEW, ItemStatus.NEW);
+    }
+
     /// `orderBy(...).desc()` 降序。
     @Test
     void orderByDescIsDescending() {

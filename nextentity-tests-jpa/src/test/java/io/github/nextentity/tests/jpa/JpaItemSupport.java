@@ -6,6 +6,7 @@ import io.github.nextentity.core.EntityOperationsFactory;
 import io.github.nextentity.core.repo.EntityOperations;
 import io.github.nextentity.jpa.JpaEntityOperationsFactory;
 import io.github.nextentity.testing.ConsistencySupport;
+import io.github.nextentity.testing.ItemStatus;
 import io.github.nextentity.tests.jpa.support.HibernateHarness;
 import java.util.List;
 import java.util.function.Supplier;
@@ -43,8 +44,8 @@ final class JpaItemSupport implements ConsistencySupport<ItemEntity>, AutoClosea
     }
 
     @Override
-    public ItemEntity newItem(long id, String name, Integer score, String note) {
-        return new ItemEntity(id, name, score, note);
+    public ItemEntity newItem(long id, String name, Integer score, String note, ItemStatus status) {
+        return new ItemEntity(id, name, score, note, status);
     }
 
     @Override
@@ -65,6 +66,11 @@ final class JpaItemSupport implements ConsistencySupport<ItemEntity>, AutoClosea
     @Override
     public PathRef.StringRef<ItemEntity> noteRef() {
         return ItemEntity::note;
+    }
+
+    @Override
+    public PathRef<ItemEntity, ItemStatus> statusRef() {
+        return ItemEntity::status;
     }
 
     /// 在事务里执行并返回结果（悲观锁等要求事务的查询用得到）。

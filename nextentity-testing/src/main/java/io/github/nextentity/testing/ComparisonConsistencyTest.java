@@ -94,6 +94,14 @@ public abstract class ComparisonConsistencyTest<T extends Item> extends Consiste
         assertThat(rows).extracting(Item::id).containsExactlyInAnyOrder(APPLE_ID, BANANA_ID);
     }
 
+    /// 枚举 `eq`：按枚举值比较（point-mall 有 51 处 `@Enumerated`，其中 50 处 STRING）。
+    @Test
+    void enumEqMatchesRowsWithThatStatus() {
+        List<T> rows = query().where(statusRef()).eq(ItemStatus.NEW).list();
+
+        assertThat(rows).extracting(Item::id).containsExactlyInAnyOrder(APPLE_ID, APPLE_PIE_ID);
+    }
+
     /// `gtIfNotNull(null)` / `ltIfNotNull(null)` 都跳过条件。
     @Test
     void rangeIfNotNullWithNullOnBothSidesSkipsCondition() {

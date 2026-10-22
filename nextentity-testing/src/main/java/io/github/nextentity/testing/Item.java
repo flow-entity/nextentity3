@@ -28,4 +28,9 @@ public interface Item {
     ///
     /// @return 文本或 `null`
     String note();
+
+    /// 枚举字段（用于验证枚举比较与排序；point-mall 有 51 处 `@Enumerated`）。
+    ///
+    /// @return 状态
+    ItemStatus status();
 }

@@ -45,15 +45,15 @@ public abstract class ConsistencyTestBase<T extends Item> {
     /// 夹具文本值。
     protected static final String NOTE_2 = "n2";
 
-    /// 每个用例前重建固定夹具。
+    /// 每个用例前重建固定夹具（状态分布：apple=NEW, banana=ACTIVE, cherry=DONE, apple pie=NEW）。
     @BeforeEach
     final void seed() {
         ConsistencySupport<T> support = support();
         support.seedData(List.of(
-                support.newItem(APPLE_ID, APPLE_NAME, 10, null),
-                support.newItem(BANANA_ID, BANANA_NAME, 20, NOTE_1),
-                support.newItem(CHERRY_ID, CHERRY_NAME, 30, NOTE_2),
-                support.newItem(APPLE_PIE_ID, APPLE_PIE_NAME, null, null)));
+                support.newItem(APPLE_ID, APPLE_NAME, 10, null, ItemStatus.NEW),
+                support.newItem(BANANA_ID, BANANA_NAME, 20, NOTE_1, ItemStatus.ACTIVE),
+                support.newItem(CHERRY_ID, CHERRY_NAME, 30, NOTE_2, ItemStatus.DONE),
+                support.newItem(APPLE_PIE_ID, APPLE_PIE_NAME, null, null, ItemStatus.NEW)));
     }
 
     /// 后端接线（由具体后端提供）。
@@ -94,5 +94,12 @@ public abstract class ConsistencyTestBase<T extends Item> {
     /// @return 方法引用形式的文本
     protected final PathRef.StringRef<T> noteRef() {
         return support().noteRef();
+    }
+
+    /// 枚举属性引用。
+    ///
+    /// @return 方法引用形式的枚举
+    protected final PathRef<T, ItemStatus> statusRef() {
+        return support().statusRef();
     }
 }
