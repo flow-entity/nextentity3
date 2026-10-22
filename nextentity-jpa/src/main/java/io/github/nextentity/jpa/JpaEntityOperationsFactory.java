@@ -20,9 +20,6 @@ public final class JpaEntityOperationsFactory implements EntityOperationsFactory
     private final SimpleEntityOperationsFactory<JpaQuery> delegate;
 
     /// 创建工厂。
-    ///
-    /// @param entityManager        实体管理器（事务绑定的那个）
-    /// @param entityManagerFactory 实体管理器工厂，用于解析元模型
     public JpaEntityOperationsFactory(EntityManager entityManager, EntityManagerFactory entityManagerFactory) {
         JpaMeta meta = new JpaMeta(entityManagerFactory);
         this.delegate = new SimpleEntityOperationsFactory<>(

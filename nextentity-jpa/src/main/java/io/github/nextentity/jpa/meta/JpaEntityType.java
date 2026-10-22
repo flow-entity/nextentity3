@@ -33,10 +33,10 @@ public final class JpaEntityType<T> implements EntityType<T> {
 
     /// 解析一个实体类型。
     ///
-    /// @param metamodel JPA 元模型
-    /// @param type      实体类型
+    /// @param metamodel JPA 元模型，非 `null`
+    /// @param type      实体类型；必须在元模型里注册，否则 `metamodel.entity(type)` 抛 `IllegalArgumentException`
     /// @param <T>       实体类型
-    /// @return 实体元数据
+    /// @return 元数据：属性表按元模型声明顺序，缺 `@Id` 时抛 `IllegalArgumentException`
     static <T> JpaEntityType<T> of(Metamodel metamodel, Class<T> type) {
         Map<String, EntityAttribute> attributes = new LinkedHashMap<>();
         EntityAttribute id = null;
@@ -75,7 +75,7 @@ public final class JpaEntityType<T> implements EntityType<T> {
 
     /// 全部映射属性（含 id 与 version），按元模型声明顺序。
     ///
-    /// @return 属性名到读写句柄的映射
+    /// @return 属性名 → 读写句柄；不可变视图，顺序即元模型声明顺序
     public Map<String, EntityAttribute> attributes() {
         return attributes;
     }

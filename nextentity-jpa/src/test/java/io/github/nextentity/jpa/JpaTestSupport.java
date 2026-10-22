@@ -25,7 +25,7 @@ import org.junit.jupiter.api.TestInstance;
 /// `PER_CLASS` + 实例字段是刻意的：每个测试类拿**自己的 SessionFactory 和自己的内存库**
 /// （库名取自类名）。共用 `static` 字段时两个子类的 `@BeforeAll` 会互相覆盖
 /// `sessionFactory`/`meta`，而 `hbm2ddl.auto=create-drop` 会在后起的那个 EMF 里重建 schema，
-/// 把先跑那个类已写入的数据清掉——这正是 reviewer 抓到的约 1/3 概率随机失败。
+/// 把先跑那个类已写入的数据清掉——测试类执行顺序不固定，于是失败是随机的。
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 abstract class JpaTestSupport {
 

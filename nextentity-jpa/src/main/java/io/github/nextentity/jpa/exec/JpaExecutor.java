@@ -27,9 +27,6 @@ public final class JpaExecutor implements Executor<JpaQuery> {
     private final JpaMeta meta;
 
     /// 创建执行器。
-    ///
-    /// @param entityManager 实体管理器
-    /// @param meta          JPA 元模型
     public JpaExecutor(EntityManager entityManager, JpaMeta meta) {
         this.entityManager = entityManager;
         this.meta = meta;

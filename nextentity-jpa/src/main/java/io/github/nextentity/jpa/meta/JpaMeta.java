@@ -19,16 +19,16 @@ public final class JpaMeta {
 
     /// 用实体管理器工厂构建元模型。
     ///
-    /// @param entityManagerFactory 实体管理器工厂
+    /// @param entityManagerFactory 实体管理器工厂，非 `null`；元模型从这里取一次
     public JpaMeta(EntityManagerFactory entityManagerFactory) {
         this.metamodel = entityManagerFactory.getMetamodel();
     }
 
     /// 取实体元数据（首次解析后缓存）。
     ///
-    /// @param type 实体类型
+    /// @param type 实体类型；必须在元模型里注册，否则抛 `IllegalArgumentException`
     /// @param <T>  实体类型
-    /// @return 实体元数据
+    /// @return 缓存的元数据：同一实体多次调用返回同一实例
     @SuppressWarnings("unchecked")
     public <T> JpaEntityType<T> entityType(Class<T> type) {
         JpaEntityType<?> cached = cache.get(type);
@@ -46,9 +46,9 @@ public final class JpaMeta {
     /// 集合关联（`@OneToMany` / `@ManyToMany`）在 point-mall 里为零，这里按「可 join」返回 true，
     /// 不为它单独加分支。
     ///
-    /// @param managedType 当前所在 managed type
+    /// @param managedType 当前所在 managed type，非 `null`（可以是 `@Embeddable` 类型）
     /// @param attribute   属性名
-    /// @return 关联返回 true
+    /// @return 关联返回 `true`；集合关联一律返回 `true`（按"可 join"处理）
     public boolean association(Class<?> managedType, String attribute) {
         Attribute<?, ?> resolved = metamodel.managedType(managedType).getAttribute(attribute);
         if (resolved instanceof PluralAttribute<?, ?, ?>) {

@@ -33,26 +33,17 @@ final class JpaPaths {
     }
 
     /// 把属性路径渲染成 Criteria 路径；最后一段取 `get`，前面的关联段取 `join`。
-    ///
-    /// @param attributePath 属性路径
-    /// @return Criteria 路径
     Path<?> path(AttributePath attributePath) {
         List<String> names = attributePath.names();
         return navigate(names.subList(0, names.size() - 1)).get(names.getLast());
     }
 
     /// 升序排序项。
-    ///
-    /// @param expression 排序表达式
-    /// @return Criteria 排序项
     Order ascending(Expression<?> expression) {
         return builder.asc(expression);
     }
 
     /// 降序排序项。
-    ///
-    /// @param expression 排序表达式
-    /// @return Criteria 排序项
     Order descending(Expression<?> expression) {
         return builder.desc(expression);
     }

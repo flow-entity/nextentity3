@@ -31,7 +31,7 @@ testing / tests-jpa / arch / benchmarks 仅被测试与 CI 使用
 | 模块 | 放什么 | 不放什么 |
 |---|---|---|
 | `api` | 用户写查询会 import 的一切：`Path`、`PathRef`、`EntityPath`、`Predicate`、`Op`/`Operation`、步骤接口、`Slice`、`Tuple2`、`LockMode` | 任何 `jakarta.*`、`org.hibernate.*`、`org.springframework.*`、任何工具类 |
-| `core` | `Meta`（属性解析）、`Spec`（AST）、`Compiler<S>`/`Executor<S>`（接缝）、`PersistExecutor`、`EntityOperationsFactory`/`EntityOperations`、`TransactionOperations` | JPA/Criteria 类型、Spring 类型、SQL 字符串 |
+| `core` | `Meta`（属性解析）、`Spec`（AST）、`Compiler<S>`/`Executor<S>`（接缝）、`PersistExecutor`、`EntityOperationsFactory`/`EntityOperations` | JPA/Criteria 类型、Spring 类型、SQL 字符串 |
 | `jpa` | `JpaMeta`、`JpaCompiler`、`JpaExecutor`、`JpaPersistExecutor`、`JpaEntityOperationsFactory` | Spring 类型（由 `spring` 模块桥接） |
 | `spring` | `NextEntityAutoConfiguration`、属性绑定、`@Bean` 装配、`AbstractRepository`（构造器注入 `EntityOperationsFactory` + `query()` + `insert(T)`） | 查询逻辑 |
 
@@ -127,7 +127,7 @@ S  （后端语句）
 4. `Meta` 接口化，JPA 实现内部走 `EntityManager.getMetamodel()`；JDBC 实现将来走反射/注解扫描。
 5. `LockMode` 用自研枚举，不引 `jakarta.persistence`。
 6. `PersistExecutor` 接口化（insert/update/delete/批量）。
-7. `TransactionOperations` 接口化。**当前未实**：`spring` 侧没有消费者（point-mall 写入靠 `@Transactional`，id-generator 用自己的 `TransactionTemplate`），按「不写没有调用点的抽象」只保留接口，不注册 bean；出现真实消费者时再补 `spring` 实现。
+7. 事务边界由调用方持有：point-mall 写入靠 `@Transactional`，id-generator 用自己的 `TransactionTemplate`。**不保留 `TransactionOperations` 接口**——它曾以「为第二后端留位」的理由存在，但零实现、零调用，属于「不写没有调用点的抽象」要清掉的那类（与 `Spec.Raw` 同理：需要第二后端时随它一起引入，而不是提前摆一个空接缝）。`core`/`jpa` 仍不得依赖 `org.springframework.transaction`。
 8. `nextentity-testing` 的一致性基类只依赖接口，新后端必须通过同一套。
 
 准入条件（三条同时满足才允许新增 `nextentity-jdbc`）：出现 Hibernate 无法满足的明确需求；`Spec.Raw` 原生片段 / Criteria native query 逃生口顶不住；能通过一致性测试。

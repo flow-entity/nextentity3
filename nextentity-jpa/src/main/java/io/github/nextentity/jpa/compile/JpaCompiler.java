@@ -20,7 +20,7 @@ public final class JpaCompiler implements Compiler<JpaQuery> {
     /// 创建编译器。
     ///
     /// @param entityManager 实体管理器（一次请求一个）
-    /// @param meta          JPA 元模型
+    /// @param meta          JPA 元模型：应用级，由工厂建一次后共享
     public JpaCompiler(EntityManager entityManager, JpaMeta meta) {
         this.entityManager = entityManager;
         this.meta = meta;
