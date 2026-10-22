@@ -17,6 +17,10 @@
     <dependencies>
         <dependency>
             <groupId>io.github.flow-entity</groupId>
+            <artifactId>nextentity-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.flow-entity</groupId>
             <artifactId>nextentity-core</artifactId>
         </dependency>
         <dependency>

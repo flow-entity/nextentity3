@@ -105,6 +105,53 @@ class ArchitectureTest {
             .allowEmptyShould(true)
             .because("接口方法超过 6 个说明边界切错了；应拆成两个窄接口，而不是加第 7 个方法");
 
+    /// `api` 是契约层：不得反向依赖任何内部模块。
+    ///
+    /// 模块循环规则只能抓住「互相依赖」；单向的 api → core 会静默通过，所以单独守一条。
+    @ArchTest
+    static final ArchRule API_DEPENDS_ON_NOTHING_INTERNAL = noClasses()
+            .that()
+            .resideInAPackage("io.github.nextentity.api..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAnyPackage(
+                    "io.github.nextentity.core..", "io.github.nextentity.jpa..", "io.github.nextentity.spring..")
+            .allowEmptyShould(true)
+            .because("api ← core ← jpa ← spring 只能单向；api 反向依赖会让契约层被实现细节绑死");
+
+    /// `core` 只放与后端无关的抽象：不得依赖 `jpa` / `spring`。
+    @ArchTest
+    static final ArchRule CORE_DOES_NOT_DEPEND_ON_BACKENDS = noClasses()
+            .that()
+            .resideInAPackage("io.github.nextentity.core..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAnyPackage("io.github.nextentity.jpa..", "io.github.nextentity.spring..")
+            .allowEmptyShould(true)
+            .because("Compiler / Executor 是接缝，接缝自己引用实现就是循环的开始");
+
+    /// `spring` 只做装配：不得构建 Criteria。
+    @ArchTest
+    static final ArchRule SPRING_HAS_NO_QUERY_LOGIC = noClasses()
+            .that()
+            .resideInAPackage("io.github.nextentity.spring..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAPackage("jakarta.persistence.criteria..")
+            .allowEmptyShould(true)
+            .because("TEAM-CONTRACT §3：Spring 装配与属性归 spring，查询逻辑一律不进 spring");
+
+    /// 一致性测试基类不得被某个后端绑架：`testing` 只准依赖 `api` + `core` 接口。
+    @ArchTest
+    static final ArchRule TESTING_STAYS_BACKEND_FREE = noClasses()
+            .that()
+            .resideInAPackage("io.github.nextentity.testing..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAnyPackage("jakarta..", "org.hibernate..", "org.springframework..", "java.sql..")
+            .allowEmptyShould(true)
+            .because("DESIGN §5：基类里出现 EntityManager / Criteria / SQL，新后端就得改基类，接缝随之失效");
+
     /// 公开方法（不含 static）不超过给定数量。
     ///
     /// @param max 上限
