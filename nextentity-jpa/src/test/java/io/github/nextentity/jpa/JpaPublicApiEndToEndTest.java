@@ -27,7 +27,7 @@ class JpaPublicApiEndToEndTest extends JpaTestSupport {
                 .eq(OrderStatus.PAID)
                 .orderBy(ShopOrder::getId)
                 .desc()
-                .<ShopOrder>list()
+                .list()
                 .stream()
                 .map(ShopOrder::getId)
                 .toList());

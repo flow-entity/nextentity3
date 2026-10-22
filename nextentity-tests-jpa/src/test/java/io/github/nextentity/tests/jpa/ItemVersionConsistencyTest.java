@@ -34,25 +34,25 @@ class ItemVersionConsistencyTest {
     /// 插入 → 一次更新使版本号自增 → 用旧版本号再更新则冲突。
     @Test
     void updateBumpsVersionAndStaleUpdateFails() {
-        inTransaction(entityManager -> operations.insert(new VersionedEntity(1L, "draft")));
+        inTransaction(_ -> operations.insert(new VersionedEntity(1L, "draft")));
         long versionAfterInsert = currentVersion(1L);
 
-        inTransaction(entityManager -> operations.update(new VersionedEntity(1L, "published", versionAfterInsert)));
+        inTransaction(_ -> operations.update(new VersionedEntity(1L, "published", versionAfterInsert)));
         long versionAfterUpdate = currentVersion(1L);
 
         assertThat(versionAfterUpdate).isGreaterThan(versionAfterInsert);
-        assertThatThrownBy(() -> inTransaction(
-                        entityManager -> operations.update(new VersionedEntity(1L, "stale", versionAfterInsert))))
+        assertThatThrownBy(() ->
+                        inTransaction(_ -> operations.update(new VersionedEntity(1L, "stale", versionAfterInsert))))
                 .isInstanceOf(OptimisticLockException.class);
     }
 
     /// 成功更新后，调用方手里的对象拿到新版本号（`@Version` 回写契约）。
     @Test
     void updateWritesBackNewVersionToCallerObject() {
-        inTransaction(entityManager -> operations.insert(new VersionedEntity(2L, "draft")));
+        inTransaction(_ -> operations.insert(new VersionedEntity(2L, "draft")));
         VersionedEntity detached = new VersionedEntity(2L, "published", currentVersion(2L));
 
-        inTransaction(entityManager -> operations.update(detached));
+        inTransaction(_ -> operations.update(detached));
 
         assertThat(detached.version()).isEqualTo(currentVersion(2L));
     }

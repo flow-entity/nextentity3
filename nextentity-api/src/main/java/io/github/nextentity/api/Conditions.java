@@ -26,10 +26,6 @@ final class Conditions {
         return (Predicate<T>) ALWAYS_TRUE;
     }
 
-    static boolean isEmpty(String value) {
-        return value == null || value.isEmpty();
-    }
-
     /// 独立路径（`Path.of(...)` / `EntityPath.of(...)`）与 `where(...)` 之后的算子共用同一套组装逻辑。
     ///
     /// @param <T> 根实体类型
@@ -65,10 +61,6 @@ final class Conditions {
 
         final Predicate<T> nullCheck(Operation operation) {
             return merge(new Leaf<>(operation, refs, List.of()));
-        }
-
-        final Predicate<T> stringOp(Operation operation, String pattern) {
-            return merge(new Leaf<>(operation, refs, Collections.singletonList(pattern)));
         }
 
         private Predicate<T> merge(Predicate<T> next) {
@@ -247,89 +239,6 @@ final class Conditions {
         @Override
         public Predicate<T> between(N from, N to) {
             return range(Operation.BETWEEN, from, to);
-        }
-    }
-
-    @SuppressWarnings("PMD.TooManyMethods") // 方法数由 StringOperator 接口面决定，不是上帝类
-    static final class StringOperatorValue<T> extends AbstractOperators<T> implements StringOperator<T, Predicate<T>> {
-
-        StringOperatorValue(PathRef.StringRef<T> ref, Predicate<T> parent, Operation combine) {
-            super(List.of(ref), parent, combine, false);
-        }
-
-        @Override
-        public Predicate<T> eq(String value) {
-            return comparison(Operation.EQ, value);
-        }
-
-        @Override
-        public Predicate<T> eqIfNotNull(String value) {
-            return value == null ? alwaysTrue() : comparison(Operation.EQ, value);
-        }
-
-        @Override
-        public Predicate<T> ne(String value) {
-            return comparison(Operation.NE, value);
-        }
-
-        @Override
-        public Predicate<T> eqIfNotEmpty(String value) {
-            return isEmpty(value) ? alwaysTrue() : comparison(Operation.EQ, value);
-        }
-
-        @Override
-        public Predicate<T> isNull() {
-            return nullCheck(Operation.IS_NULL);
-        }
-
-        @Override
-        public Predicate<T> isNotNull() {
-            return nullCheck(Operation.IS_NOT_NULL);
-        }
-
-        @Override
-        public Predicate<T> in(Collection<? extends String> values) {
-            return membership(Operation.IN, new ArrayList<>(values));
-        }
-
-        @Override
-        public Predicate<T> in(String... values) {
-            return membership(Operation.IN, Arrays.asList(values));
-        }
-
-        @Override
-        public Predicate<T> notIn(Collection<? extends String> values) {
-            return membership(Operation.NOT_IN, new ArrayList<>(values));
-        }
-
-        @Override
-        public Predicate<T> notIn(String... values) {
-            return membership(Operation.NOT_IN, Arrays.asList(values));
-        }
-
-        @Override
-        public Predicate<T> inIfNotNull(Collection<? extends String> values) {
-            return values == null ? alwaysTrue() : membership(Operation.IN, new ArrayList<>(values));
-        }
-
-        @Override
-        public Predicate<T> contains(String value) {
-            return stringOp(Operation.CONTAINS, value);
-        }
-
-        @Override
-        public Predicate<T> containsIfNotEmpty(String value) {
-            return isEmpty(value) ? alwaysTrue() : stringOp(Operation.CONTAINS, value);
-        }
-
-        @Override
-        public Predicate<T> containsIfNotNull(String value) {
-            return value == null ? alwaysTrue() : stringOp(Operation.CONTAINS, value);
-        }
-
-        @Override
-        public Predicate<T> likeIfNotNull(String pattern) {
-            return pattern == null ? alwaysTrue() : stringOp(Operation.LIKE, pattern);
         }
     }
 

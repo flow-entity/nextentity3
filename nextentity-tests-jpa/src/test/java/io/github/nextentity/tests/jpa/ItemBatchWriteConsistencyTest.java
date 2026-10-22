@@ -32,7 +32,7 @@ class ItemBatchWriteConsistencyTest {
     /// `insertAll` 一次写入多条，全部可读回。
     @Test
     void insertAllPersistsEveryEntity() {
-        harness.inTransaction(entityManager -> operations.insertAll(List.of(
+        harness.inTransaction(_ -> operations.insertAll(List.of(
                 new VersionedEntity(1L, "one"), new VersionedEntity(2L, "two"), new VersionedEntity(3L, "three"))));
         harness.entityManager().clear();
 
@@ -46,8 +46,8 @@ class ItemBatchWriteConsistencyTest {
     /// `updateAll` 让每条记录版本号自增，并把新版本号写回调用方手里的对象。
     @Test
     void updateAllBumpsVersionsAndWritesBackToCallerObjects() {
-        harness.inTransaction(entityManager ->
-                operations.insertAll(List.of(new VersionedEntity(1L, "one"), new VersionedEntity(2L, "two"))));
+        harness.inTransaction(
+                _ -> operations.insertAll(List.of(new VersionedEntity(1L, "one"), new VersionedEntity(2L, "two"))));
         harness.entityManager().clear();
         long versionBefore = currentVersion(1L);
 
@@ -55,7 +55,7 @@ class ItemBatchWriteConsistencyTest {
                 new VersionedEntity(1L, "one-updated", versionBefore),
                 new VersionedEntity(2L, "two-updated", versionBefore));
 
-        harness.inTransaction(entityManager -> operations.updateAll(detached));
+        harness.inTransaction(_ -> operations.updateAll(detached));
         harness.entityManager().clear();
 
         assertThat(detached).extracting(VersionedEntity::version).containsOnly(versionBefore + 1);

@@ -30,7 +30,7 @@ class ItemConvertConsistencyTest {
 
     @Test
     void convertAppliesOnWriteReadAndPredicate() {
-        harness.inTransaction(entityManager -> operations.insert(new ConvertedEntity(1L, "secret")));
+        harness.inTransaction(_ -> operations.insert(new ConvertedEntity(1L, "secret")));
         harness.entityManager().clear();
 
         String stored = (String) harness.entityManager()

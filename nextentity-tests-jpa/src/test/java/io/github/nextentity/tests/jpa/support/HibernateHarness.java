@@ -59,11 +59,6 @@ public final class HibernateHarness implements AutoCloseable {
         return sessionFactory;
     }
 
-    /// 立刻下发挂起的 DML，并让快照看到它。
-    public void flush() {
-        entityManager.flush();
-    }
-
     /// 在事务里跑一段写入，并在正常结束时提交。
     ///
     /// @param work 事务体，非 `null`；正常返回即提交，抛异常则不提交

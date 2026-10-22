@@ -56,9 +56,8 @@ final class JpaPredicates {
                 (Expression) paths.path(between.path()), (Comparable) between.lower(), (Comparable) between.upper());
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
     private Predicate in(In in) {
-        CriteriaBuilder.In<Object> criteriaIn = builder.in((Expression) paths.path(in.path()));
+        CriteriaBuilder.In<Object> criteriaIn = builder.in(paths.path(in.path()));
         for (Object value : in.values()) {
             criteriaIn.value(value);
         }

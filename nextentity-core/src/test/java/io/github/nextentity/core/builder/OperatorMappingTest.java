@@ -215,10 +215,9 @@ class OperatorMappingTest {
         }
 
         @Override
-        @SuppressWarnings("unchecked")
         public <R> List<R> list(QuerySpec query) {
             specs.add(query);
-            return (List<R>) List.of();
+            return List.of();
         }
 
         @Override

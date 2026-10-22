@@ -31,7 +31,7 @@ public final class JpaCompiler implements Compiler<JpaQuery> {
         JpaQueryBuilder builder = new JpaQueryBuilder(entityManager.getCriteriaBuilder(), meta);
         CriteriaQuery<?> query =
                 switch (spec.selection()) {
-                    case EntitySelection entitySelection -> builder.entityQuery(spec, entitySelection);
+                    case EntitySelection _ -> builder.entityQuery(spec);
                     case ValueSelection valueSelection -> builder.valueQuery(spec, valueSelection);
                 };
         return new JpaQuery(query, spec);

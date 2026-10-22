@@ -5,7 +5,7 @@ import io.github.nextentity.api.model.Tuple2;
 /// 投影入口：决定查询返回什么。
 ///
 /// 投影形态只有三种：单列、双列 `Tuple2`、聚合表达式；投影成 DTO 由调用方自己映射（例如通过
-/// [Slice#to] 或手写转换），本接口不提供「投影成某个类」的重载。
+/// [io.github.nextentity.api.model.Slice#to] 或手写转换），本接口不提供「投影成某个类」的重载。
 ///
 /// @param <T> 根实体类型
 public interface SelectStep<T> {

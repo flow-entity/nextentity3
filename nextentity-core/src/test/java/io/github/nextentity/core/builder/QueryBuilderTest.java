@@ -238,7 +238,7 @@ class QueryBuilderTest {
     @Test
     @DisplayName("双列投影：后端返回 Object[] 时装配成 Tuple2")
     void tupleAssembly() {
-        backend.rows = List.<Object>of((Object) new Object[] {1L, 5});
+        backend.rows = List.of((Object) new Object[] {1L, 5});
         List<Tuple2<Long, Integer>> rows = query().select(
                         Path.of(Order::getId), Path.of(Order::getAge).max())
                 .groupBy(Order::getId)
@@ -304,7 +304,7 @@ class QueryBuilderTest {
     @DisplayName("first()：list(0,1) 取首行")
     void first() {
         Order row = new Order();
-        backend.rows = List.of((Object) row);
+        backend.rows = List.of(row);
 
         Order first = query().first();
 
@@ -316,7 +316,7 @@ class QueryBuilderTest {
     @DisplayName("single()：取 2 行以内，>1 行抛 IllegalStateException")
     void singleRejectsMultipleRows() {
         Order one = new Order();
-        backend.rows = List.of((Object) one);
+        backend.rows = List.of(one);
         assertThat(query().single()).isSameAs(one);
 
         backend.rows = List.of(new Object(), new Object());
@@ -348,7 +348,7 @@ class QueryBuilderTest {
     void sliceRunsCountThenList() {
         backend.total = 25L;
         Order row = new Order();
-        backend.rows = List.of((Object) row);
+        backend.rows = List.of(row);
 
         Slice<Order> slice = query().orderBy(Order::getId).asc().slice(10, 5);
 

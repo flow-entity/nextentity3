@@ -1,7 +1,6 @@
 package io.github.nextentity.jpa.compile;
 
 import io.github.nextentity.core.spec.AttributePath;
-import io.github.nextentity.core.spec.EntitySelection;
 import io.github.nextentity.core.spec.Ordering;
 import io.github.nextentity.core.spec.Projection;
 import io.github.nextentity.core.spec.QuerySpec;
@@ -31,7 +30,7 @@ final class JpaQueryBuilder {
     }
 
     @SuppressWarnings("unchecked")
-    CriteriaQuery<?> entityQuery(QuerySpec spec, EntitySelection selection) {
+    CriteriaQuery<?> entityQuery(QuerySpec spec) {
         Class<Object> type = (Class<Object>) spec.entityType();
         CriteriaQuery<Object> query = builder.createQuery(type);
         Root<Object> root = query.from(type);

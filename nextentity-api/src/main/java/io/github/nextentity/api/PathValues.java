@@ -156,13 +156,6 @@ final class PathValues {
         }
     }
 
-    static final class StringRoot<T> extends Value<T, String> implements StringPath<T> {
-
-        StringRoot(PathRef.StringRef<T> ref) {
-            super(Collections.singletonList(ref));
-        }
-    }
-
     abstract static class EntityValue<T, U> extends Value<T, U> implements EntityPath<T, U> {
 
         EntityValue(List<PathRef<?, ?>> refs) {

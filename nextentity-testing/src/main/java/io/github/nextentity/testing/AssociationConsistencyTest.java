@@ -43,9 +43,6 @@ public abstract class AssociationConsistencyTest<T extends Asset> {
 
     protected static final String BETA = "beta";
 
-    /// 固定夹具里不存在的 owner 名称：用于「无命中」断言。
-    protected static final String MISSING_OWNER = "gamma";
-
     /// 每个用例前重建固定夹具。
     @BeforeEach
     final void seed() {

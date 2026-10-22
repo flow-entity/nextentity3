@@ -26,7 +26,7 @@ final class JpaProjections {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private Expression<?> aggregate(AggregateProjection aggregateProjection) {
-        Expression expression = (Expression) paths.path(aggregateProjection.path());
+        Expression expression = paths.path(aggregateProjection.path());
         return switch (aggregateProjection.function()) {
             case MAX -> builder.greatest(expression);
             case SUM -> builder.sum(expression);

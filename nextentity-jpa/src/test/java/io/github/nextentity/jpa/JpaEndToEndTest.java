@@ -166,9 +166,9 @@ class JpaEndToEndTest extends JpaTestSupport {
                 .containsExactly(100L);
 
         AttributePath status = AttributePath.of(ShopOrder.class, "status");
-        assertThat(ids(query(new In(status, List.<Object>of(OrderStatus.CREATED), false))))
+        assertThat(ids(query(new In(status, List.of(OrderStatus.CREATED), false))))
                 .containsExactly(101L);
-        assertThat(ids(query(new In(status, List.<Object>of(OrderStatus.CREATED), true))))
+        assertThat(ids(query(new In(status, List.of(OrderStatus.CREATED), true))))
                 .containsExactly(100L);
         assertThat(ids(query(new Between(
                         AttributePath.of(ShopOrder.class, "amount"), new BigDecimal("5"), new BigDecimal("13")))))
