@@ -16,7 +16,7 @@ import java.util.Locale;
 /// （`core/PathReference.java:55-74`），属性名由**方法名**去 `get`/`is` 前缀得到，
 /// 不读字段、不读注解。3.x 沿用同一机制：point-mall 的 762 处 `.where(...)` 全是方法引用，
 /// 换成别的方式就要改消费方代码。
-public final class PathRefs {
+final class PathRefs {
 
     private PathRefs() {}
 
@@ -27,7 +27,7 @@ public final class PathRefs {
     ///
     /// @param refs 从根属性到叶子属性的方法引用链，非空
     /// @return 属性路径
-    public static AttributePath resolve(List<? extends PathRef<?, ?>> refs) {
+    static AttributePath resolve(List<? extends PathRef<?, ?>> refs) {
         if (refs.isEmpty()) {
             throw new IllegalArgumentException("属性路径链不能为空");
         }

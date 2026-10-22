@@ -49,6 +49,8 @@ final class OpInterpreter {
             case IS_NOT_NULL -> Specs.nullCheck(path, true);
             case AND -> logical(LogicalOperator.AND, arguments);
             case OR -> logical(LogicalOperator.OR, arguments);
+            // 运行期不可达：where(...) 只接受 Expression<T,Boolean>，聚合值进不来。
+            // 这四个常量必须列出，是 switch 穷尽性检查的结果，不是兜底分支。
             case COUNT, COUNT_DISTINCT, MAX, SUM ->
                 throw new IllegalArgumentException("聚合运算不能当作条件使用: " + op.operation());
         };
@@ -62,20 +64,24 @@ final class OpInterpreter {
     /// @param op 聚合表达式
     /// @return 聚合投影项
     static Projection toProjection(Op op) {
-        AttributePath path = PathRefs.resolve(op.refs());
         return switch (op.operation()) {
-            case COUNT -> new AggregateProjection(AggregateFunction.COUNT, path);
-            case COUNT_DISTINCT -> new AggregateProjection(AggregateFunction.COUNT_DISTINCT, path);
-            case MAX -> new AggregateProjection(AggregateFunction.MAX, path);
-            case SUM -> new AggregateProjection(AggregateFunction.SUM, path);
-            default -> throw new IllegalArgumentException("不是聚合投影: " + op.operation());
+            case COUNT -> new AggregateProjection(AggregateFunction.COUNT, PathRefs.resolve(op.refs()));
+            case COUNT_DISTINCT ->
+                new AggregateProjection(AggregateFunction.COUNT_DISTINCT, PathRefs.resolve(op.refs()));
+            case MAX -> new AggregateProjection(AggregateFunction.MAX, PathRefs.resolve(op.refs()));
+            case SUM -> new AggregateProjection(AggregateFunction.SUM, PathRefs.resolve(op.refs()));
+            case EQ, NE, GE, GT, LE, LT, IN, NOT_IN, IS_NULL, IS_NOT_NULL, BETWEEN, CONTAINS, LIKE, AND, OR ->
+                throw new IllegalArgumentException("不是聚合投影: " + op.operation());
         };
     }
 
     /// 逻辑组合：`AND`/`OR` 的子条件放在 `arguments()` 里。
     ///
     /// 子条件里可能混入 api 的"被短路条件"（`Conditions.AlwaysTrue`，不实现 `Op`）——
-    /// api 约定它表示"无附加条件"，因此这里直接跳过；若一个都不剩，整条组合即恒真。
+    /// api 约定它表示"无附加条件"，因此这里直接跳过。
+    ///
+    /// 一个都不剩时返回 `Constant.TRUE` 不是兜底：那是真实语义，
+    /// 例如 `eqIfNotNull(null).or(eqIfNotNull(null))` 就是 `TRUE OR TRUE`，恒真。
     private static Spec logical(LogicalOperator operator, List<Object> arguments) {
         List<Spec> operands = new ArrayList<>(arguments.size());
         for (Object argument : arguments) {
