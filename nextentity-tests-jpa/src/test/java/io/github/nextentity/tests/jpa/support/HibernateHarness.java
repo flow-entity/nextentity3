@@ -1,6 +1,7 @@
 package io.github.nextentity.tests.jpa.support;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
 import java.util.List;
 import java.util.function.Consumer;
 import org.hibernate.SessionFactory;
@@ -48,6 +49,13 @@ public final class HibernateHarness implements AutoCloseable {
     /// @return 实体管理器
     public EntityManager entityManager() {
         return entityManager;
+    }
+
+    /// 实体管理器工厂（JPA 元模型从它解析，见 `JpaMeta`）。
+    ///
+    /// @return 实体管理器工厂
+    public EntityManagerFactory entityManagerFactory() {
+        return sessionFactory;
     }
 
     /// 立刻下发挂起的 DML，并让快照看到它。
