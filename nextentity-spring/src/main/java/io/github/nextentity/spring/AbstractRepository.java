@@ -34,4 +34,15 @@ public abstract class AbstractRepository<T, ID> {
     public EntityQuery<T> query() {
         return operations.query();
     }
+
+    /// 插入单个实体。
+    ///
+    /// 调用点：point-mall `VersionManager.java:124/137` 调 `appVersionRepository.insert(...)`
+    /// （`AppVersionRepository` 自己不声明该方法，2.2.3 里由 `AbstractRepository` 提供）。
+    /// 事务边界由调用方的 `@Transactional` 决定，本类不接管。
+    ///
+    /// @param entity 待插入实体
+    public void insert(T entity) {
+        operations.insert(entity);
+    }
 }
