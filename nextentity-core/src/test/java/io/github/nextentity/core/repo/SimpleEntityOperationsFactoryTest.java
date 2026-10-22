@@ -1,7 +1,6 @@
 package io.github.nextentity.core.repo;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.api.EntityQuery;
 import io.github.nextentity.api.Path;
@@ -82,11 +81,8 @@ class SimpleEntityOperationsFactoryTest {
         assertThat(writes).containsExactly("insert", "insertAll", "update", "updateAll");
     }
 
-    @Test
-    @DisplayName("聚合链（sum 之后不能再聚合）由 api 拒绝，core 不重复判断")
-    void aggregateChainRejectedByApi() {
-        assertThatThrownBy(() -> Path.of(Order::getId).max().sum()).isInstanceOf(UnsupportedOperationException.class);
-    }
+    // 聚合链（`max().sum()`）现在由 api 的类型拒绝：聚合方法返回 `Expression`，其上没有聚合方法，
+    // 因此这条运行期断言被删除——编译期不可写比运行期抛异常更强。
 
     // ---------------------------------------------------------------- fixture
 

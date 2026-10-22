@@ -6,7 +6,7 @@
 
 - **公开 API 是契约**：`io.github.nextentity.api` 下的签名受兼容门禁保护。破坏性变更每版 ≤ 5 处，且必须同时具备三样：机械替换脚本（codemod 或编译错误驱动）、`japicmp` 影响面报告、CHANGELOG 写明"为什么必须破"。
 - **版本语义**：`api` 包遵循语义化版本，删除/收窄签名即主版本；`core`/`jpa`/`spring` 内部包标记 `@Internal`，不承诺兼容。
-- **依赖方向单向**：只允许 `api ← core ← jpa ← spring`。`api` 零三方依赖（唯一登记例外：`jakarta.persistence-api:provided`，仅供 `lock(LockModeType)` 兼容重载，理由见 [DESIGN](docs/DESIGN.md) §7）；`core` 不得 import `jakarta.persistence` / `hibernate` / `spring`。反向依赖与循环依赖由 enforcer + ArchUnit 拒绝。执法者：各模块 `bannedDependencies`（编译期）+ `nextentity-arch` 的 `MODULES_FREE_OF_CYCLES` / `CORE_PACKAGES_FREE_OF_CYCLES`。
+- **依赖方向单向**：只允许 `api ← core ← jpa ← spring`。`api` 零三方依赖；`core` 不得 import `jakarta.persistence` / `hibernate` / `spring`。反向依赖与循环依赖由 enforcer + ArchUnit 拒绝。执法者：各模块 `bannedDependencies`（编译期）+ `nextentity-arch` 的 `MODULES_FREE_OF_CYCLES` / `CORE_PACKAGES_FREE_OF_CYCLES`。
 - **新能力只落一处**：新谓词 = `spec` 加节点 + 编译器加分支；新终止符 = `exec` 加方法；不得在 builder 里拼 SQL 或拼 Criteria。新增节点必须让编译期穷尽性检查报错，以此逼出全部分支。
 - **接口要窄**：新增公开接口的方法数 ≤ 6；超过说明边界切错了。执法者：`nextentity-arch` 的 `API_INTERFACES_STAY_NARROW`。
 - **可测试性**：时间/随机必须经 `Clock` / `IdGenerator` 注入，禁止直调 `System.currentTimeMillis()` / `Instant.now()` / `new Random()`；禁止静态可变字段；禁止 catch 后返回默认值。执法者：`nextentity-arch` 的 `NO_AMBIENT_CLOCK_OR_RANDOM` / `NO_MUTABLE_STATIC_STATE`，以及 `rules/checkstyle.xml` 的 catch 规则。

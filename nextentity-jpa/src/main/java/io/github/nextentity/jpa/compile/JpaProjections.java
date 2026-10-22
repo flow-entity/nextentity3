@@ -5,7 +5,6 @@ import io.github.nextentity.core.spec.PathProjection;
 import io.github.nextentity.core.spec.Projection;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.Expression;
-import jakarta.persistence.criteria.Selection;
 
 /// 投影项 → Criteria 选择项。`Projection` 是 sealed，新增形态会让这里的 switch 编译失败。
 final class JpaProjections {
@@ -18,7 +17,7 @@ final class JpaProjections {
         this.paths = paths;
     }
 
-    Selection<?> projection(Projection projection) {
+    Expression<?> projection(Projection projection) {
         return switch (projection) {
             case PathProjection pathProjection -> paths.path(pathProjection.path());
             case AggregateProjection aggregateProjection -> aggregate(aggregateProjection);
@@ -26,7 +25,7 @@ final class JpaProjections {
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private Selection<?> aggregate(AggregateProjection aggregateProjection) {
+    private Expression<?> aggregate(AggregateProjection aggregateProjection) {
         Expression expression = (Expression) paths.path(aggregateProjection.path());
         return switch (aggregateProjection.function()) {
             case MAX -> builder.greatest(expression);

@@ -30,7 +30,7 @@ testing / tests-jpa / arch / benchmarks 仅被测试与 CI 使用
 
 | 模块 | 放什么 | 不放什么 |
 |---|---|---|
-| `api` | 用户写查询会 import 的一切：`Path`、`PathRef`、`EntityPath`、`Predicate`、`Op`/`Operation`、步骤接口、`Slice`、`Tuple2`、`LockMode` | `jakarta.*`（唯一例外：`jakarta.persistence-api:provided`，仅供 §7 的 `lock` 兼容重载）、`org.hibernate.*`、`org.springframework.*`、任何工具类 |
+| `api` | 用户写查询会 import 的一切：`Path`、`PathRef`、`EntityPath`、`Predicate`、`Op`/`Operation`、步骤接口、`Slice`、`Tuple2`、`LockMode` | 任何 `jakarta.*`、`org.hibernate.*`、`org.springframework.*`、任何工具类 |
 | `core` | `Meta`（属性解析）、`Spec`（AST）、`Compiler<S>`/`Executor<S>`（接缝）、`PersistExecutor`、`EntityOperationsFactory`/`EntityOperations`、`TransactionOperations` | JPA/Criteria 类型、Spring 类型、SQL 字符串 |
 | `jpa` | `JpaMeta`、`JpaCompiler`、`JpaExecutor`、`JpaPersistExecutor`、`JpaEntityOperationsFactory` | Spring 类型（由 `spring` 模块桥接） |
 | `spring` | `NextEntityAutoConfiguration`、属性绑定、`@Bean` 装配、`AbstractRepository`（构造器注入 `EntityOperationsFactory` + `query()` + `insert(T)`） | 查询逻辑 |
@@ -92,7 +92,7 @@ S  （后端语句）
 | `BaseWhereStep<T,U>` 的第二类型参数恒等于第一（存量代码写 `<Order,Order>`） | **不实施**：`WhereStep<T>` 别名需要额外一层接口，而存量调用点全部容忍现状（0 处显式声明该类型为变量类型），收益为零 |
 | 92 个 `*IfNotNull` / `*IfNotEmpty` | **已否决**：改名为 `*IfPresent` 要动 point-mall 154 处 `eqIfNotNull` 等调用点（破 D2/D3），且新名字并不更准确；保留 2.2.3 命名 |
 | `Tuple5`~`Tuple10` | 停止演进，用 DTO/record 投影替代 |
-| `lock(LockModeType)` 把 `jakarta.persistence` 带入 `api` | `api` 提供自研 `LockMode` + `lock(LockMode)`；`lock(jakarta.persistence.LockModeType)` 保留为 `default` 兼容重载（`api` 唯一的 `provided` 依赖），使 3 处存量调用点零改动、japicmp 无差异 |
+| `lock(LockModeType)` 把 `jakarta.persistence` 带入 `api` | 已收敛：`api` 只提供自研 `LockMode` + `lock(LockMode)`，2.2.3 的 `lock(jakarta.persistence.LockModeType)` 重载已删除，`api` 回归零三方依赖（消费方 3 处调用点改用 `LockMode`） |
 | `EntityPath.of(String)` 等类型不安全重载 | 已移除 |
 
 ---

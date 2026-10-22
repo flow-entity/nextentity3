@@ -12,7 +12,10 @@ import java.util.List;
 /// - 比较/区间/包含类：一个比较值（`IN`/`NOT_IN` 为一个集合，`BETWEEN` 为两个值）
 /// - `IS_NULL`/`IS_NOT_NULL`/`COUNT`/`COUNT_DISTINCT`/`MAX`/`SUM`/`TRUE`：空
 /// - `AND`/`OR`：子条件（`Expression<T, Boolean>`）
-public interface Op {
+///
+/// 用 `sealed` 封闭实现集合：`Op` 是「值 → AST」的线格式，语义由后端按 `operation()` 穷尽解释，
+/// 不允许外部再实现出后端无法解释的运算。
+public sealed interface Op permits Conditions.Leaf, Conditions.AbstractAggregate {
 
     /// 运算种类。
     ///

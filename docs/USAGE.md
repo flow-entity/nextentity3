@@ -232,14 +232,11 @@ query().where(orgName).eq("总部").list();
 ## 9. 锁
 
 ```java
-// 自研枚举（core/spec 不接触 jakarta）
+// 只用自研枚举：api 不依赖任何持久化类型
 Order pessimistic = query().where(Order::getId).eq(id).lock(LockMode.PESSIMISTIC_WRITE).single();
-
-// 2.2.3 兼容重载：直接传 jakarta 的 LockModeType
-Order compatible = query().where(Order::getId).eq(id).lock(LockModeType.PESSIMISTIC_WRITE).single();
 ```
 
-`lock(...)` 必须跟在产生条件的算子之后（例如 `.eq(id).lock(...)`），返回终止符。`LockMode` 的 5 个常量与 `jakarta.persistence.LockModeType` 同名。
+`lock(...)` 必须跟在产生条件的算子之后（例如 `.eq(id).lock(...)`），返回终止符。`LockMode` 的 5 个常量与 `jakarta.persistence.LockModeType` 同名（同名只为可读，`api` 并不依赖 jakarta），由 `nextentity-jpa` 映射成后端的锁模式。
 
 ## 10. 写入
 

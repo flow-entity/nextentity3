@@ -8,7 +8,6 @@ import io.github.nextentity.core.repo.EntityOperations;
 import io.github.nextentity.jpa.entity.OrderStatus;
 import io.github.nextentity.jpa.entity.ShopOrder;
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.LockModeType;
 import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -68,7 +67,7 @@ class JpaPublicApiEndToEndTest extends JpaTestSupport {
                             .single()
                             .getId())
                     .isEqualTo(100L);
-            // 自研枚举 + 2.2.3 兼容重载（point-mall 的 3 处调用点用的是后者）
+            // 锁入口只有自研枚举（point-mall 的 3 处调用点已改用 api.LockMode）
             assertThat(operations
                             .query()
                             .where(ShopOrder::getId)
@@ -77,14 +76,6 @@ class JpaPublicApiEndToEndTest extends JpaTestSupport {
                             .single()
                             .getId())
                     .isEqualTo(100L);
-            assertThat(operations
-                            .query()
-                            .where(ShopOrder::getId)
-                            .eq(101L)
-                            .lock(LockModeType.PESSIMISTIC_WRITE)
-                            .single()
-                            .getId())
-                    .isEqualTo(101L);
             return null;
         });
     }
@@ -131,6 +122,11 @@ class JpaPublicApiEndToEndTest extends JpaTestSupport {
             List<OrderStatus> distinct =
                     operations.query().selectDistinct(ShopOrder::getStatus).list();
             assertThat(distinct).containsExactlyInAnyOrder(OrderStatus.PAID, OrderStatus.CREATED);
+
+            // 去重查询的 count 必须是 count(distinct ...)，而不是总行数（3）
+            assertThat(operations.query().selectDistinct(ShopOrder::getStatus).count())
+                    .isEqualTo(2L);
+            assertThat(operations.query().select(ShopOrder::getStatus).count()).isEqualTo(3L);
             return null;
         });
     }

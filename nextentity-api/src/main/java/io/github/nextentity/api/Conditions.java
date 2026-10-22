@@ -15,9 +15,6 @@ final class Conditions {
 
     private static final AlwaysTrue<?> ALWAYS_TRUE = new AlwaysTrue<>();
 
-    /// 聚合链错误的统一消息（同一字面量出现 4 次会被 PMD 判重复）。
-    private static final String AGGREGATE_CHAIN = "聚合结果不能再聚合";
-
     private Conditions() {}
 
     /// 条件被短路时的返回值：**不实现 `Op`**，后端遇到它即视为"无附加条件"。
@@ -340,16 +337,15 @@ final class Conditions {
         return new AggregateValue<>(operation, refs);
     }
 
-    static <T> NumberExpression<T, Long> countLike(Operation operation, List<PathRef<?, ?>> refs) {
-        return new AggregateNumber<>(operation, refs);
+    static <T> Expression<T, Long> countLike(Operation operation, List<PathRef<?, ?>> refs) {
+        return new AggregateValue<>(operation, refs);
     }
 
-    static <T, U extends Number> NumberExpression<T, U> numericAggregate(
-            Operation operation, List<PathRef<?, ?>> refs) {
-        return new AggregateNumber<>(operation, refs);
+    static <T, U extends Number> Expression<T, U> numericAggregate(Operation operation, List<PathRef<?, ?>> refs) {
+        return new AggregateValue<>(operation, refs);
     }
 
-    abstract static class AbstractAggregate<T, U> implements Op {
+    abstract static non-sealed class AbstractAggregate<T, U> implements Op {
 
         private final Operation operation;
         private final List<PathRef<?, ?>> refs;
@@ -379,34 +375,6 @@ final class Conditions {
 
         AggregateValue(Operation operation, List<PathRef<?, ?>> refs) {
             super(operation, refs);
-        }
-    }
-
-    static final class AggregateNumber<T, U extends Number> extends AbstractAggregate<T, U>
-            implements NumberExpression<T, U> {
-
-        AggregateNumber(Operation operation, List<PathRef<?, ?>> refs) {
-            super(operation, refs);
-        }
-
-        @Override
-        public NumberExpression<T, U> sum() {
-            throw new UnsupportedOperationException(AGGREGATE_CHAIN);
-        }
-
-        @Override
-        public NumberExpression<T, Long> count() {
-            throw new UnsupportedOperationException(AGGREGATE_CHAIN);
-        }
-
-        @Override
-        public NumberExpression<T, Long> countDistinct() {
-            throw new UnsupportedOperationException(AGGREGATE_CHAIN);
-        }
-
-        @Override
-        public NumberExpression<T, U> max() {
-            throw new UnsupportedOperationException(AGGREGATE_CHAIN);
         }
     }
 }

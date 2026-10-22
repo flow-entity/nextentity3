@@ -25,7 +25,10 @@
 - 嵌套关联路径（`EntityPath.of(A::getB).get(C::getD)`）固定走 **显式 LEFT JOIN**，与 2.2.3 相同；同前缀路径只 join 一次。
 - `single()` 命中多行抛 `IllegalStateException("found more than one result, expected one")`（2.2.3 的 api Javadoc 写的就是 `IllegalStateException`，虽然其实现抛 `NextEntityException`；point-mall 无 `catch` 依赖）。
 - 写入失败改抛标准 JPA 异常（`OptimisticLockException` / `EntityNotFoundException`），不再抛 2.2.3 的 `NextEntityException`。
-- `lock(jakarta.persistence.LockModeType)` 由抽象方法变为 `default`（内部转 `api.LockMode`），以保留 2.2.3 的 3 处存量调用点；抽象方法改为 `lock(api.LockMode)`。
+- `lock(...)` 只接受自研 `LockMode`；2.2.3 的 `lock(jakarta.persistence.LockModeType)` 重载**已删除**，`api` 回归零三方依赖（消费方 3 处调用点改用 `LockMode.PESSIMISTIC_WRITE`，各 1 行）。
+- 聚合方法（`count` / `countDistinct` / `max` / `sum`）统一返回 `Expression`：`max().max()`、`count().count()` 这类"聚合再接聚合"的写法现在**编译期就不可写**（原先编译通过、运行期抛 `UnsupportedOperationException`）。
+- `selectDistinct(...).count()` / `.slice(...)` 现在真正可用：`JpaExecutor.count` 走 `count(distinct 投影列)`，不再显式拒绝（原先抛 `UnsupportedOperationException`）。
+- `Op` 改为 `sealed`：`Op` 是「值 → AST」的线格式，语义由后端按 `operation()` 穷尽解释，不允许外部再实现出后端无法解释的运算。
 - `Path` / `NumberPath` / `StringPath` 不再继承 `PathRef`：`PathRef` 只表示用户写的方法引用，路径值由新增的 `where(Path)` / `where(StringPath)` / `orderBy(Path)` 承载。**为什么必须破**：继承会让后端的 `where(PathRef)` 把 api 值对象当 lambda 解析（`writeReplace()` 抛 `NoSuchMethodException`）。
 
 ### Removed
@@ -75,7 +78,7 @@
 | `Whereable` | 8 个 `where` → 5 个：移除 `where(NumberRef)`、`where(NumberPath)`、`where(EntityPathRef)` | 三个重载 0 调用点；保留的 5 个全部有调用点 |
 | `GroupByStep` / `OrderByStep` | 变长与 `Collection` 重载全部移除 | 0 调用点（`groupBy` 6 处、`orderBy` 138 处全是单参形态） |
 | `OrderOperator` | 移除 14 个终止符 default 转发 | 虚空防御：`OrderOperator` 只该给方向，终止符由 `BaseWhereStep` 继承 `Collector` 提供 |
-| `NumberExpression` | 移除 `add/subtract/multiply/divide/mod`（含 `*IfNotNull`）15 个、`avg()`、`min()` | 全库 `.avg(` / `.min(` 0 调用点；算术表达式非目标 |
+| `NumberExpression` | 整类删除（原先只承载 `sum()` 与 `max()` 的收窄返回类型）；`sum()` 移到 `NumberPath`，聚合方法统一返回 `Expression` | 它存在的唯一效果是让"聚合再接聚合"能编译通过、运行期抛异常；删掉后该写法在编译期即被拒绝 |
 | `StringExpression` | 移除 `notLike/notContains/notStartsWith/notEndsWith`、`startsWith/endsWith`、`lower/upper/substring/trim/length` 及其 `*If*` 变体 | 0 调用点（point-mall 里这些全是 `java.lang.String` 的方法） |
 | `Predicate` | 移除 `not()` / `ofTrue()` / `ofFalse()` 与变长 `and`/`or` | 0 调用点；短路由「不实现 `Op` 的 `Predicate`」表达，恒假由后端从 `IN` + 空参推导 |
 | `EntityPath` / `Path` / `NumberPath` / `StringPath` / `Expression` | 移除 `of(String)`、`of(BooleanRef)`、`of(EntityPathRef)`、`apply(T)`、`get(NumberRef)` 等类型不安全或 0 调用的重载 | 0 调用点；`of(String)` 是 DESIGN §4 明令移除的类型不安全重载 |
@@ -87,7 +90,7 @@
 | `SelectStep` / `GroupByStep` | `select(...)` / `groupBy(...)` 返回 `BaseWhereStep` | `WhereStep`、`HavingStep` 删除后中间步骤收敛为一个；调用点只链 `where/orderBy/slice/list` |
 | `OrderOperator` | `asc()` / `desc()` 返回 `BaseWhereStep` | 去掉「步骤顺序自由化」的中间接口，避免 `groupBy` 之后还能 `.where()` 的非法顺序 |
 | `Whereable` | `where(...)` 返回顶层 `PathOperator` / `StringOperator` | 算子接口拆分后类型名随之变化 |
-| `LockStep` | `lock(LockModeType)` abstract → default；新增抽象 `lock(api.LockMode)` | 保留 3 处存量调用点，同时让 `core` / `core.spec` 不接触 jakarta |
+| `LockStep` | 只保留 `lock(api.LockMode)`；`lock(jakarta.persistence.LockModeType)` 重载删除 | `api` 零三方依赖；3 处存量调用点改用自研枚举，各 1 行 |
 | `Path` / `NumberPath` / `StringPath` | 不再继承 `PathRef` / `PathRef.NumberRef` / `PathRef.StringRef` | 继承会让后端的 `where(PathRef)` 把 api 值对象当 lambda 解析（`writeReplace()` 抛 `NoSuchMethodException`） |
 
 **4. japicmp 报告口径**
@@ -101,4 +104,4 @@
 | `fetch(...)` 无对应能力 | 只影响 SQL 形状/性能，不影响结果集；point-mall 0 调用点 |
 | `@Version` 支持 `Integer` / `Long` | 2.2.3 只支持 `Integer`；point-mall 版本列全为 `integer` |
 | 分组计数需投影非空列 | SQL 的 `count(列)` 不数 NULL，需要「组内实体行数」时应投影主键等非空列（point-mall 6 处分组查询均如此） |
-| `selectDistinct` + `count/slice` 显式拒绝 | 当前 0 调用点；`JpaExecutor.count` 抛 `UnsupportedOperationException` 而不是静默返回错的总数。将来出现调用点时修法在 `QuerySpec.forCount()`（去重计数形状） |
+| `selectDistinct` 的 `count/slice` | 已实现为 `count(distinct 投影列)`（`api` 的 `selectDistinct` 只有单列重载）；去重后行数与实体行数是两个概念，勿混用 |

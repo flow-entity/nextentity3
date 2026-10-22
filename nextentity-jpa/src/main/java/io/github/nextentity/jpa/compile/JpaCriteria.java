@@ -10,7 +10,6 @@ import jakarta.persistence.criteria.Order;
 import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
-import jakarta.persistence.criteria.Selection;
 
 /// 一次编译期的 Criteria 渲染门面：路径（含嵌套 join 缓存）、条件、投影、排序。
 ///
@@ -52,8 +51,8 @@ public final class JpaCriteria {
     /// 渲染投影项。
     ///
     /// @param projection 投影项
-    /// @return Criteria 选择项
-    Selection<?> projection(Projection projection) {
+    /// @return Criteria 表达式（投影项只有路径与聚合两种，必为 `Expression`，可参与 `countDistinct`）
+    public Expression<?> projection(Projection projection) {
         return projections.projection(projection);
     }
 

@@ -15,22 +15,12 @@
     <description>公开 DSL：零三方依赖</description>
 
     <dependencies>
-        <!--
-          唯一登记例外：api 里只有 LockStep.lock(jakarta.persistence.LockModeType) 兼容重载用到它。
-          理由：point-mall 有 3 处存量调用点（OrgShippingService:522、LogisticsOrderRepository:26、
-          WorkflowParallelRepository:29），换成自研枚举会破 D3（改消费方）与 D6（japicmp）。
-          provided：不传递给任何下游，core / core.spec 完全不接触 jakarta。
-        -->
-        <dependency>
-            <groupId>jakarta.persistence</groupId>
-            <artifactId>jakarta.persistence-api</artifactId>
-            <scope>provided</scope>
-        </dependency>
+        <!-- api 零三方依赖：锁模式用自研 api.LockMode，不引入任何持久化/后端类型 -->
     </dependencies>
 
     <build>
         <plugins>
-            <!-- 依赖方向门禁：api 必须零依赖（仅放行上面登记的 jakarta.persistence-api） -->
+            <!-- 依赖方向门禁：api 必须零依赖 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
@@ -48,9 +38,6 @@
                                     <excludes>
                                         <exclude>*:*</exclude>
                                     </excludes>
-                                    <includes>
-                                        <include>jakarta.persistence:jakarta.persistence-api</include>
-                                    </includes>
                                     <message>api 模块必须零三方依赖：任何依赖都应下沉到 core 或后端模块</message>
                                 </bannedDependencies>
                             </rules>

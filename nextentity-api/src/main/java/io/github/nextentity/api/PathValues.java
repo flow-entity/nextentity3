@@ -27,12 +27,12 @@ final class PathValues {
         }
 
         @Override
-        public NumberExpression<T, Long> count() {
+        public Expression<T, Long> count() {
             return Conditions.countLike(Operation.COUNT, refs());
         }
 
         @Override
-        public NumberExpression<T, Long> countDistinct() {
+        public Expression<T, Long> countDistinct() {
             return Conditions.countLike(Operation.COUNT_DISTINCT, refs());
         }
 
@@ -151,13 +151,8 @@ final class PathValues {
         }
 
         @Override
-        public NumberExpression<T, U> sum() {
+        public Expression<T, U> sum() {
             return Conditions.numericAggregate(Operation.SUM, refs());
-        }
-
-        @Override
-        public NumberExpression<T, U> max() {
-            return Conditions.numericAggregate(Operation.MAX, refs());
         }
     }
 
