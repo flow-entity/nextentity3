@@ -19,13 +19,19 @@
             <groupId>io.github.flow-entity</groupId>
             <artifactId>nextentity-api</artifactId>
         </dependency>
-        <dependency>
-            <groupId>io.github.flow-entity</groupId>
-            <artifactId>nextentity-core</artifactId>
-        </dependency>
+        <!-- JUnit 与 AssertJ 由使用方自带（可选依赖）：本模块只是「测试契约」，
+             不该把测试框架版本强加给消费方 -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <!-- 父 pom 的 dependencyManagement 把 assertj 定为 test 作用域；本模块的一致性基类在
+                 src/main 里就用到它，所以显式抬回 compile（仍为 optional，版本由消费方决定） -->
+            <scope>compile</scope>
             <optional>true</optional>
         </dependency>
     </dependencies>
