@@ -93,6 +93,18 @@ class JpaEndToEndTest extends JpaTestSupport {
             assertThat(executor.count(compiler.compile(paid.forCount()))).isEqualTo(1L);
             assertThat(executor.exists(compiler.compile(paid.forExists()))).isTrue();
             assertThat(executor.count(compiler.compile(query(null).forCount()))).isEqualTo(2L);
+
+            // selectDistinct 只有 .list() 调用点：count/slice 需要 count(distinct ...)，显式拒绝而不是数错
+            QuerySpec distinct = new QuerySpec(
+                    ShopOrder.class,
+                    new ValueSelection(List.of(new PathProjection(AttributePath.of(ShopOrder.class, "status"))), true),
+                    null,
+                    List.of(),
+                    List.of(),
+                    Window.NONE,
+                    null);
+            assertThatThrownBy(() -> executor.count(compiler.compile(distinct.forCount())))
+                    .isInstanceOf(UnsupportedOperationException.class);
             return null;
         });
     }

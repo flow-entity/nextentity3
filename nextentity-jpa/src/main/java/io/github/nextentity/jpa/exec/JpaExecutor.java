@@ -61,6 +61,11 @@ public final class JpaExecutor implements Executor<JpaQuery> {
             throw new UnsupportedOperationException(
                     "分组/聚合查询的 count 没有调用点，未实现（2.2.3 走子查询计数：" + spec.entityType().getName() + "）");
         }
+        if (spec.selection() instanceof ValueSelection values && values.distinct()) {
+            // count(1) 数的是总行数，不是去重后的行数：selectDistinct 只有 .list() 调用点，
+            // 与其悄悄返回错的总数，不如在这里显式拒绝（reviewer R-g3 §4 建议）
+            throw new UnsupportedOperationException("selectDistinct 查询的 count/slice 没有调用点，未实现（需要 count(distinct ...)）");
+        }
         CriteriaBuilder builder = entityManager.getCriteriaBuilder();
         CriteriaQuery<Long> countQuery = builder.createQuery(Long.class);
         Root<?> root = countQuery.from(spec.entityType());

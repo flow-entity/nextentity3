@@ -80,35 +80,64 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
         CriteriaBuilder builder = entityManager.getCriteriaBuilder();
         CriteriaUpdate<T> update = builder.createCriteriaUpdate(entityType);
         Root<T> root = update.from(entityType);
+        setValues(entityMeta, entity, update, root, versionValue);
+        update.where(whereClause(builder, root, id, version, idValue, versionValue));
+        if (version != null) {
+            entityManager.detach(entity);
+        }
+
+        int affected = entityManager.createQuery(update).executeUpdate();
+        verifyAffected(affected, version, idValue, versionValue);
+        if (version != null) {
+            version.set(entity, nextVersion(versionValue));
+        }
+    }
+
+    /// 影响行数必须恰好 1：有 `@Version` 时是乐观锁冲突，否则是行不存在（对齐 2.2.3）。
+    private void verifyAffected(int affected, EntityAttribute version, Object idValue, Object versionValue) {
+        if (affected == 1) {
+            return;
+        }
+        String message = "实体 " + entityType.getName() + " 不存在: id=" + idValue;
+        if (version == null) {
+            throw new EntityNotFoundException(message);
+        }
+        throw new OptimisticLockException(message + ", version=" + versionValue);
+    }
+
+    /// 把实体的基本属性写进 SET 子句：跳过主键与关联，版本列写「旧值 + 1」。
+    private void setValues(
+            JpaEntityType<T> entityMeta, T entity, CriteriaUpdate<T> update, Root<T> root, Object versionValue) {
+        EntityAttribute id = entityMeta.id();
+        EntityAttribute version = entityMeta.version();
         for (Map.Entry<String, EntityAttribute> attribute :
                 entityMeta.attributes().entrySet()) {
             String name = attribute.getKey();
             if (name.equals(id.name()) || meta.association(entityType, name)) {
                 continue;
             }
-            if (version != null && name.equals(version.name())) {
-                update.set(root.get(name), nextVersion(versionValue));
-            } else {
-                update.set(root.get(name), attribute.getValue().get(entity));
-            }
+            boolean versionColumn = version != null && name.equals(version.name());
+            update.set(
+                    root.get(name),
+                    versionColumn
+                            ? nextVersion(versionValue)
+                            : attribute.getValue().get(entity));
         }
-        Predicate where = builder.equal(root.get(id.name()), idValue);
-        if (version != null) {
-            where = builder.and(where, builder.equal(root.get(version.name()), versionValue));
-            entityManager.detach(entity);
-        }
-        update.where(where);
+    }
 
-        int affected = entityManager.createQuery(update).executeUpdate();
-        if (affected != 1) {
-            throw version == null
-                    ? new EntityNotFoundException("实体 " + entityType.getName() + " 不存在: id=" + idValue)
-                    : new OptimisticLockException(
-                            "实体 " + entityType.getName() + " 版本冲突或不存在: id=" + idValue + ", version=" + versionValue);
+    /// 主键条件；有 `@Version` 时再叠一个版本条件（2.2.3 的乐观锁写法）。
+    private Predicate whereClause(
+            CriteriaBuilder builder,
+            Root<T> root,
+            EntityAttribute id,
+            EntityAttribute version,
+            Object idValue,
+            Object versionValue) {
+        Predicate byId = builder.equal(root.get(id.name()), idValue);
+        if (version == null) {
+            return byId;
         }
-        if (version != null) {
-            version.set(entity, nextVersion(versionValue));
-        }
+        return builder.and(byId, builder.equal(root.get(version.name()), versionValue));
     }
 
     private static Object nextVersion(Object versionValue) {
