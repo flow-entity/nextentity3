@@ -24,6 +24,18 @@
             <artifactId>jakarta.persistence-api</artifactId>
         </dependency>
 
+        <!-- 测试底座：真实 Hibernate + H2，端到端验证 Criteria 渲染结果（版本由根 pom 托管） -->
+        <dependency>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
