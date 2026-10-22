@@ -74,10 +74,13 @@ public abstract class ProjectionConsistencyTest<T extends Item> extends Consiste
 
     /// `groupBy` + 聚合：point-mall 的 6 处分组查询都是 `select(key, count) … groupBy(key)` 这个形状，
     /// 返回 `List<Tuple2<K, Long>>`，空分组值为 `null`（消费方按 `get1() != null ? get1() : 0L` 兜）。
+    ///
+    /// 计数投影用主键而不是分组列：`count(分组列)` 按 SQL 语义不数 `NULL`（空分组会得 0），
+    /// 消费方要的是「该组实体行数」。
     @Test
     void groupByWithCountAggregate() {
         List<Tuple2<String, Long>> rows = query().select(
-                        Path.of(noteRef()), Path.of(noteRef()).count())
+                        Path.of(noteRef()), Path.of(idRef()).count())
                 .groupBy(noteRef())
                 .list();
 

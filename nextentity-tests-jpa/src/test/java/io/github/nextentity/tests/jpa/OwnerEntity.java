@@ -25,7 +25,7 @@ public class OwnerEntity {
         return this;
     }
 
-    public Long idValue() {
+    public Long id() {
         return id;
     }
 
