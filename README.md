@@ -56,7 +56,7 @@ public interface OrderRepository extends AppRepository<Order, Long> {
 ```bash
 mvn verify              # 全量门禁：格式 + 静态检查 + 单测 + 覆盖率
 mvn -q spotless:apply   # 一键格式化
-mvn -pl nextentity-core test -Ddbc=h2   # 最快回归
+mvn -pl nextentity-core -am test    # 最快回归（无需容器）
 ```
 
-数据库集成测试需要 Docker；日常开发默认只跑 H2。
+集成测试（`nextentity-tests-jpa`）默认跑 H2；MySQL 方言层需要 Docker。
