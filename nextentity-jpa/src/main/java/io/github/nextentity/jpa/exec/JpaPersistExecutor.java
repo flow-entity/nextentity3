@@ -25,6 +25,10 @@ import java.util.Map;
 /// 关联属性不参与 SET（2.2.3 同样只更新基本属性）：point-mall 的外键靠实体列更新，
 /// 不在本接缝的调用点里。
 ///
+/// 与 2.2.3 的差异（reviewer R-g3 记录）：① 异常用标准 JPA 异常（`OptimisticLockException` /
+/// `EntityNotFoundException`）替代 2.2.3 的自定义异常；② `@Version` 支持 Integer 与 Long
+/// （2.2.3 只支持 Integer，其它类型会 `ClassCastException`），point-mall 的 27 处版本列全是 `integer`。
+///
 /// @param <T> 实体类型
 public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
 
@@ -93,7 +97,9 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
         }
     }
 
-    /// 影响行数必须恰好 1：有 `@Version` 时是乐观锁冲突，否则是行不存在（对齐 2.2.3）。
+    /// 影响行数必须恰好 1：有 `@Version` 时是乐观锁冲突（`OptimisticLockException`），
+    /// 否则是行不存在。异常类型是 3.x 的决定：**用标准 JPA 异常替代 2.2.3 的自定义异常**
+    /// （2.2.3 抛 `NextEntityException("Entity not found with id: …")`），point-mall 无 catch 依赖。
     private void verifyAffected(int affected, EntityAttribute version, Object idValue, Object versionValue) {
         if (affected == 1) {
             return;
