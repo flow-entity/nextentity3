@@ -31,9 +31,11 @@ testing / tests-jpa / arch / benchmarks 仅被测试与 CI 使用
 | 模块 | 放什么 | 不放什么 |
 |---|---|---|
 | `api` | 用户写查询会 import 的一切：`Path`、`PathRef`、`Predicate`、步骤接口、`Slice`、`Tuple2~4`、`LockMode` | 任何 `jakarta.*`、`org.hibernate.*`、`org.springframework.*`、任何工具类 |
-| `core` | `Meta`（属性解析）、`Spec`（AST）、`Compiler<S>`/`Executor<S>`（接缝）、`PersistExecutor`、`TransactionOperations`、`AbstractRepository` | JPA/Criteria 类型、Spring 类型、SQL 字符串 |
-| `jpa` | `JpaMeta`、`JpaCompiler`、`JpaExecutor`、`JpaPersistExecutor`、`JpaTransactionOperations` | Spring 类型（由 `spring` 模块桥接） |
-| `spring` | `NextEntityAutoConfiguration`、属性绑定、`@Bean` 装配 | 查询逻辑 |
+| `core` | `Meta`（属性解析）、`Spec`（AST）、`Compiler<S>`/`Executor<S>`（接缝）、`PersistExecutor`、`EntityOperationsFactory`/`EntityOperations`、`TransactionOperations` | JPA/Criteria 类型、Spring 类型、SQL 字符串 |
+| `jpa` | `JpaMeta`、`JpaCompiler`、`JpaExecutor`、`JpaPersistExecutor`、`JpaEntityOperationsFactory` | Spring 类型（由 `spring` 模块桥接） |
+| `spring` | `NextEntityAutoConfiguration`、属性绑定、`@Bean` 装配、`AbstractRepository`（构造器注入 `EntityOperationsFactory` + `query()` + `insert(T)`） | 查询逻辑 |
+
+> `AbstractRepository` 放在 `spring` 而不是 `core`：它是 Spring 侧给消费方的仓储基类，且存量调用方（point-mall `AppVersionRepository`）直接 `import io.github.nextentity.spring.AbstractRepository`；放进 `core` 会迫使消费方改文件。
 | `arch` | ArchUnit 规则：模块循环、core 包边界、`spec` 纯净与不可变、时间/随机注入、接口宽度 | 任何业务逻辑；只有测试代码 |
 
 依赖方向与零依赖要求是硬约束，见 [AGENTS.md](../AGENTS.md)「依赖方向单向」；由各模块 `maven-enforcer-plugin` 的 `bannedDependencies`（编译期）与 `nextentity-arch` 的 ArchUnit 规则双重校验。
@@ -90,7 +92,7 @@ S  （后端语句）
 | `BaseWhereStep<T,U>` 的第二类型参数恒等于第一（存量代码写 `<Order,Order>`） | 新增 `WhereStep<T>` 别名作为 `where()` 返回类型；旧接口保留 |
 | 92 个 `*IfNotNull` / `*IfNotEmpty` | 统一为 `*IfPresent`，旧方法转 default 委托并标 `@Deprecated` |
 | `Tuple5`~`Tuple10` | 停止演进，用 DTO/record 投影替代 |
-| `lock(LockModeType)` 把 `jakarta.persistence` 带入 `api` | 改为自研 `LockMode`；旧重载移入 `jpa` 模块 |
+| `lock(LockModeType)` 把 `jakarta.persistence` 带入 `api` | `api` 提供自研 `LockMode` + `lock(LockMode)`；`lock(jakarta.persistence.LockModeType)` 保留为 `default` 兼容重载（`api` 唯一的 `provided` 依赖），使 3 处存量调用点零改动、japicmp 无差异 |
 | `EntityPath.of(String)` 等类型不安全重载 | 移除 |
 
 ---
@@ -125,7 +127,7 @@ S  （后端语句）
 4. `Meta` 接口化，JPA 实现内部走 `EntityManager.getMetamodel()`；JDBC 实现将来走反射/注解扫描。
 5. `LockMode` 用自研枚举，不引 `jakarta.persistence`。
 6. `PersistExecutor` 接口化（insert/update/delete/批量）。
-7. `TransactionOperations` 接口化，`spring` 模块用 `TransactionTemplate` 实现。
+7. `TransactionOperations` 接口化。**当前未实**：`spring` 侧没有消费者（point-mall 写入靠 `@Transactional`，id-generator 用自己的 `TransactionTemplate`），按「不写没有调用点的抽象」只保留接口，不注册 bean；出现真实消费者时再补 `spring` 实现。
 8. `nextentity-testing` 的一致性基类只依赖接口，新后端必须通过同一套。
 
 准入条件（三条同时满足才允许新增 `nextentity-jdbc`）：出现 Hibernate 无法满足的明确需求；`Spec.Raw` 原生片段 / Criteria native query 逃生口顶不住；能通过一致性测试。
