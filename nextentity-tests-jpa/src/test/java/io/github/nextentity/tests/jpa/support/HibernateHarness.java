@@ -4,6 +4,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import org.hibernate.SessionFactory;
 import org.hibernate.cfg.Configuration;
 
@@ -70,6 +71,18 @@ public final class HibernateHarness implements AutoCloseable {
         entityManager.getTransaction().begin();
         work.accept(entityManager);
         entityManager.getTransaction().commit();
+    }
+
+    /// 在事务里跑一段查询并返回结果（悲观锁这类语句必须在事务内执行）。
+    ///
+    /// @param work 事务体
+    /// @param <R>  结果类型
+    /// @return 事务体返回值
+    public <R> R inTransaction(Supplier<R> work) {
+        entityManager.getTransaction().begin();
+        R result = work.get();
+        entityManager.getTransaction().commit();
+        return result;
     }
 
     /// 取走已抓到的 SQL，并清空账本。

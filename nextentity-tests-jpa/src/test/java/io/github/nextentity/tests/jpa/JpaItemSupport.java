@@ -4,21 +4,16 @@ import io.github.nextentity.api.EntityQuery;
 import io.github.nextentity.api.PathRef;
 import io.github.nextentity.core.EntityOperationsFactory;
 import io.github.nextentity.core.repo.EntityOperations;
-import io.github.nextentity.core.repo.SimpleEntityOperationsFactory;
-import io.github.nextentity.jpa.compile.JpaCompiler;
-import io.github.nextentity.jpa.compile.JpaQuery;
-import io.github.nextentity.jpa.exec.JpaExecutor;
-import io.github.nextentity.jpa.exec.JpaPersistExecutor;
-import io.github.nextentity.jpa.meta.JpaMeta;
+import io.github.nextentity.jpa.JpaEntityOperationsFactory;
 import io.github.nextentity.testing.ConsistencySupport;
 import io.github.nextentity.tests.jpa.support.HibernateHarness;
-import jakarta.persistence.EntityManager;
 import java.util.List;
+import java.util.function.Supplier;
 
-/// 一致性用例的 JPA 接线：起 H2、按生产同款方式装出 `EntityOperations`、清表并写夹具。
+/// 一致性用例的 JPA 接线：起 H2、用生产同款工厂取操作入口、清表并写夹具。
 ///
-/// 装配走 core 的 `SimpleEntityOperationsFactory`（与 `NextEntityAutoConfiguration` 同一份装配逻辑），
-/// 这样一致性用例验证的正是生产路径的实现，而不是测试专用的旁路。
+/// 装配走 `JpaEntityOperationsFactory`（`NextEntityAutoConfiguration` 里注册的就是它），
+/// 因此一致性用例验证的是生产路径，而不是测试专用旁路。
 final class JpaItemSupport implements ConsistencySupport<ItemEntity>, AutoCloseable {
 
     private static final String CLEAR_ALL = "delete from ItemEntity";
@@ -28,13 +23,8 @@ final class JpaItemSupport implements ConsistencySupport<ItemEntity>, AutoClosea
 
     JpaItemSupport(String databaseName) {
         this.harness = HibernateHarness.start(databaseName, ItemEntity.class);
-        JpaMeta meta = new JpaMeta(harness.entityManagerFactory());
-        EntityManager entityManager = harness.entityManager();
-        EntityOperationsFactory factory = new SimpleEntityOperationsFactory<JpaQuery>(
-                meta::entityType,
-                new JpaCompiler(entityManager, meta),
-                new JpaExecutor(entityManager, meta),
-                entityType -> new JpaPersistExecutor<>(entityManager, meta, entityType));
+        EntityOperationsFactory factory =
+                new JpaEntityOperationsFactory(harness.entityManager(), harness.entityManagerFactory());
         this.operations = factory.operations(ItemEntity.class);
     }
 
@@ -75,6 +65,27 @@ final class JpaItemSupport implements ConsistencySupport<ItemEntity>, AutoClosea
     @Override
     public PathRef.StringRef<ItemEntity> noteRef() {
         return ItemEntity::note;
+    }
+
+    /// 在事务里执行并返回结果（悲观锁等要求事务的查询用得到）。
+    ///
+    /// @param work 事务体
+    /// @param <R>  结果类型
+    /// @return 事务体返回值
+    <R> R inTransaction(Supplier<R> work) {
+        return harness.inTransaction(work);
+    }
+
+    /// 取走已抓到的 SQL。
+    ///
+    /// @return SQL 列表
+    List<String> drainSql() {
+        return harness.drainSql();
+    }
+
+    /// 清空 SQL 账本。
+    void clearSql() {
+        harness.clearSql();
     }
 
     @Override
