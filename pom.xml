@@ -31,6 +31,8 @@
         <!-- 运行时依赖版本 -->
         <jakarta.persistence.version>3.2.0</jakarta.persistence.version>
         <spring-boot.version>4.0.0</spring-boot.version>
+        <!-- 与 point-mall 实际解析到的 hibernate-core 对齐（mvn -f point-mall dependency:tree -Dincludes=org.hibernate.orm） -->
+        <hibernate.version>7.1.8.Final</hibernate.version>
 
         <!-- 测试依赖版本 -->
         <junit.version>5.11.4</junit.version>
@@ -88,6 +90,13 @@
                 <groupId>jakarta.persistence</groupId>
                 <artifactId>jakarta.persistence-api</artifactId>
                 <version>${jakarta.persistence.version}</version>
+            </dependency>
+
+            <!-- Hibernate 只在 jpa/spring 的测试期需要；scope 由使用方声明 -->
+            <dependency>
+                <groupId>org.hibernate.orm</groupId>
+                <artifactId>hibernate-core</artifactId>
+                <version>${hibernate.version}</version>
             </dependency>
 
             <dependency>
