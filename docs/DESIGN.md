@@ -30,7 +30,7 @@ testing / tests-jpa / arch / benchmarks 仅被测试与 CI 使用
 
 | 模块 | 放什么 | 不放什么 |
 |---|---|---|
-| `api` | 用户写查询会 import 的一切：`Path`、`PathRef`、`Predicate`、步骤接口、`Slice`、`Tuple2~4`、`LockMode` | 任何 `jakarta.*`、`org.hibernate.*`、`org.springframework.*`、任何工具类 |
+| `api` | 用户写查询会 import 的一切：`Path`、`PathRef`、`EntityPath`、`Predicate`、`Op`/`Operation`、步骤接口、`Slice`、`Tuple2`、`LockMode` | `jakarta.*`（唯一例外：`jakarta.persistence-api:provided`，仅供 §7 的 `lock` 兼容重载）、`org.hibernate.*`、`org.springframework.*`、任何工具类 |
 | `core` | `Meta`（属性解析）、`Spec`（AST）、`Compiler<S>`/`Executor<S>`（接缝）、`PersistExecutor`、`EntityOperationsFactory`/`EntityOperations`、`TransactionOperations` | JPA/Criteria 类型、Spring 类型、SQL 字符串 |
 | `jpa` | `JpaMeta`、`JpaCompiler`、`JpaExecutor`、`JpaPersistExecutor`、`JpaEntityOperationsFactory` | Spring 类型（由 `spring` 模块桥接） |
 | `spring` | `NextEntityAutoConfiguration`、属性绑定、`@Bean` 装配、`AbstractRepository`（构造器注入 `EntityOperationsFactory` + `query()` + `insert(T)`） | 查询逻辑 |
@@ -62,7 +62,7 @@ S  （后端语句）
 | 层 | 职责 | 边界判据 |
 |---|---|---|
 | `meta` | 方法引用 → `EntityAttribute`；缓存解析结果 | 只认 JPA 映射注解，不认业务语义 |
-| `builder` | 步骤接口 → `Spec` 节点；可选条件（`eqIfPresent`）在此短路 | 不产生 SQL/Criteria，不做类型转换以外的逻辑 |
+| `builder` | 步骤接口 → `Spec` 节点；可选条件（`eqIfNotNull` / `containsIfNotEmpty`）在此短路 | 不产生 SQL/Criteria，不做类型转换以外的逻辑 |
 | `spec` | 不可变 AST：`Comparison`/`In`/`Null`/`Logical`/`Function`/`Raw`/`Projection`/`Ordering`/`Window` | 不含任何后端类型，可序列化、可断言、可复用 |
 | `compile` | `Spec → S`，唯一渲染出口 | 一个 `switch` 分支处理一个节点，穷尽性由编译器保证 |
 | `exec` | 执行、分页计数、结果装配（实体/Tuple/DTO）、锁模式 | 不解释条件语义 |
@@ -80,8 +80,8 @@ S  （后端语句）
 |---|---|
 | `Path` / `PathRef` / `EntityPath` | `core.meta.*` 实现类 |
 | 步骤接口：`EntityQuery`、`BaseWhereStep`、`SelectStep`、`OrderByStep`、`Collector`、`Executable` | `core.spec.*` 全部节点 |
-| 谓词算子（`eq`/`in`/`gt`/`between`/`like` 家族、`*IfPresent`） | `core.compile.*`、`core.exec.*` |
-| `Slice` / `Tuple2`~`Tuple4` / `LockMode` | `jpa.*`、`spring.*` |
+| 谓词算子（`eq`/`in`/`gt`/`between`/`like` 家族、`*IfNotNull`/`*IfNotEmpty`） | `core.compile.*`、`core.exec.*` |
+| `Slice` / `Tuple2` / `LockMode` | `jpa.*`、`spring.*` |
 
 微调预算与破坏性变更的前置条件见 [AGENTS.md](../AGENTS.md)「公开 API 是契约」。
 
@@ -89,11 +89,11 @@ S  （后端语句）
 
 | 项 | 处理 |
 |---|---|
-| `BaseWhereStep<T,U>` 的第二类型参数恒等于第一（存量代码写 `<Order,Order>`） | 新增 `WhereStep<T>` 别名作为 `where()` 返回类型；旧接口保留 |
-| 92 个 `*IfNotNull` / `*IfNotEmpty` | 统一为 `*IfPresent`，旧方法转 default 委托并标 `@Deprecated` |
+| `BaseWhereStep<T,U>` 的第二类型参数恒等于第一（存量代码写 `<Order,Order>`） | **不实施**：`WhereStep<T>` 别名需要额外一层接口，而存量调用点全部容忍现状（0 处显式声明该类型为变量类型），收益为零 |
+| 92 个 `*IfNotNull` / `*IfNotEmpty` | **已否决**：改名为 `*IfPresent` 要动 point-mall 154 处 `eqIfNotNull` 等调用点（破 D2/D3），且新名字并不更准确；保留 2.2.3 命名 |
 | `Tuple5`~`Tuple10` | 停止演进，用 DTO/record 投影替代 |
 | `lock(LockModeType)` 把 `jakarta.persistence` 带入 `api` | `api` 提供自研 `LockMode` + `lock(LockMode)`；`lock(jakarta.persistence.LockModeType)` 保留为 `default` 兼容重载（`api` 唯一的 `provided` 依赖），使 3 处存量调用点零改动、japicmp 无差异 |
-| `EntityPath.of(String)` 等类型不安全重载 | 移除 |
+| `EntityPath.of(String)` 等类型不安全重载 | 已移除 |
 
 ---
 
