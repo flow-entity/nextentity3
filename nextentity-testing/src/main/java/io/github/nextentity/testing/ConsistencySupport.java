@@ -14,6 +14,9 @@ import java.util.List;
 /// - {@link #query()} 每次返回全新入口，条件不得跨用例累积；
 /// - 属性引用必须是方法引用（后端实体上真实存在的属性）。
 ///
+/// 双列投影必须传 `Path.of(...)`（`Expression`）而不是裸 `PathRef`：point-mall 的 6 处双列投影
+/// 调用点全部传 `Path.of(...)`，裸 `PathRef` 不在契约内，因此实现方**不必**为它加兼容分支。
+///
 /// @param <T> 后端实体类型
 public interface ConsistencySupport<T extends Item> {
 
