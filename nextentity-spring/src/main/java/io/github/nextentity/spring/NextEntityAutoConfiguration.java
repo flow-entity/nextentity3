@@ -1,11 +1,7 @@
 package io.github.nextentity.spring;
 
 import io.github.nextentity.core.EntityOperationsFactory;
-import io.github.nextentity.core.repo.SimpleEntityOperationsFactory;
-import io.github.nextentity.jpa.compile.JpaCompiler;
-import io.github.nextentity.jpa.exec.JpaExecutor;
-import io.github.nextentity.jpa.exec.JpaPersistExecutor;
-import io.github.nextentity.jpa.meta.JpaMeta;
+import io.github.nextentity.jpa.JpaEntityOperationsFactory;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -23,8 +19,7 @@ import org.springframework.context.annotation.Bean;
 /// 开关语义：`nextentity.enabled=true` 才装配（point-mall `application.yml:141-142`）。
 /// 未配置或为 `false` 时本配置不生效，context 里就没有工厂 bean。
 ///
-/// 装配内容：JPA 后端提供四个零件（`JpaMeta` / `JpaCompiler` / `JpaExecutor` /
-/// `JpaPersistExecutor`），由 core 的 `SimpleEntityOperationsFactory` 拼成工厂；
+/// JPA 后端的零件装配在 `JpaEntityOperationsFactory` 里（本模块只做「拿到两个 JPA bean → 交给它」），
 /// 查询语义与分页组成不在本模块（TEAM-CONTRACT §3）。
 @AutoConfiguration
 @ConditionalOnProperty(prefix = "nextentity", name = "enabled", havingValue = "true")
@@ -32,20 +27,12 @@ public class NextEntityAutoConfiguration {
 
     /// 唯一的实体操作工厂。
     ///
-    /// `JpaMeta` 用 `EntityManagerFactory` 建一次（元模型是应用级、内部有缓存）；
-    /// 编译器 / 执行器 / 写入执行器吃 Spring 注入的 `EntityManager` 代理（事务绑定那个）。
-    ///
-    /// @param entityManagerFactory 实体管理器工厂
-    /// @param entityManager        实体管理器代理
+    /// @param entityManagerFactory 实体管理器工厂（元模型从这里解析一次并缓存）
+    /// @param entityManager        实体管理器代理（Spring 注入的是事务绑定的那个）
     /// @return 工厂 bean
     @Bean
     public EntityOperationsFactory entityOperationsFactory(
             EntityManagerFactory entityManagerFactory, EntityManager entityManager) {
-        JpaMeta meta = new JpaMeta(entityManagerFactory);
-        return new SimpleEntityOperationsFactory<>(
-                meta::entityType,
-                new JpaCompiler(entityManager, meta),
-                new JpaExecutor(entityManager, meta),
-                entityType -> new JpaPersistExecutor<>(entityManager, meta, entityType));
+        return new JpaEntityOperationsFactory(entityManager, entityManagerFactory);
     }
 }
