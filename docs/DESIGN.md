@@ -79,9 +79,9 @@ S  （后端语句）
 | 稳定（承诺兼容） | 内部（不承诺） |
 |---|---|
 | `Path` / `PathRef` / `EntityPath` | `core.meta.*` 实现类 |
-| 步骤接口：`EntityQuery`、`BaseWhereStep`、`SelectStep`、`OrderByStep`、`Collector`、`Executable` | `core.spec.*` 全部节点 |
-| 谓词算子（`eq`/`in`/`gt`/`between`/`like` 家族、`*IfNotNull`/`*IfNotEmpty`） | `core.compile.*`、`core.exec.*` |
-| `Slice` / `Tuple2` / `LockMode` | `jpa.*`、`spring.*` |
+| 步骤接口：`EntityQuery`、`BaseWhereStep`、`Whereable`、`SelectStep`、`GroupByStep`、`OrderByStep`、`SliceStep`、`LockStep`、`Collector` | `core.spec.*` 全部节点 |
+| 谓词算子（`eq`/`in`/`gt`/`between`/`contains` 家族、`*IfNotNull`/`*IfNotEmpty`） | `core.compile.*`、`core.exec.*` |
+| `Slice` / `Tuple2` / `LockMode` / `Op`+`Operation` | `jpa.*`、`spring.*` |
 
 微调预算与破坏性变更的前置条件见 [AGENTS.md](../AGENTS.md)「公开 API 是契约」。
 
@@ -104,7 +104,7 @@ S  （后端语句）
 | 层 | 测什么 | 依赖 | 位置 |
 |---|---|---|---|
 | 0. 架构门禁 | 模块循环、`core` 包边界、`spec` 纯净与不可变、时间/随机注入 | 无 | `nextentity-arch` |
-| 1. Spec 单测 | builder 调用 → AST 结构（对象断言） | 无 | `api`/`core` 的 `src/test` |
+| 1. Spec 单测 | builder 调用 → AST 结构（对象断言） | 无 | `core` 的 `src/test`（`api` 无测试源码：零依赖口径不引入 test-scope 依赖，值层断言放 `nextentity-testing`） |
 | 2. 编译快照 | Spec → SQL（H2 + `StatementInspector` 抓取，逐字断言） | H2 | `nextentity-tests-jpa` |
 | 3. 一致性 | 能力而非 SQL 文本：条件/分页/聚合/投影/写入/乐观锁 | 仅 `api`+`core` 接口 | `nextentity-testing` 抽象基类，由 jpa 子类继承 |
 | 4. 集成 | 真实方言、`@Convert`、并发乐观锁 | Docker | `nextentity-tests-jpa` |
