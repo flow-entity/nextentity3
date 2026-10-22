@@ -1,60 +1,29 @@
 package io.github.nextentity.core.spec;
 
-/// 比较算子。
+/// 比较算子：`路径 算子 值` 的单值形态。
 ///
-/// 每个算子声明自己是否需要比较值，构造 `Comparison` 时据此校验，避免出现
-/// 「IS NULL 还带值」这类非法节点。
+/// 集合形态（`IN`/`NOT IN`）由 {@link In} 承担，空值判断由 {@link NullCheck} 承担，
+/// 闭区间由 {@link Between} 承担——每个算子只表达一种形状，编译器因此不必在分支里判空。
 public enum ComparisonOperator {
 
     /// 等于。
-    EQ(true),
+    EQ,
 
     /// 不等于。
-    NE(true),
+    NE,
 
     /// 大于。
-    GT(true),
+    GT,
 
     /// 大于等于。
-    GE(true),
+    GE,
 
     /// 小于。
-    LT(true),
+    LT,
 
     /// 小于等于。
-    LE(true),
+    LE,
 
-    /// 模糊匹配。
-    LIKE(true),
-
-    /// 模糊不匹配。
-    NOT_LIKE(true),
-
-    /// 属于集合。
-    IN(true),
-
-    /// 不属于集合。
-    NOT_IN(true),
-
-    /// 闭区间。
-    BETWEEN(true),
-
-    /// 为空。
-    IS_NULL(false),
-
-    /// 不为空。
-    IS_NOT_NULL(false);
-
-    private final boolean valueRequired;
-
-    ComparisonOperator(boolean valueRequired) {
-        this.valueRequired = valueRequired;
-    }
-
-    /// 是否需要比较值。
-    ///
-    /// @return 需要返回 true
-    public boolean valueRequired() {
-        return valueRequired;
-    }
+    /// 模糊匹配（`%v%` 由 builder 拼好，见 `contains`）。
+    LIKE
 }
