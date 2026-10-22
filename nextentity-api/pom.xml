@@ -83,8 +83,7 @@
                             <include>io.github.nextentity.api.*</include>
                         </includes>
                         <onlyModified>false</onlyModified>
-                        <breakBuildOnBinaryIncompatibleModifications>true</breakBuildOnBinaryIncompatibleModifications>
-                        <breakBuildOnSourceIncompatibleModifications>true</breakBuildOnSourceIncompatibleModifications>
+                        <breakBuildBasedOnSemanticVersioning>true</breakBuildBasedOnSemanticVersioning>
                         <ignoreMissingClasses>false</ignoreMissingClasses>
                     </parameter>
                 </configuration>
@@ -114,5 +113,6 @@
         <japicmp.oldVersion>2.2.3</japicmp.oldVersion>
     </properties>
 </project>
+
 
 

@@ -8,6 +8,9 @@ package io.github.nextentity.api;
 ///
 /// 这个枚举是 **值到 AST 的线格式**，不是第二套 AST：把常量翻译成 `core.spec` 节点是后端的
 /// 唯一职责，且后端必须用**无 `default` 的 `switch` 表达式**遍历，新增常量会让后端编译失败。
+///
+/// 注意：**不实现 `Op` 的 `Predicate`** 不是任何一种运算，而是 `*IfNotNull`/`*IfNotEmpty`
+/// 短路产生的占位（恒真）；后端遇到它应视为"无附加条件"，不要为它建节点。
 public enum Operation {
 
     /// 等于。
