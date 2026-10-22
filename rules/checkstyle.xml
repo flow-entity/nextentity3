@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+    "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+    "https://checkstyle.org/dtds/configuration_1_3.dtd">
+<module name="Checker">
+    <!-- 文档注释统一使用 /// 行注释风格，禁止 /** */ 块注释 -->
+    <module name="RegexpMultiline">
+        <property name="format" value="^[ \t]*/\*\*"/>
+        <property name="message" value="文档注释请使用 /// 行注释风格，不要用 /** */"/>
+    </module>
+
+    <!-- catch 块吞异常后返回默认值：AI「让它先跑通」的首选手法，也是不可测试代码的源头。
+         豁免：在 return 前一行写 // checkstyle-ignore 并说明理由。 -->
+    <module name="RegexpMultiline">
+        <property name="format"
+                  value="catch\s*\([^)]*\)\s*\{\s*(?:(?!checkstyle-ignore)//[^\n]*\s*)*return\s+(?:null|false|true|0|List\.of\(\)|Map\.of\(\)|Collections\.empty\w*\(\)|Optional\.empty\(\))\s*;"/>
+        <property name="message"
+                  value="catch 块不得吞掉异常后返回默认值：向上抛出，或返回显式的结果类型；确属有意忽略请写 // checkstyle-ignore 说明理由"/>
+    </module>
+
+    <module name="TreeWalker">
+        <!-- 禁止使用全类名（FQN），统一 import + 短类名 -->
+        <module name="RegexpSinglelineJava">
+            <property name="format" value="^(?!.*(?:import|package)\s+io\.github\.nextentity\.).*\bio\.github\.nextentity(?:\.\w+)*\.[A-Z]\w*"/>
+            <property name="message" value="禁止使用全类名（FQN），请用 import + 短类名"/>
+            <property name="ignoreComments" value="true"/>
+        </module>
+        <module name="RegexpSinglelineJava">
+            <property name="format" value="^(?!.*(?:import|package)\s+java\.).*\bjava\.\w+\.[A-Z]\w*"/>
+            <property name="message" value="禁止使用全类名（FQN），请用 import + 短类名"/>
+            <property name="ignoreComments" value="true"/>
+        </module>
+        <module name="RegexpSinglelineJava">
+            <property name="format" value="^(?!.*(?:import|package)\s+jakarta\.).*\bjakarta\.\w+\.[A-Z]\w*"/>
+            <property name="message" value="禁止使用全类名（FQN），请用 import + 短类名"/>
+            <property name="ignoreComments" value="true"/>
+        </module>
+        <module name="RegexpSinglelineJava">
+            <property name="format" value="^(?!.*(?:import|package)\s+org\.springframework\.).*\borg\.springframework\.\w+\.[A-Z]\w*"/>
+            <property name="message" value="禁止使用全类名（FQN），请用 import + 短类名"/>
+            <property name="ignoreComments" value="true"/>
+        </module>
+
+        <!-- 库代码不允许直接打印 -->
+        <module name="RegexpSinglelineJava">
+            <property name="format" value="System\.(out|err)\.print"/>
+            <property name="message" value="库代码禁止 System.out/System.err 打印；调试信息请通过日志或返回诊断结果"/>
+            <property name="ignoreComments" value="true"/>
+        </module>
+
+        <!-- 禁止无意义 TODO/FIXME 遗留（请改写成具体条件或删除） -->
+        <module name="RegexpSinglelineJava">
+            <property name="format" value="(TODO|FIXME):"/>
+            <property name="message" value="不要遗留 TODO/FIXME：要么当场实现，要么写成 docs 中的已知限制"/>
+            <property name="ignoreComments" value="true"/>
+        </module>
+    </module>
+</module>

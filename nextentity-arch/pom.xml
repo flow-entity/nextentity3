@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.flow-entity</groupId>
+        <artifactId>nextentity</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>nextentity-arch</artifactId>
+    <name>nextentity-arch</name>
+    <description>架构门禁：依赖方向、包边界、可测试性约束</description>
+
+    <!--
+      本模块只有测试代码，不出产物。它必须依赖全部实现模块：ArchUnit 只能看到
+      classpath 上的类，规则放在 core 里就永远看不到 jpa / spring。
+    -->
+    <dependencies>
+        <dependency>
+            <groupId>io.github.flow-entity</groupId>
+            <artifactId>nextentity-api</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.github.flow-entity</groupId>
+            <artifactId>nextentity-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.github.flow-entity</groupId>
+            <artifactId>nextentity-jpa</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.github.flow-entity</groupId>
+            <artifactId>nextentity-spring</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <properties>
+        <!-- 没有 main 字节码，跳过二进制扫描；覆盖率门槛沿用父 pom 的 skip=true -->
+        <spotbugs.skip>true</spotbugs.skip>
+    </properties>
+</project>

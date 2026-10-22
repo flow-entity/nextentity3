@@ -1,0 +1,110 @@
+<?xml version="1.0"?>
+<ruleset name="nextentity-pmd"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0
+                             https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
+    <description>nextentity PMD 规则集：只保留与「库代码质量」相关的规则</description>
+
+    <!-- 未使用的 private 方法 -->
+    <rule ref="category/java/bestpractices.xml/UnusedPrivateMethod"/>
+
+    <!-- 空 catch 块 -->
+    <rule ref="category/java/errorprone.xml/EmptyCatchBlock">
+        <properties>
+            <property name="allowCommentedBlocks" value="true"/>
+        </properties>
+    </rule>
+
+    <!-- 异常栈只记录不吞 -->
+    <rule ref="category/java/bestpractices.xml/AvoidPrintStackTrace"/>
+
+    <!-- 捕获过宽异常：Exception / RuntimeException / Throwable -->
+    <rule ref="category/java/design.xml/AvoidCatchingGenericException"/>
+
+    <!-- 嵌套深度 > 3 -->
+    <rule ref="category/java/design.xml/AvoidDeeplyNestedIfStmts">
+        <properties>
+            <property name="problemDepth" value="3"/>
+        </properties>
+    </rule>
+
+    <!-- 资源未关闭 -->
+    <rule ref="category/java/errorprone.xml/CloseResource"/>
+
+    <!-- 声明接口类型而非具体实现 -->
+    <rule ref="category/java/bestpractices.xml/LooseCoupling"/>
+
+    <!-- 可 final 的字段 -->
+    <rule ref="category/java/design.xml/ImmutableField"/>
+
+    <!-- 方法/类过长：方法 60 NCSS、类 300 NCSS -->
+    <rule ref="category/java/design.xml/NcssCount">
+        <properties>
+            <property name="methodReportLevel" value="60"/>
+            <property name="classReportLevel" value="300"/>
+        </properties>
+    </rule>
+
+    <!-- 字段过多 -->
+    <rule ref="category/java/design.xml/TooManyFields">
+        <properties>
+            <property name="maxfields" value="15"/>
+        </properties>
+    </rule>
+
+    <!-- 类的方法数上限：与「接口方法 ≤ 6」同一尺度，挡住上帝类 -->
+    <rule ref="category/java/design.xml/TooManyMethods">
+        <properties>
+            <property name="maxmethods" value="12"/>
+        </properties>
+    </rule>
+
+    <!-- 参数过多：PMD 内置 ExcessiveParameterList 的阈值固定为 10，这里收紧到 6 -->
+    <rule name="ExcessiveParameterListSix"
+          language="java"
+          message="参数超过 6 个：引入参数对象，或说明这个方法在做多件事"
+          class="net.sourceforge.pmd.lang.rule.xpath.XPathRule">
+        <description>方法参数超过 6 个。</description>
+        <priority>3</priority>
+        <properties>
+            <property name="xpath">
+                <value><![CDATA[
+//FormalParameters[count(FormalParameter) > 6]
+                ]]></value>
+            </property>
+        </properties>
+    </rule>
+
+    <!-- 圈复杂度：方法 10、类 60 -->
+    <rule ref="category/java/design.xml/CyclomaticComplexity">
+        <properties>
+            <property name="methodReportLevel" value="10"/>
+            <property name="classReportLevel" value="60"/>
+        </properties>
+    </rule>
+
+    <!-- 对象耦合度：单个类依赖的外部类型上限 -->
+    <rule ref="category/java/design.xml/CouplingBetweenObjects">
+        <properties>
+            <property name="threshold" value="20"/>
+        </properties>
+    </rule>
+
+    <!-- 过时 API -->
+    <rule ref="category/java/bestpractices.xml/PrimitiveWrapperInstantiation"/>
+    <rule ref="category/java/bestpractices.xml/UseStandardCharsets"/>
+
+    <!-- 未使用的全类名 -->
+    <rule ref="category/java/codestyle.xml/UnnecessaryFullyQualifiedName"/>
+
+    <!-- 重复字面量：同一字符串出现 ≥3 次即报错 -->
+    <rule ref="category/java/errorprone.xml/AvoidDuplicateLiterals">
+        <properties>
+            <property name="maxDuplicateLiterals" value="2"/>
+            <property name="minimumLength" value="4"/>
+            <property name="skipAnnotations" value="true"/>
+        </properties>
+    </rule>
+</ruleset>

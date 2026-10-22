@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter
+    xmlns="https://github.com/spotbugs/filter/4.8.6"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="https://github.com/spotbugs/filter/4.8.6
+                        https://raw.githubusercontent.com/spotbugs/spotbugs/release-4.8.6/spotbugs/etc/findbugsfilter.xsd">
+
+    <!-- Spec 节点、Tuple、Slice 等不可变数据载体：内部集合不复制 -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- 不可变数据类天然会返回可变集合，按设计接受 -->
+    <Match>
+        <Bug pattern="MS_EXPOSE_REP"/>
+    </Match>
+
+</FindBugsFilter>

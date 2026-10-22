@@ -1,0 +1,19 @@
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+### IDE ###
+.idea/
+.classpath
+.project
+.settings/
+*.iml
+.factorypath
+
+### OS ###
+.DS_Store
+Thumbs.db
+
+### 本地覆盖 ###
+*-local.*
+/tmp/
+.worktree/

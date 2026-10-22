@@ -1,0 +1,26 @@
+#!/bin/sh
+#
+# pre-commit：提交前自动格式化 + 全量门禁（格式/静态检查/单测/覆盖率）
+# 安装：git config core.hooksPath githooks
+# 跳过（仅限紧急情况）：git commit --no-verify
+#
+
+echo ""
+echo "=== [pre-commit] 格式化 ==="
+mvn spotless:apply -q
+if [ $? -ne 0 ]; then
+    echo "❌ spotless:apply 失败"
+    exit 1
+fi
+
+git add -u
+
+echo "=== [pre-commit] 门禁 verify ==="
+mvn verify -q
+if [ $? -ne 0 ]; then
+    echo "❌ 门禁未通过：见上方 Checkstyle / PMD / SpotBugs / JaCoCo 输出"
+    exit 1
+fi
+
+echo "✅ 格式化 + 门禁通过"
+echo ""
