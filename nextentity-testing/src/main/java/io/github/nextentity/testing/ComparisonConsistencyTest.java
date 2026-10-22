@@ -86,6 +86,14 @@ public abstract class ComparisonConsistencyTest<T extends Item> extends Consiste
         assertThat(rows).hasSize(4);
     }
 
+    /// `between` 是闭区间（含两端）。
+    @Test
+    void betweenIncludesBothBounds() {
+        List<T> rows = query().where(scoreRef()).between(10, 20).list();
+
+        assertThat(rows).extracting(Item::id).containsExactlyInAnyOrder(APPLE_ID, BANANA_ID);
+    }
+
     /// `gtIfNotNull(null)` / `ltIfNotNull(null)` 都跳过条件。
     @Test
     void rangeIfNotNullWithNullOnBothSidesSkipsCondition() {

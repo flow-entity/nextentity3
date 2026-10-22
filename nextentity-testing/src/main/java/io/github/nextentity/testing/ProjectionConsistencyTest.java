@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.nextentity.api.Path;
 import io.github.nextentity.api.model.Tuple2;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 /// 投影与聚合一致性：单列、双列 `Tuple2`、`count` / `countDistinct` / `max` / `sum`。
@@ -68,5 +70,25 @@ public abstract class ProjectionConsistencyTest<T extends Item> extends Consiste
                 .list();
 
         assertThat(sum).containsExactly(50);
+    }
+
+    /// `groupBy` + 聚合：point-mall 的 6 处分组查询都是 `select(key, count) … groupBy(key)` 这个形状，
+    /// 返回 `List<Tuple2<K, Long>>`，空分组值为 `null`（消费方按 `get1() != null ? get1() : 0L` 兜）。
+    @Test
+    void groupByWithCountAggregate() {
+        List<Tuple2<String, Long>> rows = query().select(
+                        Path.of(noteRef()), Path.of(noteRef()).count())
+                .groupBy(noteRef())
+                .list();
+
+        assertThat(rows).hasSize(3);
+        assertThat(rows.stream()
+                        .filter(row -> row.get0() != null)
+                        .collect(Collectors.toMap(Tuple2::get0, Tuple2::get1)))
+                .containsExactlyInAnyOrderEntriesOf(Map.of(NOTE_1, 1L, NOTE_2, 1L));
+        assertThat(rows)
+                .filteredOn(row -> row.get0() == null)
+                .extracting(Tuple2::get1)
+                .containsExactly(2L);
     }
 }

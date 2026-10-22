@@ -40,14 +40,19 @@ public abstract class ConsistencyTestBase<T extends Item> {
     /// 夹具里不存在的名称：用于「无命中」断言。
     protected static final String MISSING_NAME = "zzz";
 
+    /// 夹具文本值（`note` 只在两行非空，用于分组/空值断言）。
+    protected static final String NOTE_1 = "n1";
+    /// 夹具文本值。
+    protected static final String NOTE_2 = "n2";
+
     /// 每个用例前重建固定夹具。
     @BeforeEach
     final void seed() {
         ConsistencySupport<T> support = support();
         support.seedData(List.of(
                 support.newItem(APPLE_ID, APPLE_NAME, 10, null),
-                support.newItem(BANANA_ID, BANANA_NAME, 20, "n1"),
-                support.newItem(CHERRY_ID, CHERRY_NAME, 30, "n2"),
+                support.newItem(BANANA_ID, BANANA_NAME, 20, NOTE_1),
+                support.newItem(CHERRY_ID, CHERRY_NAME, 30, NOTE_2),
                 support.newItem(APPLE_PIE_ID, APPLE_PIE_NAME, null, null)));
     }
 
