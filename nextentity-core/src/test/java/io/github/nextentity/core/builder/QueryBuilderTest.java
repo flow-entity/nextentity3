@@ -3,9 +3,12 @@ package io.github.nextentity.core.builder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.nextentity.api.EntityPath;
 import io.github.nextentity.api.EntityQuery;
 import io.github.nextentity.api.Path;
+import io.github.nextentity.api.PathRef;
 import io.github.nextentity.api.Predicate;
+import io.github.nextentity.api.StringPath;
 import io.github.nextentity.api.model.Slice;
 import io.github.nextentity.api.model.Tuple2;
 import io.github.nextentity.core.compile.Compiler;
@@ -377,6 +380,51 @@ class QueryBuilderTest {
         assertThat(PathRefs.fieldName("status")).isEqualTo("status");
     }
 
+    @Test
+    @DisplayName("嵌套路径：EntityPath.of(A::getB).get(C::getD) 解析成两段属性名")
+    void nestedPathTwoSegments() {
+        EntityPath<Order, Order.Customer> customer = EntityPath.of(Order::getCustomer);
+
+        assertThat(customer.refs()).hasSize(1);
+        assertThat(customer.get(Order.Customer::getOrgId).refs()).hasSize(2);
+
+        query().where(customer.get(Order.Customer::getOrgId)).eq(9L).list();
+
+        assertThat(backend.last().where())
+                .isEqualTo(
+                        new Comparison(AttributePath.of(Order.class, "customer", "orgId"), ComparisonOperator.EQ, 9L));
+    }
+
+    @Test
+    @DisplayName("嵌套路径：三段 customer.get(org).get(name) 保留段顺序")
+    void nestedPathThreeSegments() {
+        StringPath<Order> name =
+                EntityPath.of(Order::getCustomer).get(Order.Customer::getOrg).get(Order.Organization::getName);
+
+        assertThat(name.refs()).hasSize(3);
+
+        query().where(name).containsIfNotEmpty("abc").list();
+
+        assertThat(backend.last().where())
+                .isEqualTo(new Comparison(
+                        AttributePath.of(Order.class, "customer", "org", "name"), ComparisonOperator.LIKE, "%abc%"));
+    }
+
+    @Test
+    @DisplayName("非方法引用也非 Path 的 PathRef：报出类型与原因，而不是 NoSuchMethodException")
+    void foreignPathRefRejectedWithDiagnosis() {
+        PathRef<Order, Long> handWritten = new PathRef<>() {
+            @Override
+            public Long apply(Order entity) {
+                return entity.getId();
+            }
+        };
+
+        assertThatThrownBy(() -> query().where(handWritten).eq(1L).list())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("不是方法引用")
+                .hasMessageContaining("EntityPath.of(A::getB).get(C::getD)");
+    }
     // ---------------------------------------------------------------- fixture
 
     private static AttributePath path(String name) {
@@ -482,6 +530,31 @@ class QueryBuilderTest {
         private String creditType;
         private String debitType;
 
+        @SuppressWarnings("unused")
+        private static final class Customer {
+
+            private Long orgId;
+            private Organization org;
+
+            public Long getOrgId() {
+                return orgId;
+            }
+
+            public Organization getOrg() {
+                return org;
+            }
+        }
+
+        @SuppressWarnings("unused")
+        private static final class Organization {
+
+            private String name;
+
+            public String getName() {
+                return name;
+            }
+        }
+
         public Long getId() {
             return id;
         }
@@ -520,6 +593,10 @@ class QueryBuilderTest {
 
         public String getDebitType() {
             return debitType;
+        }
+
+        public Customer getCustomer() {
+            return null;
         }
     }
 }

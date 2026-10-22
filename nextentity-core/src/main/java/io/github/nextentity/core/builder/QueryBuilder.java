@@ -79,12 +79,17 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
 
     @Override
     public <N> PathOperator<T, N, ? extends BaseWhereStep<T, T>> where(PathRef<T, N> ref) {
-        return new PathStepOperator<>(PathRefs.resolve(List.of(ref)), this::addConditionStep, this::selfStep);
+        return new PathStepOperator<>(PathRefs.resolve(ref), this::addConditionStep, this::selfStep);
     }
 
     @Override
     public StringOperator<T, ? extends BaseWhereStep<T, T>> where(PathRef.StringRef<T> ref) {
-        return new StringStepOperator<>(PathRefs.resolve(List.of(ref)), this::addConditionStep, this::selfStep);
+        return new StringStepOperator<>(PathRefs.resolve(ref), this::addConditionStep, this::selfStep);
+    }
+
+    @Override
+    public <N> PathOperator<T, N, ? extends BaseWhereStep<T, T>> where(Path<T, N> path) {
+        return new PathStepOperator<>(PathRefs.resolve(path.refs()), this::addConditionStep, this::selfStep);
     }
 
     @Override
@@ -96,7 +101,7 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
 
     @Override
     public <R> BaseWhereStep<T, R> select(PathRef<T, R> ref) {
-        selection = new ValueSelection(List.of(new PathProjection(PathRefs.resolve(List.of(ref)))), false);
+        selection = new ValueSelection(List.of(new PathProjection(PathRefs.resolve(ref))), false);
         return step();
     }
 
@@ -114,7 +119,7 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
 
     @Override
     public <R> BaseWhereStep<T, R> selectDistinct(PathRef<T, R> ref) {
-        selection = new ValueSelection(List.of(new PathProjection(PathRefs.resolve(List.of(ref)))), true);
+        selection = new ValueSelection(List.of(new PathProjection(PathRefs.resolve(ref))), true);
         return step();
     }
 
@@ -122,7 +127,15 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
 
     @Override
     public OrderOperator<T, T> orderBy(PathRef<T, ? extends Comparable<?>> ref) {
-        AttributePath path = PathRefs.resolve(List.of(ref));
+        return orderBy(PathRefs.resolve(ref));
+    }
+
+    @Override
+    public OrderOperator<T, T> orderBy(Path<T, ? extends Comparable<?>> path) {
+        return orderBy(PathRefs.resolve(path.refs()));
+    }
+
+    private OrderOperator<T, T> orderBy(AttributePath path) {
         return new OrderOperator<>() {
             @Override
             public BaseWhereStep<T, T> asc() {
@@ -138,7 +151,7 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
 
     @Override
     public BaseWhereStep<T, T> groupBy(PathRef<T, ?> ref) {
-        groupBy.add(PathRefs.resolve(List.of(ref)));
+        groupBy.add(PathRefs.resolve(ref));
         return this;
     }
 
