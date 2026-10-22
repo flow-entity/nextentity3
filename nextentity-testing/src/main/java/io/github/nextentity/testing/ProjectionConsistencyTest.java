@@ -26,8 +26,10 @@ public abstract class ProjectionConsistencyTest<T extends Item> extends Consiste
     /// 双列投影返回 `Tuple2`，列序不得颠倒。
     @Test
     void selectTwoColumnsReturnsTuple2() {
-        List<Tuple2<Long, String>> rows =
-                query().select(idRef(), nameRef()).orderBy(idRef()).asc().list();
+        List<Tuple2<Long, String>> rows = query().select(Path.of(idRef()), Path.of(nameRef()))
+                .orderBy(idRef())
+                .asc()
+                .list();
 
         assertThat(rows).extracting(Tuple2::get0).containsExactly(APPLE_ID, BANANA_ID, CHERRY_ID, APPLE_PIE_ID);
         assertThat(rows).extracting(Tuple2::get1).containsExactly(APPLE_NAME, BANANA_NAME, CHERRY_NAME, APPLE_PIE_NAME);

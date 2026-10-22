@@ -5,13 +5,9 @@ import io.github.nextentity.api.PathRef;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 
-/// 能力一致性用例的公共底座：只声明「后端要提供什么」，不负责任何执行细节。
+/// 能力一致性用例的公共底座：固定夹具 + 把后端能力转成断言可用的入口。
 ///
-/// 契约（后端实现方必须遵守）：
-/// - {@link #seedData(List)} 结束后，本用例产生的数据必须对 {@link #query()} **可见**
-///   （即事务已提交或已刷新），一致性断言才有意义；
-/// - {@link #query()} 每次返回全新的查询入口，条件不得跨用例累积；
-/// - 属性引用必须来自方法引用（`Item::name` 这类），四个引用由后端给出名字。
+/// 子类只需给一个 {@link ConsistencySupport}（后端接线），本类负责建夹具与转发查询入口。
 ///
 /// 固定夹具（每个用例执行前重建），后续断言全部按这份数据手算：
 /// ```text
@@ -47,49 +43,51 @@ public abstract class ConsistencyTestBase<T extends Item> {
     /// 每个用例前重建固定夹具。
     @BeforeEach
     final void seed() {
-        seedData(List.of(
-                newItem(APPLE_ID, APPLE_NAME, 10, null),
-                newItem(BANANA_ID, BANANA_NAME, 20, "n1"),
-                newItem(CHERRY_ID, CHERRY_NAME, 30, "n2"),
-                newItem(APPLE_PIE_ID, APPLE_PIE_NAME, null, null)));
+        ConsistencySupport<T> support = support();
+        support.seedData(List.of(
+                support.newItem(APPLE_ID, APPLE_NAME, 10, null),
+                support.newItem(BANANA_ID, BANANA_NAME, 20, "n1"),
+                support.newItem(CHERRY_ID, CHERRY_NAME, 30, "n2"),
+                support.newItem(APPLE_PIE_ID, APPLE_PIE_NAME, null, null)));
     }
+
+    /// 后端接线（由具体后端提供）。
+    ///
+    /// @return 一致性能力集
+    protected abstract ConsistencySupport<T> support();
 
     /// 全新的查询入口。
     ///
     /// @return 查询入口
-    protected abstract EntityQuery<T> query();
-
-    /// 清空并写入夹具；返回后数据必须对 {@link #query()} 可见。
-    ///
-    /// @param items 固定夹具
-    protected abstract void seedData(List<T> items);
-
-    /// 构造一个夹具实例（不入库）。
-    ///
-    /// @param id    主键
-    /// @param name  名称
-    /// @param score 数值或 `null`
-    /// @param note  文本或 `null`
-    /// @return 实体实例
-    protected abstract T newItem(long id, String name, Integer score, String note);
+    protected final EntityQuery<T> query() {
+        return support().query();
+    }
 
     /// 主键属性引用。
     ///
     /// @return 方法引用形式的主键
-    protected abstract PathRef<T, Long> idRef();
+    protected final PathRef<T, Long> idRef() {
+        return support().idRef();
+    }
 
     /// 名称属性引用。
     ///
     /// @return 方法引用形式的名称
-    protected abstract PathRef.StringRef<T> nameRef();
+    protected final PathRef.StringRef<T> nameRef() {
+        return support().nameRef();
+    }
 
     /// 数值属性引用。
     ///
     /// @return 方法引用形式的数值
-    protected abstract PathRef.NumberRef<T, Integer> scoreRef();
+    protected final PathRef.NumberRef<T, Integer> scoreRef() {
+        return support().scoreRef();
+    }
 
     /// 文本属性引用。
     ///
     /// @return 方法引用形式的文本
-    protected abstract PathRef.StringRef<T> noteRef();
+    protected final PathRef.StringRef<T> noteRef() {
+        return support().noteRef();
+    }
 }
