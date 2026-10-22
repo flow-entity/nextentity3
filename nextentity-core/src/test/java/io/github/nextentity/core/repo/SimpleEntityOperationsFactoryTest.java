@@ -81,8 +81,8 @@ class SimpleEntityOperationsFactoryTest {
         assertThat(writes).containsExactly("insert", "insertAll", "update", "updateAll");
     }
 
-    // 聚合链（`max().sum()`）现在由 api 的类型拒绝：聚合方法返回 `Expression`，其上没有聚合方法，
-    // 因此这条运行期断言被删除——编译期不可写比运行期抛异常更强。
+    // 聚合链（`max().sum()`）由 api 的类型拒绝：聚合方法返回 `Expression`，其上没有聚合方法，
+    // 所以本文件不需要"聚合再聚合"的运行期用例。
 
     // ---------------------------------------------------------------- fixture
 

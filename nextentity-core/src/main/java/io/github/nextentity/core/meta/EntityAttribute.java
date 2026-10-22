@@ -7,24 +7,14 @@ package io.github.nextentity.core.meta;
 public interface EntityAttribute {
 
     /// 属性名（JPA 字段名，不是列名）。
-    ///
-    /// @return 属性名
     String name();
 
     /// 属性 Java 类型。
-    ///
-    /// @return 属性类型
     Class<?> type();
 
     /// 从实体上读该属性值。
-    ///
-    /// @param entity 实体实例
-    /// @return 属性值
     Object get(Object entity);
 
     /// 向实体写该属性值。
-    ///
-    /// @param entity 实体实例
-    /// @param value  属性值
     void set(Object entity, Object value);
 }

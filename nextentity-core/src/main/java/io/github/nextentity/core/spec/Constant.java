@@ -18,7 +18,7 @@ public record Constant(boolean value) implements Spec {
     /// 按布尔值取单例。
     ///
     /// @param value 布尔值
-    /// @return 恒真或恒假节点
+    /// @return `TRUE` 或 `FALSE` 单例：同一布尔值永远拿到同一实例，可用 `==` 比较
     public static Constant of(boolean value) {
         return value ? TRUE : FALSE;
     }

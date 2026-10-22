@@ -12,7 +12,7 @@ public interface EntityOperationsFactory {
 
     /// 取指定实体的操作入口。
     ///
-    /// @param entityClass 实体类型
+    /// @param entityClass 被映射的实体类型，非 `null`；未映射时抛 `IllegalArgumentException`
     /// @param <T>         实体类型参数
     /// @return 该实体的操作入口
     <T> EntityOperations<T> operations(Class<T> entityClass);

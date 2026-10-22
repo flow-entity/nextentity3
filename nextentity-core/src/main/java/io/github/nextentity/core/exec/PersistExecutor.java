@@ -14,21 +14,21 @@ public interface PersistExecutor<T> {
 
     /// 插入单个实体。
     ///
-    /// @param entity 实体
+    /// @param entity 待插入实体，非 `null`；主键何时可见由后端的生成策略决定
     void insert(T entity);
 
     /// 批量插入。
     ///
-    /// @param entities 实体集合
+    /// @param entities 实体集合，非 `null`；逐条写入，空集合不产生语句
     void insertAll(Iterable<T> entities);
 
     /// 更新单个实体。
     ///
-    /// @param entity 实体
+    /// @param entity 待更新实体，非 `null`；成功后新 `@Version` 回写到该对象
     void update(T entity);
 
     /// 批量更新。
     ///
-    /// @param entities 实体集合
+    /// @param entities 实体集合，非 `null`；每个元素都要回写新 `@Version`
     void updateAll(Iterable<T> entities);
 }

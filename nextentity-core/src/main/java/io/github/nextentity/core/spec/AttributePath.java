@@ -23,8 +23,8 @@ public record AttributePath(Class<?> entityType, List<String> names) {
 
     /// 由实体类型与属性名序列构造路径。
     ///
-    /// @param entityType 实体类型
-    /// @param names      属性名序列
+    /// @param entityType 实体类型，非 `null`
+    /// @param names      属性名序列，至少一个；为空时构造期抛 `IllegalArgumentException`
     /// @return 属性路径
     public static AttributePath of(Class<?> entityType, String... names) {
         return new AttributePath(entityType, List.of(names));
@@ -32,14 +32,14 @@ public record AttributePath(Class<?> entityType, List<String> names) {
 
     /// 路径深度。
     ///
-    /// @return 属性名个数
+    /// @return 属性名个数（段数，不是关联层数）
     public int depth() {
         return names.size();
     }
 
     /// 是否为实体自有字段（单段路径）。
     ///
-    /// @return 单段返回 true
+    /// @return 单段返回 `true`
     public boolean isDirect() {
         return names.size() == 1;
     }

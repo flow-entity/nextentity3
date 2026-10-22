@@ -26,8 +26,8 @@ public final class SimpleEntityOperationsFactory<S> implements EntityOperationsF
     /// 创建装配器。
     ///
     /// @param meta     实体类型 → 元数据（由后端的元模型解析）
-    /// @param compiler 编译器
-    /// @param executor 执行器
+    /// @param compiler 编译器，非 `null`
+    /// @param executor 执行器，非 `null`
     /// @param persist  实体类型 → 写入执行器
     public SimpleEntityOperationsFactory(
             Function<Class<?>, EntityType<?>> meta,

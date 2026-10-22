@@ -27,24 +27,24 @@ public record Logical(LogicalOperator operator, List<Spec> operands) implements 
 
     /// 构造 AND 组合。
     ///
-    /// @param specs 子节点
-    /// @return 逻辑节点
+    /// @param specs 子节点，至少一个；为空时构造期抛 `IllegalArgumentException`
+    /// @return 新的 `AND` 节点
     public static Logical and(Spec... specs) {
         return new Logical(LogicalOperator.AND, List.of(specs));
     }
 
     /// 构造 OR 组合。
     ///
-    /// @param specs 子节点
-    /// @return 逻辑节点
+    /// @param specs 子节点，至少一个；为空时构造期抛 `IllegalArgumentException`
+    /// @return 新的 `OR` 节点
     public static Logical or(Spec... specs) {
         return new Logical(LogicalOperator.OR, List.of(specs));
     }
 
     /// 构造 NOT 组合。
     ///
-    /// @param spec 子节点
-    /// @return 逻辑节点
+    /// @param spec 子节点，非 `null`
+    /// @return 新的 `NOT` 节点（恰好一个操作数）
     public static Logical not(Spec spec) {
         return new Logical(LogicalOperator.NOT, List.of(spec));
     }

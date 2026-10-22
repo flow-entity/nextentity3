@@ -28,7 +28,7 @@ final class OpInterpreter {
 
     /// 把条件值翻译成条件节点。
     ///
-    /// @param op 条件值
+    /// @param op 条件值，非 `null`；聚合运算进来抛 `IllegalArgumentException`
     /// @return 条件节点
     static Spec toSpec(Op op) {
         AttributePath path = op.refs().isEmpty() ? null : PathRefs.resolve(op.refs());
@@ -61,7 +61,7 @@ final class OpInterpreter {
     /// 只有四种聚合运算能出现在 `select(...)` 里；其余运算一律拒绝（不是"兜底返回"，
     /// 而是把非法输入挡在构造期）。
     ///
-    /// @param op 聚合表达式
+    /// @param op 聚合表达式，非 `null`；非聚合运算抛 `IllegalArgumentException`
     /// @return 聚合投影项
     static Projection toProjection(Op op) {
         return switch (op.operation()) {

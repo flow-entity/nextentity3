@@ -59,8 +59,8 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     /// 创建查询构建器。
     ///
     /// @param entityType 实体元数据（主键用于分页自动排序）
-    /// @param compiler   编译器
-    /// @param executor   执行器
+    /// @param compiler   编译器，非 `null`
+    /// @param executor   执行器，非 `null`
     public QueryBuilder(EntityType<T> entityType, Compiler<S> compiler, Executor<S> executor) {
         this.entityType = entityType;
         this.compiler = compiler;

@@ -8,7 +8,7 @@ import java.util.Objects;
 /// @param direction 排序方向
 public record Ordering(AttributePath path, Direction direction) {
 
-    /// 紧凑构造器：两字段必填。
+    /// 紧凑构造器：path 与 direction 都必须非 `null`。
     public Ordering {
         Objects.requireNonNull(path, "path");
         Objects.requireNonNull(direction, "direction");

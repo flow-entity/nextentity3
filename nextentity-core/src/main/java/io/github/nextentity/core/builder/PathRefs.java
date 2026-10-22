@@ -25,8 +25,8 @@ final class PathRefs {
 
     /// 解析单个方法引用（单段路径）。
     ///
-    /// @param ref 方法引用
-    /// @return 单段属性路径
+    /// @param ref 用户写的方法引用，非 `null`
+    /// @return 链长为 1 的属性路径
     static AttributePath resolve(PathRef<?, ?> ref) {
         return resolve(List.of(ref));
     }
@@ -36,8 +36,8 @@ final class PathRefs {
     /// 路径起点的实体类型取第一段方法引用的声明类型，`customer.get(org).get(name)`
     /// 因此得到 `AttributePath(Order, ["customer","org","name"])`。
     ///
-    /// @param refs 从根属性到叶子属性的方法引用链，非空
-    /// @return 属性路径
+    /// @param refs 从根属性到叶子属性的方法引用链，非空；每段必须是实例方法引用
+    /// @return 属性路径：起点类型取自第一段的声明类型
     static AttributePath resolve(List<? extends PathRef<?, ?>> refs) {
         if (refs.isEmpty()) {
             throw new IllegalArgumentException("属性路径链不能为空");
@@ -54,8 +54,8 @@ final class PathRefs {
     ///
     /// 与 2.2.3 `PathReference.getFieldName` 逐字符对齐（含"第二个字符大写则不改首字母"这条）。
     ///
-    /// @param methodName 方法名
-    /// @return 属性名
+    /// @param methodName Java 方法名，非 `null`
+    /// @return 属性名：去掉 `get`/`is` 前缀，第二个字符大写时首字母不动
     static String fieldName(String methodName) {
         String trimmed;
         if (methodName.length() > 3 && methodName.startsWith("get")) {

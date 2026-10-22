@@ -16,7 +16,7 @@ public interface Compiler<S> {
     /// 计数与存在性所需的"清排序/清窗口/去锁"已在 {@link QuerySpec#forCount()} /
     /// {@link QuerySpec#forExists()} 中完成，后端不必再判断。
     ///
-    /// @param spec 查询规格
+    /// @param spec 完整规格，非 `null`；本方法只读，不修改它
     /// @return 后端语句
     S compile(QuerySpec spec);
 }

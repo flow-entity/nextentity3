@@ -20,9 +20,9 @@ public final class ImmutableList {
     /// 来源可能是惰性的（由 `Supplier` 现算），因此就地复制一次，之后不再触碰来源；
     /// 元素本身允许为 null（不用 `List.copyOf`，避免对调用方的空元素抛 NPE）。
     ///
-    /// @param iterable 来源
+    /// @param iterable 来源，非 `null`；可能是惰性的，只会被遍历一次
     /// @param <E>      元素类型
-    /// @return 不可变列表
+    /// @return 不可变列表：元素允许为 `null`，`add`/`set`/`remove` 抛 `UnsupportedOperationException`
     public static <E> List<E> ofIterable(Iterable<? extends E> iterable) {
         List<E> copy = iterable instanceof Collection<?> sized ? new ArrayList<>(sized.size()) : new ArrayList<>();
         for (E element : iterable) {

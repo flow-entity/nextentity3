@@ -19,11 +19,11 @@ public interface EntityOperations<T> extends PersistExecutor<T> {
 
     /// 新建一个查询构建器（每次调用返回独立实例，链式状态互不影响）。
     ///
-    /// @return 查询入口
+    /// @return 新的查询入口，不是共享实例
     EntityQuery<T> query();
 
     /// 该实体的元数据（主键、`@Version`）。
     ///
-    /// @return 实体元数据
+    /// @return 缓存的元数据：同一实体多次调用返回同一实例
     EntityType<T> entityType();
 }

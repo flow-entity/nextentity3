@@ -11,7 +11,7 @@ import java.util.Objects;
 /// @param negated `true` 表示 `IS NOT NULL`
 public record NullCheck(AttributePath path, boolean negated) implements Spec {
 
-    /// 紧凑构造器：路径必填。
+    /// 紧凑构造器：path 必须非 `null`（`negated` 允许 `false`）。
     public NullCheck {
         Objects.requireNonNull(path, "path");
     }

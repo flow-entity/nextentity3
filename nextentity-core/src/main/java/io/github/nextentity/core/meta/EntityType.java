@@ -9,20 +9,14 @@ package io.github.nextentity.core.meta;
 public interface EntityType<T> {
 
     /// 实体 Java 类型。
-    ///
-    /// @return 实体类型
     Class<T> type();
 
     /// 主键属性。
-    ///
-    /// @return 主键属性
     EntityAttribute id();
 
     /// `@Version` 属性；没有版本字段时返回 `null`。
     ///
     /// 乐观锁语义依赖它：`update`/`updateAll` 合并后要把新版本号回写到调用方持有的对象，
     /// 否则调用方手里的实体版本号是旧的，下一次更新会撞乐观锁异常（point-mall 现有行为）。
-    ///
-    /// @return 版本属性或 null
     EntityAttribute version();
 }

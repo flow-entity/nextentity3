@@ -24,7 +24,7 @@ public record Window(Integer offset, Integer limit) {
 
     /// 是否限制了行数（决定 2.2.3 的"分页自动加主键排序"是否生效）。
     ///
-    /// @return 有 limit 返回 true
+    /// @return `limit` 非 `null` 即受限：`limit = 0` 也算受限（会补主键排序，但不截断行数）
     public boolean limited() {
         return limit != null;
     }

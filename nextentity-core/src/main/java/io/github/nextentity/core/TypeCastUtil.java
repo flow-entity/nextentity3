@@ -10,9 +10,9 @@ public final class TypeCastUtil {
 
     /// 把 `Class<?>` 当成 `Class<T>` 返回。
     ///
-    /// @param resolve 原始类型
+    /// @param resolve 原始类型，非 `null`
     /// @param <T>     目标类型参数
-    /// @return 同一个 Class 对象
+    /// @return 同一个 `Class` 对象：只做强转，不做任何运行期检查
     public static <T> Class<T> cast(Class<?> resolve) {
         @SuppressWarnings("unchecked")
         Class<T> casted = (Class<T>) resolve;

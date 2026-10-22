@@ -8,7 +8,7 @@ import java.util.Objects;
 /// @param path     被聚合的属性路径
 public record AggregateProjection(AggregateFunction function, AttributePath path) implements Projection {
 
-    /// 紧凑构造器：两字段必填。
+    /// 紧凑构造器：函数与路径都必须非 `null`。
     public AggregateProjection {
         Objects.requireNonNull(function, "function");
         Objects.requireNonNull(path, "path");

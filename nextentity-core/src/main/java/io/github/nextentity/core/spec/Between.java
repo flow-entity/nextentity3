@@ -12,7 +12,7 @@ import java.util.Objects;
 /// @param upper 上界值
 public record Between(AttributePath path, Object lower, Object upper) implements Spec {
 
-    /// 紧凑构造器：三字段必填。
+    /// 紧凑构造器：path、lower、upper 三个字段都必须非 `null`。
     public Between {
         Objects.requireNonNull(path, "path");
         Objects.requireNonNull(lower, "lower");
