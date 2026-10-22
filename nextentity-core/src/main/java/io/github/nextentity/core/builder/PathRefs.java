@@ -8,6 +8,7 @@ import java.lang.invoke.SerializedLambda;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /// 把方法引用解析成属性路径。
 ///
@@ -19,30 +20,23 @@ public final class PathRefs {
 
     private PathRefs() {}
 
-    /// 解析方法引用对应的属性路径。
+    /// 解析一条属性路径链（`api.Path.refs()` / `api.Op.refs()`）。
     ///
-    /// @param ref 方法引用（必须是实例方法引用）
-    /// @param <T> 声明该属性的实体类型
-    /// @return 单段属性路径
-    public static <T> AttributePath resolve(PathRef<T, ?> ref) {
-        SerializedLambda lambda = serializedLambda(ref);
-        int kind = lambda.getImplMethodKind();
-        if (kind != MethodHandleInfo.REF_invokeVirtual && kind != MethodHandleInfo.REF_invokeInterface) {
-            throw new IllegalArgumentException(
-                    "只接受实例方法引用（如 Order::getStatus），实际是 " + MethodHandleInfo.referenceKindToString(kind));
+    /// 路径起点的实体类型取第一段方法引用的声明类型；`customer.get(org).get(name)`
+    /// 因此得到 `AttributePath(Order, ["customer","org","name"])`。
+    ///
+    /// @param refs 从根属性到叶子属性的方法引用链，非空
+    /// @return 属性路径
+    public static AttributePath resolve(List<? extends PathRef<?, ?>> refs) {
+        if (refs.isEmpty()) {
+            throw new IllegalArgumentException("属性路径链不能为空");
         }
-        return AttributePath.of(declaringClass(lambda), fieldName(lambda.getImplMethodName()));
-    }
-
-    /// 在已有路径后追加一段属性名（`customer` + `orgId` → `customer.orgId`）。
-    ///
-    /// @param parent 父路径
-    /// @param child  子属性路径（只取其属性名）
-    /// @return 拼接后的路径
-    public static AttributePath append(AttributePath parent, AttributePath child) {
-        List<String> names = new ArrayList<>(parent.names());
-        names.addAll(child.names());
-        return new AttributePath(parent.entityType(), names);
+        Class<?> entityType = declaringClass(serializedLambda(refs.getFirst()));
+        List<String> names = new ArrayList<>(refs.size());
+        for (PathRef<?, ?> ref : refs) {
+            names.add(fieldName(serializedLambda(ref).getImplMethodName()));
+        }
+        return new AttributePath(entityType, names);
     }
 
     /// 方法名 → 属性名：`getStatus` → `status`、`isActive` → `active`、`status` → `status`。
@@ -61,7 +55,7 @@ public final class PathRefs {
             return methodName;
         }
         if (trimmed.length() == 1) {
-            return trimmed.toLowerCase(java.util.Locale.ROOT);
+            return trimmed.toLowerCase(Locale.ROOT);
         }
         if (Character.isUpperCase(trimmed.charAt(1))) {
             return trimmed;
@@ -81,6 +75,11 @@ public final class PathRefs {
     }
 
     private static Class<?> declaringClass(SerializedLambda lambda) {
+        int kind = lambda.getImplMethodKind();
+        if (kind != MethodHandleInfo.REF_invokeVirtual && kind != MethodHandleInfo.REF_invokeInterface) {
+            throw new IllegalArgumentException(
+                    "只接受实例方法引用（如 Order::getStatus），实际是 " + MethodHandleInfo.referenceKindToString(kind));
+        }
         MethodType methodType = MethodType.fromMethodDescriptorString(
                 lambda.getInstantiatedMethodType(), Thread.currentThread().getContextClassLoader());
         return methodType.parameterType(0);
