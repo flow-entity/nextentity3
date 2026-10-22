@@ -1,6 +1,5 @@
 package io.github.nextentity.api;
 
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -37,9 +36,7 @@ final class Conditions {
     /// 独立路径（`Path.of(...)` / `EntityPath.of(...)`）与 `where(...)` 之后的算子共用同一套组装逻辑。
     ///
     /// @param <T> 根实体类型
-    abstract static class AbstractOperators<T> implements Serializable {
-
-        private static final long serialVersionUID = 1L;
+    abstract static class AbstractOperators<T> {
 
         private final List<PathRef<?, ?>> refs;
         private final Predicate<T> parent;
@@ -156,8 +153,6 @@ final class Conditions {
     static final class PathOperatorValue<T, N> extends AbstractOperators<T>
             implements PathOperator<T, N, Predicate<T>> {
 
-        private static final long serialVersionUID = 1L;
-
         PathOperatorValue(PathRef<T, N> ref, Predicate<T> parent, Operation combine, boolean suppressed) {
             super(List.of(ref), parent, combine, suppressed);
         }
@@ -260,8 +255,6 @@ final class Conditions {
 
     @SuppressWarnings("PMD.TooManyMethods") // 方法数由 StringOperator 接口面决定，不是上帝类
     static final class StringOperatorValue<T> extends AbstractOperators<T> implements StringOperator<T, Predicate<T>> {
-
-        private static final long serialVersionUID = 1L;
 
         StringOperatorValue(PathRef.StringRef<T> ref, Predicate<T> parent, Operation combine) {
             super(List.of(ref), parent, combine, false);

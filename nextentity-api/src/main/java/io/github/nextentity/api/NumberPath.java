@@ -4,4 +4,4 @@ package io.github.nextentity.api;
 ///
 /// @param <T> 根实体类型
 /// @param <U> 数值类型
-public interface NumberPath<T, U extends Number> extends Path<T, U>, PathRef.NumberRef<T, U>, NumberExpression<T, U> {}
+public interface NumberPath<T, U extends Number> extends Path<T, U>, NumberExpression<T, U> {}

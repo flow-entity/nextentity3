@@ -22,20 +22,8 @@ final class PathValues {
     @SuppressWarnings("PMD.TooManyMethods") // 方法数由 Path 接口面决定，不是上帝类
     abstract static class Value<T, U> extends Conditions.AbstractOperators<T> implements Path<T, U> {
 
-        private static final long serialVersionUID = 1L;
-
         Value(List<PathRef<?, ?>> refs) {
             super(refs, null, null, false);
-        }
-
-        @Override
-        @SuppressWarnings("unchecked")
-        public U apply(T entity) {
-            Object current = entity;
-            for (PathRef<?, ?> ref : refs()) {
-                current = ((PathRef<Object, Object>) ref).apply(current);
-            }
-            return (U) current;
         }
 
         @Override
@@ -150,7 +138,6 @@ final class PathValues {
     }
 
     static final class Root<T, U> extends Value<T, U> {
-        private static final long serialVersionUID = 1L;
 
         Root(PathRef<T, U> ref) {
             super(Collections.singletonList(ref));
@@ -158,7 +145,6 @@ final class PathValues {
     }
 
     static final class NumberRoot<T, U extends Number> extends Value<T, U> implements NumberPath<T, U> {
-        private static final long serialVersionUID = 1L;
 
         NumberRoot(PathRef.NumberRef<T, U> ref) {
             super(Collections.singletonList(ref));
@@ -176,7 +162,6 @@ final class PathValues {
     }
 
     static final class StringRoot<T> extends Value<T, String> implements StringPath<T> {
-        private static final long serialVersionUID = 1L;
 
         StringRoot(PathRef.StringRef<T> ref) {
             super(Collections.singletonList(ref));
@@ -184,7 +169,6 @@ final class PathValues {
     }
 
     abstract static class EntityValue<T, U> extends Value<T, U> implements EntityPath<T, U> {
-        private static final long serialVersionUID = 1L;
 
         EntityValue(List<PathRef<?, ?>> refs) {
             super(refs);
@@ -202,7 +186,6 @@ final class PathValues {
     }
 
     static final class EntityRoot<T, U> extends EntityValue<T, U> {
-        private static final long serialVersionUID = 1L;
 
         EntityRoot(PathRef<T, U> ref) {
             super(Collections.singletonList(ref));
@@ -210,7 +193,6 @@ final class PathValues {
     }
 
     static final class Nested<T, U> extends EntityValue<T, U> {
-        private static final long serialVersionUID = 1L;
 
         Nested(List<PathRef<?, ?>> refs) {
             super(refs);
@@ -218,7 +200,6 @@ final class PathValues {
     }
 
     static final class NestedString<T> extends Value<T, String> implements StringPath<T> {
-        private static final long serialVersionUID = 1L;
 
         NestedString(List<PathRef<?, ?>> refs) {
             super(refs);
