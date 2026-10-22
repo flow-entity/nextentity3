@@ -276,7 +276,7 @@ class JpaEndToEndTest extends JpaTestSupport {
         return new Comparison(AttributePath.of(ShopOrder.class, attribute), operator, value);
     }
 
-    private static List<Long> ids(QuerySpec spec) {
+    private List<Long> ids(QuerySpec spec) {
         return inTx(entityManager ->
                 executor(entityManager).<ShopOrder>list(compiler(entityManager).compile(spec)).stream()
                         .map(ShopOrder::getId)
@@ -287,15 +287,15 @@ class JpaEndToEndTest extends JpaTestSupport {
         return new QuerySpec(ShopOrder.class, new EntitySelection(), where, List.of(), List.of(), Window.NONE, null);
     }
 
-    private static JpaCompiler compiler(EntityManager entityManager) {
+    private JpaCompiler compiler(EntityManager entityManager) {
         return new JpaCompiler(entityManager, meta());
     }
 
-    private static JpaExecutor executor(EntityManager entityManager) {
+    private JpaExecutor executor(EntityManager entityManager) {
         return new JpaExecutor(entityManager, meta());
     }
 
-    private static JpaPersistExecutor<ShopOrder> persister(EntityManager entityManager) {
+    private JpaPersistExecutor<ShopOrder> persister(EntityManager entityManager) {
         return new JpaPersistExecutor<>(entityManager, meta(), ShopOrder.class);
     }
 }

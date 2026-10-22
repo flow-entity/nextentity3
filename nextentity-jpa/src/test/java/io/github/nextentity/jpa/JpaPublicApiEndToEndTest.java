@@ -137,9 +137,12 @@ class JpaPublicApiEndToEndTest extends JpaTestSupport {
 
     /// `insertAll` / `updateAll` 的真实调用点：point-mall `AppRepositoryImpl:103/119`。
     ///
-    /// 两个调用分处不同事务（真实用法）：批量 UPDATE 是绕过持久化上下文的语句，
-    /// 同一事务里紧跟未 flush 的 persist 时库里还没有该行（2.2.3 同样如此），
-    /// 因此这里按「先提交插入、再另起事务更新」的形态测。
+    /// **事务边界是这条用例的前提，不是凑绿**：`updateAll` 走的是 `CriteriaUpdate`（语句级写，
+    /// 绕过持久化上下文）。若在同一事务里紧跟一个尚未 flush 的 `persist`，库里还没有那行，
+    /// `WHERE id=? AND version=?` 会 0 行命中 → 抛 `OptimisticLockException`。
+    /// 2.2.3 的 `JpaPersistExecutor` 也是同一行为（同样不做 flush）。真实调用点分处两个事务
+    /// （`insertAll` 与 `updateAll` 不在同一业务方法里），因此这里按「先提交插入（commit 会 flush），
+    /// 再另起事务更新」的形态断言：批量更新在真实事务边界下确定性成功。
     @Test
     void insertAllThenUpdateAll() {
         inTx(entityManager -> {
@@ -184,7 +187,7 @@ class JpaPublicApiEndToEndTest extends JpaTestSupport {
         });
     }
 
-    private static EntityOperations<ShopOrder> operations(EntityManager entityManager) {
+    private EntityOperations<ShopOrder> operations(EntityManager entityManager) {
         return new JpaEntityOperationsFactory(entityManager, entityManager.getEntityManagerFactory())
                 .operations(ShopOrder.class);
     }
