@@ -13,7 +13,7 @@ public interface EntityPath<T, U> extends Path<T, U> {
     /// @param <U> 关联实体类型
     /// @return 关联属性路径
     static <T, U> EntityPath<T, U> of(PathRef<T, U> ref) {
-        return Paths.factory().entity(ref);
+        return new PathValues.EntityRoot<>(ref);
     }
 
     /// 取下一层属性。

@@ -26,6 +26,7 @@ public interface Collector<T> {
     /// 取唯一一条，无结果返回 `null`。
     ///
     /// @return 唯一一条或 `null`
+    /// @throws IllegalStateException 命中多于一条（消息固定 `found more than one result, expected one`）
     T single();
 
     /// 计数。

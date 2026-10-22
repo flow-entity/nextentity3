@@ -59,7 +59,9 @@
                 </executions>
             </plugin>
 
-            <!-- API 兼容门禁：-Papi-compat -Djapicmp.oldVersion=x.y.z -->
+            <!-- API 兼容门禁：-Papi-compat -Djapicmp.oldVersion=2.2.3
+                 基线必须是 nextentity-core：2.2.3 没有发布过 nextentity-api，
+                 io.github.nextentity.api.* 的类在 nextentity-core-2.2.3.jar 里。 -->
             <plugin>
                 <groupId>com.github.siom79.japicmp</groupId>
                 <artifactId>japicmp-maven-plugin</artifactId>
@@ -67,7 +69,7 @@
                     <oldVersion>
                         <dependency>
                             <groupId>io.github.flow-entity</groupId>
-                            <artifactId>nextentity-api</artifactId>
+                            <artifactId>nextentity-core</artifactId>
                             <version>${japicmp.oldVersion}</version>
                         </dependency>
                     </oldVersion>
@@ -77,10 +79,13 @@
                         </file>
                     </newVersion>
                     <parameter>
-                        <onlyModified>true</onlyModified>
+                        <includes>
+                            <include>io.github.nextentity.api.*</include>
+                        </includes>
+                        <onlyModified>false</onlyModified>
                         <breakBuildOnBinaryIncompatibleModifications>true</breakBuildOnBinaryIncompatibleModifications>
                         <breakBuildOnSourceIncompatibleModifications>true</breakBuildOnSourceIncompatibleModifications>
-                        <ignoreMissingClasses>true</ignoreMissingClasses>
+                        <ignoreMissingClasses>false</ignoreMissingClasses>
                     </parameter>
                 </configuration>
                 <executions>
@@ -106,6 +111,8 @@
 
     <properties>
         <japicmp.skip>true</japicmp.skip>
-        <japicmp.oldVersion>3.0.0</japicmp.oldVersion>
+        <japicmp.oldVersion>2.2.3</japicmp.oldVersion>
     </properties>
 </project>
+
+

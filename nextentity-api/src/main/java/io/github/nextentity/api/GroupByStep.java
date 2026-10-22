@@ -10,5 +10,5 @@ public interface GroupByStep<T, U> {
     ///
     /// @param ref 分组属性
     /// @return 分组之后的步骤（可继续排序、分页、终止）
-    HavingStep<T, U> groupBy(PathRef<T, ?> ref);
+    BaseWhereStep<T, U> groupBy(PathRef<T, ?> ref);
 }

@@ -2,6 +2,10 @@ package io.github.nextentity.api;
 
 /// 谓词：可继续与其它条件组合的布尔表达式。
 ///
+/// 后端解释 `where(Expression<Boolean>)` 的入参时按 `Op` 判定：**实现 `Op` 的谓词**携带
+/// `operation()/refs()/arguments()`；**不实现 `Op` 的谓词**是 `*IfNotNull`/`*IfNotEmpty`
+/// 短路产生的占位（恒真，后端应视为"无附加条件"）。
+///
 /// @param <T> 根实体类型
 public interface Predicate<T> extends Expression<T, Boolean> {
 
