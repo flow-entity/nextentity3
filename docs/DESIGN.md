@@ -48,7 +48,7 @@ testing / tests-jpa / arch / benchmarks 仅被测试与 CI 使用
 
 ```
 调用（链式 DSL）
-   │  builder：把方法引用/元模型属性解析成 Spec 节点
+   │  builder：把方法引用（`Path#refs()` → `SerializedLambda`）与 api 的 `Op` 值解析成 Spec 节点
    ▼
 Spec（不可变 AST，纯值对象）
    │  Compiler<S>：Spec → 后端语句（JPA 为 Criteria 持有者）
@@ -61,8 +61,8 @@ S  （后端语句）
 
 | 层 | 职责 | 边界判据 |
 |---|---|---|
-| `meta` | 方法引用 → `EntityAttribute`；缓存解析结果 | 只认 JPA 映射注解，不认业务语义 |
-| `builder` | 步骤接口 → `Spec` 节点；可选条件（`eqIfNotNull` / `containsIfNotEmpty`）在此短路 | 不产生 SQL/Criteria，不做类型转换以外的逻辑 |
+| `meta` | 属性名 → JPA 属性（`JpaMeta` 按实体类型缓存）；不含方法引用解析 | 只认 JPA 映射注解，不认业务语义 |
+| `builder` | 方法引用 → 属性名（`PathRefs` 解析 `SerializedLambda`，每次调用解析、无缓存）；步骤接口 → `Spec` 节点；可选条件（`eqIfNotNull` / `containsIfNotEmpty`）在此短路 | 不产生 SQL/Criteria，不做类型转换以外的逻辑 |
 | `spec` | 不可变 AST：`Comparison`/`In`/`Null`/`Logical`/`Function`/`Raw`/`Projection`/`Ordering`/`Window` | 不含任何后端类型，可序列化、可断言、可复用 |
 | `compile` | `Spec → S`，唯一渲染出口 | 一个 `switch` 分支处理一个节点，穷尽性由编译器保证 |
 | `exec` | 执行、分页计数、结果装配（实体/Tuple/DTO）、锁模式 | 不解释条件语义 |

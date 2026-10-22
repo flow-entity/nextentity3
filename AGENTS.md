@@ -6,7 +6,7 @@
 
 - **公开 API 是契约**：`io.github.nextentity.api` 下的签名受兼容门禁保护。破坏性变更每版 ≤ 5 处，且必须同时具备三样：机械替换脚本（codemod 或编译错误驱动）、`japicmp` 影响面报告、CHANGELOG 写明"为什么必须破"。
 - **版本语义**：`api` 包遵循语义化版本，删除/收窄签名即主版本；`core`/`jpa`/`spring` 内部包标记 `@Internal`，不承诺兼容。
-- **依赖方向单向**：只允许 `api ← core ← jpa ← spring`。`api` 零三方依赖；`core` 不得 import `jakarta.persistence` / `hibernate` / `spring`。反向依赖与循环依赖由 enforcer + ArchUnit 拒绝。执法者：各模块 `bannedDependencies`（编译期）+ `nextentity-arch` 的 `MODULES_FREE_OF_CYCLES` / `CORE_PACKAGES_FREE_OF_CYCLES`。
+- **依赖方向单向**：只允许 `api ← core ← jpa ← spring`。`api` 零三方依赖（唯一登记例外：`jakarta.persistence-api:provided`，仅供 `lock(LockModeType)` 兼容重载，理由见 [DESIGN](docs/DESIGN.md) §7）；`core` 不得 import `jakarta.persistence` / `hibernate` / `spring`。反向依赖与循环依赖由 enforcer + ArchUnit 拒绝。执法者：各模块 `bannedDependencies`（编译期）+ `nextentity-arch` 的 `MODULES_FREE_OF_CYCLES` / `CORE_PACKAGES_FREE_OF_CYCLES`。
 - **新能力只落一处**：新谓词 = `spec` 加节点 + 编译器加分支；新终止符 = `exec` 加方法；不得在 builder 里拼 SQL 或拼 Criteria。新增节点必须让编译期穷尽性检查报错，以此逼出全部分支。
 - **接口要窄**：新增公开接口的方法数 ≤ 6；超过说明边界切错了。执法者：`nextentity-arch` 的 `API_INTERFACES_STAY_NARROW`。
 - **可测试性**：时间/随机必须经 `Clock` / `IdGenerator` 注入，禁止直调 `System.currentTimeMillis()` / `Instant.now()` / `new Random()`；禁止静态可变字段；禁止 catch 后返回默认值。执法者：`nextentity-arch` 的 `NO_AMBIENT_CLOCK_OR_RANDOM` / `NO_MUTABLE_STATIC_STATE`，以及 `rules/checkstyle.xml` 的 catch 规则。
@@ -24,7 +24,10 @@
 | `jpa` / `spring` | `mvn -q spotless:apply` → `mvn -pl nextentity-arch -am test` → `mvn -pl nextentity-tests-jpa verify`（需 Docker） |
 | 公开签名变更 | 额外 `mvn -Papi-compat -Djapicmp.oldVersion=<上一发布版> -pl nextentity-api verify` |
 | 发版前 | `mvn clean verify`（格式 + 静态检查 + 单测 + 覆盖率门槛），更新 CHANGELOG |
+| 文档里的代码示例（`*.md` 的代码块） | 先把示例**原样**抄进 `tmp/scripts/probe/DocExamples.java`，`javac` 对相关模块真实 `target/classes` 编译通过后才写进文档；文档声称的能力必须能在源码里指到 `文件:行`，指不到就删掉或移入「不提供的能力」表 |
 
+- **报「绿」三件套**：commit hash + `git status --short` 为空 + 落盘日志路径；跨模块存在未提交改动期间的口头/单点「绿」一律无效（本轮迁移里它抓出 3 次假绿：陈旧 `.m2` 产物、api 中间态编译错误、flaky 集成用例）。
+- **不读陈旧产物**：跨模块验证前先 `mvn install`（或一律 `-am` 反应堆构建）；`~/.m2` 里的 `-SNAPSHOT` 可能落后于当前 HEAD，用它跑出的结论只能证明"旧产物能跑"。
 - **测试只跑一遍**：一律 `mvn ... > tmp/test-output/<场景>.log 2>&1`，从落盘日志（及 surefire-reports）看全结论；结论得出后删除日志，**禁止为补看日志重跑**。
 - **分层跑测试**：`api`/`core` 单测无需容器；`nextentity-arch` 只跑架构规则（无容器，改任何模块都要跑）；`nextentity-tests-jpa` 是集成测试（H2 + Testcontainers MySQL），需 Docker，只在改动 `jpa`/`spring` 或发版前跑。
 - **测试命名**：快测试 `*Test`，落库场景 `*IntegrationTest`；集成测试启动容器后须在 `@AfterEach` 复位被改状态。
