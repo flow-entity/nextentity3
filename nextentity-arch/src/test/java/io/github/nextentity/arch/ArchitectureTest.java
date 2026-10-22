@@ -152,6 +152,28 @@ class ArchitectureTest {
             .allowEmptyShould(true)
             .because("DESIGN §5：基类里出现 EntityManager / Criteria / SQL，新后端就得改基类，接缝随之失效");
 
+    /// `api` 包的 class 只能来自 `nextentity-api` 自己的产物。
+    ///
+    /// 这是构建污染门禁：`.m2` 里曾出现打过 api class 的 `nextentity-core` jar（`api/QueryLock.class`），
+    /// classpath 顺序一旦让 core 排在 api 之前，编译器就会用上那份过期签名，报出与源码无关的假故障。
+    /// enforcer 与包名规则都看不出「同一个类被两个产物各打一份」，只有来源 URI 能。
+    @ArchTest
+    static final ArchRule API_PACKAGE_LIVES_IN_API_MODULE = classes()
+            .that()
+            .resideInAPackage("io.github.nextentity.api..")
+            .should(new ArchCondition<>("只能来自 nextentity-api 产物") {
+                @Override
+                public void check(JavaClass item, ConditionEvents events) {
+                    String source =
+                            item.getSource().map(s -> s.getUri().toString()).orElse("<来源未知>");
+                    if (!source.contains("nextentity-api")) {
+                        events.add(SimpleConditionEvent.violated(item, item.getName() + " 的来源是 " + source));
+                    }
+                }
+            })
+            .allowEmptyShould(true)
+            .because("core/jpa/spring 的产物里出现 api 包 = 构建污染：classpath 顺序会让编译器用上过期的 api 签名");
+
     /// 公开方法（不含 static）不超过给定数量。
     ///
     /// @param max 上限
