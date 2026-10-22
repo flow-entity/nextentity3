@@ -31,8 +31,6 @@ public class AssetEntity implements Asset {
     }
 
     /// 嵌套路径的起点：`EntityPath.of(AssetEntity::owner)` 会从它解析属性名 `owner`。
-    ///
-    /// @return 关联实体
     public OwnerEntity owner() {
         return owner;
     }

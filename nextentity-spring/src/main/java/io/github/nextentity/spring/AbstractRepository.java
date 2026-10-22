@@ -21,7 +21,7 @@ public abstract class AbstractRepository<T, ID> {
 
     /// 由子类泛型解析实体类型并取操作入口。
     ///
-    /// @param factory 实体操作工厂（Spring 上下文里唯一的那个 bean）
+    /// @param factory 实体操作工厂：必须是上下文里唯一的那个 bean，0 个或多 1 个都会让消费方取 bean 失败
     protected AbstractRepository(EntityOperationsFactory factory) {
         Class<T> entityType = TypeCastUtil.cast(
                 ResolvableType.forClass(getClass()).as(AbstractRepository.class).resolveGeneric(0));
@@ -30,7 +30,7 @@ public abstract class AbstractRepository<T, ID> {
 
     /// 新建查询入口。
     ///
-    /// @return 查询入口
+    /// @return 查询入口：每次返回独立实例，链式条件互不影响
     public EntityQuery<T> query() {
         return operations.query();
     }
@@ -41,7 +41,7 @@ public abstract class AbstractRepository<T, ID> {
     /// （`AppVersionRepository` 自己不声明该方法，2.2.3 里由 `AbstractRepository` 提供）。
     /// 事务边界由调用方的 `@Transactional` 决定，本类不接管。
     ///
-    /// @param entity 待插入实体
+    /// @param entity 待插入实体，非 `null`
     public void insert(T entity) {
         operations.insert(entity);
     }

@@ -47,9 +47,6 @@ class AssociationPathRefsTest {
     }
 
     /// 用后端同一套机制（`writeReplace` → `SerializedLambda#getImplMethodName`）解析每一段属性名。
-    ///
-    /// @param refs 路径链
-    /// @return 逐段属性名
     private static List<String> propertyNames(List<PathRef<?, ?>> refs) {
         List<String> names = new ArrayList<>();
         for (PathRef<?, ?> ref : refs) {
@@ -59,9 +56,6 @@ class AssociationPathRefsTest {
     }
 
     /// 解析单段属性名。
-    ///
-    /// @param ref 单段引用
-    /// @return 属性名
     private static String propertyName(PathRef<?, ?> ref) {
         try {
             var writeReplace = ref.getClass().getDeclaredMethod("writeReplace");

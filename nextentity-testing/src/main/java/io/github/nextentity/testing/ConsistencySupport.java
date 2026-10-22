@@ -22,46 +22,46 @@ public interface ConsistencySupport<T extends Item> {
 
     /// 全新的查询入口。
     ///
-    /// @return 查询入口
+    /// @return 全新的查询入口：条件不得跨用例累积
     EntityQuery<T> query();
 
     /// 清空并写入夹具，返回后对 {@link #query()} 可见。
     ///
-    /// @param items 固定夹具
+    /// @param items 固定夹具；返回后必须对新查询可见（已提交或已刷新）
     void seedData(List<T> items);
 
     /// 构造一个夹具实例（不入库）。
     ///
-    /// @param id    主键
-    /// @param name  名称
-    /// @param score 数值或 `null`
-    /// @param note  文本或 `null`
-    /// @param status 枚举状态
-    /// @return 实体实例
+    /// @param id     主键；同一夹具内唯一
+    /// @param name   名称，非 `null`
+    /// @param score  数值或 `null`
+    /// @param note   文本或 `null`
+    /// @param status 枚举状态，非 `null`
+    /// @return 未入库的实体实例
     T newItem(long id, String name, Integer score, String note, ItemStatus status);
 
     /// 主键属性引用。
     ///
-    /// @return 方法引用形式的主键
+    /// @return 方法引用形式的主键：后端实体上必须真实存在
     PathRef<T, Long> idRef();
 
     /// 名称属性引用。
     ///
-    /// @return 方法引用形式的名称
+    /// @return 方法引用形式的名称：后端实体上必须真实存在
     PathRef.StringRef<T> nameRef();
 
     /// 数值属性引用。
     ///
-    /// @return 方法引用形式的数值
+    /// @return 方法引用形式的数值：类型为 `Integer`，可参与区间比较
     PathRef.NumberRef<T, Integer> scoreRef();
 
     /// 文本属性引用。
     ///
-    /// @return 方法引用形式的文本
+    /// @return 方法引用形式的文本：可参与 `isNull`/字符串算子
     PathRef.StringRef<T> noteRef();
 
     /// 枚举属性引用。
     ///
-    /// @return 方法引用形式的枚举
+    /// @return 方法引用形式的枚举：按枚举值比较，与存储形态无关
     PathRef<T, ItemStatus> statusRef();
 }

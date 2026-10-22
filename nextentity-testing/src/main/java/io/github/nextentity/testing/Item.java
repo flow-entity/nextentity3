@@ -10,27 +10,17 @@ package io.github.nextentity.testing;
 public interface Item {
 
     /// 主键。
-    ///
-    /// @return 主键值
     Long id();
 
     /// 可比较、可模糊匹配的名称。
-    ///
-    /// @return 名称
     String name();
 
     /// 可比较、可为空的数值（用于验证 `null` 参与的区间条件）。
-    ///
-    /// @return 数值或 `null`
     Integer score();
 
     /// 可为空的文本（用于验证 `isNull` / `isNotNull`）。
-    ///
-    /// @return 文本或 `null`
     String note();
 
-    /// 枚举字段（用于验证枚举比较与排序；point-mall 有 51 处 `@Enumerated`）。
-    ///
-    /// @return 状态
+    /// 枚举字段（用于验证枚举比较与排序；point-mall 的枚举映射以 `@Enumerated(STRING)` 为主）。
     ItemStatus status();
 }

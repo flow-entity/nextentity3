@@ -12,7 +12,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 /// 自动配置的门禁与 bean 注册：`nextentity.enabled` 是开关，开时**恰好一个**工厂 bean。
 ///
-/// 这两个事实都是 point-mall 的硬需求（`SPRING-NEEDS.md` N2 / N5）：0 个 bean 会让
+/// 这两个事实都是 point-mall 的硬需求：0 个 bean 会让
 /// `App.getBean(EntityOperationsFactory.class)` 抛 `NoSuchBeanDefinitionException`，
 /// 2 个会抛 `NoUniqueBeanDefinitionException`。
 class NextEntityAutoConfigurationTest {

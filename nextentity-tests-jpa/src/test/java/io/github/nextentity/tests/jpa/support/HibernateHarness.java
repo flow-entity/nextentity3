@@ -28,9 +28,9 @@ public final class HibernateHarness implements AutoCloseable {
 
     /// 启动一套只含给定实体的 Hibernate（H2 内存库，建表后自动销毁）。
     ///
-    /// @param databaseName  H2 内存库名，同一测试类复用时保持稳定
+    /// @param databaseName  H2 内存库名；同一测试类复用时保持稳定，否则每次都要重建库
     /// @param entityClasses 参与映射的实体类
-    /// @return 测试装置，用完必须 `close()`
+    /// @return 测试装置：用完必须 `close()`，否则内存库与 SessionFactory 都留着
     public static HibernateHarness start(String databaseName, Class<?>... entityClasses) {
         SqlRecorder recorder = new SqlRecorder();
         Configuration configuration = new Configuration()
@@ -47,14 +47,14 @@ public final class HibernateHarness implements AutoCloseable {
 
     /// 当前测试线程独占的 `EntityManager`。
     ///
-    /// @return 实体管理器
+    /// @return 实例独占的 `EntityManager`，由 `close()` 一并关闭
     public EntityManager entityManager() {
         return entityManager;
     }
 
     /// 实体管理器工厂（JPA 元模型从它解析，见 `JpaMeta`）。
     ///
-    /// @return 实体管理器工厂
+    /// @return 同一个 `SessionFactory`（它同时充当 `EntityManagerFactory`）
     public EntityManagerFactory entityManagerFactory() {
         return sessionFactory;
     }
@@ -66,7 +66,7 @@ public final class HibernateHarness implements AutoCloseable {
 
     /// 在事务里跑一段写入，并在正常结束时提交。
     ///
-    /// @param work 事务体
+    /// @param work 事务体，非 `null`；正常返回即提交，抛异常则不提交
     public void inTransaction(Consumer<EntityManager> work) {
         entityManager.getTransaction().begin();
         work.accept(entityManager);
@@ -75,9 +75,9 @@ public final class HibernateHarness implements AutoCloseable {
 
     /// 在事务里跑一段查询并返回结果（悲观锁这类语句必须在事务内执行）。
     ///
-    /// @param work 事务体
+    /// @param work 事务体，非 `null`
     /// @param <R>  结果类型
-    /// @return 事务体返回值
+    /// @return 事务体的返回值，原样透传
     public <R> R inTransaction(Supplier<R> work) {
         entityManager.getTransaction().begin();
         R result = work.get();
@@ -87,7 +87,7 @@ public final class HibernateHarness implements AutoCloseable {
 
     /// 取走已抓到的 SQL，并清空账本。
     ///
-    /// @return 按执行顺序排列的 SQL 列表
+    /// @return 按执行顺序排列的 SQL；取走后账本清空
     public List<String> drainSql() {
         return recorder.drain();
     }

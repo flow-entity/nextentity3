@@ -10,9 +10,9 @@ import org.junit.jupiter.api.Test;
 
 /// 悲观锁：`lock(PESSIMISTIC_WRITE)` 在事务内读到行，且语句必须带 `FOR UPDATE`。
 ///
-/// 这条只放在 `nextentity-tests-jpa`、不进 `nextentity-testing` 的共享基类：`api.LockStep` 上
-/// `jakarta.persistence.LockModeType` 的重载会让调用方需要 jakarta 在 classpath 上，而一致性基类
-/// 所在模块按 DESIGN §5 禁止后端依赖（`TESTING_STAYS_BACKEND_FREE` 会拒绝）。
+/// 这条只放在 `nextentity-tests-jpa`、不进 `nextentity-testing` 的共享基类：断言要看真实下发的
+/// SQL（`for update`），并且查询必须在事务里跑——SQL 抓取与事务装置只存在于 jpa 侧；一致性基类
+/// 按 DESIGN §5 只做结果断言、不带后端依赖（`TESTING_STAYS_BACKEND_FREE` 会拒绝）。
 ///
 /// 真实调用点：point-mall `LogisticsOrderRepository.findByOrderIdForUpdate`（`eq + lock + single`）。
 class ItemLockConsistencyTest {
@@ -24,7 +24,6 @@ class ItemLockConsistencyTest {
         support.close();
     }
 
-    /// 锁命中一行，语句含 `for update`。
     @Test
     void pessimisticWriteLockReadsRowAndEmitsForUpdate() {
         support.seedData(List.of(support.newItem(1L, "apple", 10, null, ItemStatus.NEW)));
@@ -40,7 +39,6 @@ class ItemLockConsistencyTest {
         assertThat(support.drainSql()).anySatisfy(sql -> assertThat(sql).containsIgnoringCase("for update"));
     }
 
-    /// 锁无命中时返回空，不抛异常。
     @Test
     void pessimisticWriteLockOnMissingRowReturnsEmpty() {
         support.seedData(List.of(support.newItem(1L, "apple", 10, null, ItemStatus.NEW)));

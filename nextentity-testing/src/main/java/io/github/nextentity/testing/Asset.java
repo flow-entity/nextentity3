@@ -6,12 +6,8 @@ package io.github.nextentity.testing;
 public interface Asset {
 
     /// 主键。
-    ///
-    /// @return 主键值
     Long id();
 
     /// 资产名称。
-    ///
-    /// @return 名称
     String name();
 }

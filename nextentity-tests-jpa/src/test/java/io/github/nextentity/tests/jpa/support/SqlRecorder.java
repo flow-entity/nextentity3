@@ -17,9 +17,7 @@ public final class SqlRecorder implements StatementInspector {
         return sql;
     }
 
-    /// 取走本线程已抓到的 SQL，并清空账本。
-    ///
-    /// @return 按执行顺序排列的 SQL 列表
+    /// 取走本线程已抓到的 SQL（按执行顺序），并清空账本。
     public List<String> drain() {
         List<String> sql = List.copyOf(recorded.get());
         recorded.get().clear();

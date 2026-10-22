@@ -20,29 +20,28 @@ import org.junit.jupiter.api.BeforeEach;
 /// @param <T> 后端实体类型，必须实现 {@link Item}
 public abstract class ConsistencyTestBase<T extends Item> {
 
-    /// 固定夹具 id。
     protected static final long APPLE_ID = 1L;
-    /// 固定夹具 id。
+
     protected static final long BANANA_ID = 2L;
-    /// 固定夹具 id。
+
     protected static final long CHERRY_ID = 3L;
-    /// 固定夹具 id。
+
     protected static final long APPLE_PIE_ID = 4L;
 
-    /// 固定夹具名称。
     protected static final String APPLE_NAME = "apple";
-    /// 固定夹具名称。
+
     protected static final String BANANA_NAME = "banana";
-    /// 固定夹具名称。
+
     protected static final String CHERRY_NAME = "cherry";
-    /// 固定夹具名称。
+
     protected static final String APPLE_PIE_NAME = "apple pie";
+
     /// 夹具里不存在的名称：用于「无命中」断言。
     protected static final String MISSING_NAME = "zzz";
 
     /// 夹具文本值（`note` 只在两行非空，用于分组/空值断言）。
     protected static final String NOTE_1 = "n1";
-    /// 夹具文本值。
+
     protected static final String NOTE_2 = "n2";
 
     /// 每个用例前重建固定夹具（状态分布：apple=NEW, banana=ACTIVE, cherry=DONE, apple pie=NEW）。
@@ -58,12 +57,12 @@ public abstract class ConsistencyTestBase<T extends Item> {
 
     /// 后端接线（由具体后端提供）。
     ///
-    /// @return 一致性能力集
+    /// @return 一致性能力集：夹具与查询入口都由它提供
     protected abstract ConsistencySupport<T> support();
 
     /// 全新的查询入口。
     ///
-    /// @return 查询入口
+    /// @return 全新的查询入口：条件不得跨用例累积
     protected final EntityQuery<T> query() {
         return support().query();
     }

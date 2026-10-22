@@ -31,20 +31,19 @@ import org.junit.jupiter.api.Test;
 /// @param <T> 后端实体类型
 public abstract class AssociationConsistencyTest<T extends Asset> {
 
-    /// 固定夹具 id。
     protected static final long ANVIL_ID = 1L;
-    /// 固定夹具 id。
+
     protected static final long AXE_ID = 2L;
-    /// 固定夹具 id。
+
     protected static final long BOLT_ID = 3L;
-    /// 固定夹具 id。
+
     protected static final long BANDAGE_ID = 4L;
 
-    /// 固定夹具 owner 名称。
     protected static final String ALPHA = "alpha";
-    /// 固定夹具 owner 名称。
+
     protected static final String BETA = "beta";
-    /// 固定夹具里不存在的 owner 名称。
+
+    /// 固定夹具里不存在的 owner 名称：用于「无命中」断言。
     protected static final String MISSING_OWNER = "gamma";
 
     /// 每个用例前重建固定夹具。
@@ -59,23 +58,23 @@ public abstract class AssociationConsistencyTest<T extends Asset> {
 
     /// 全新的查询入口。
     ///
-    /// @return 查询入口
+    /// @return 全新的查询入口：条件不得跨用例累积
     protected abstract EntityQuery<T> query();
 
     /// 清空并写入夹具（含 owner 的落库）；返回后数据必须对新查询可见。
     ///
-    /// @param fixtures 夹具描述
+    /// @param fixtures 夹具描述；`ownerName` 为 `null` 表示该行没有关联
     protected abstract void seedData(List<AssetFixture> fixtures);
 
     /// 两段嵌套路径：`EntityPath.of(T::owner).get(Owner::name)`。
     ///
-    /// @return 嵌套字符串路径
+    /// @return 两段嵌套的字符串路径（`owner` → `name`）
     protected abstract StringPath<T> ownerNamePath();
 
     /// 取结果集的主键序列。
     ///
     /// @param rows 查询结果
-    /// @return 主键列表
+    /// @return 主键列表，保持查询返回的顺序
     protected final List<Long> ids(List<T> rows) {
         return rows.stream().map(Asset::id).toList();
     }

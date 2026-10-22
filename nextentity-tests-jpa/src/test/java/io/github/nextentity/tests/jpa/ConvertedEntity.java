@@ -25,15 +25,11 @@ public class ConvertedEntity {
     }
 
     /// 主键引用。
-    ///
-    /// @return 主键引用
     public static PathRef<ConvertedEntity, Long> idRef() {
         return ConvertedEntity::id;
     }
 
     /// 转换字段引用。
-    ///
-    /// @return 字段引用
     public static PathRef<ConvertedEntity, String> payloadRef() {
         return ConvertedEntity::payload;
     }

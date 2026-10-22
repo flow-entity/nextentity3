@@ -33,8 +33,6 @@ final class JpaAssetSupport implements AutoCloseable {
     }
 
     /// 两段嵌套路径：`AssetEntity::owner` → `OwnerEntity::name`。
-    ///
-    /// @return 嵌套字符串路径
     StringPath<AssetEntity> ownerNamePath() {
         return EntityPath.of(AssetEntity::owner).get(OwnerEntity::name);
     }

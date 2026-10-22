@@ -75,16 +75,16 @@ final class JpaItemSupport implements ConsistencySupport<ItemEntity>, AutoClosea
 
     /// 在事务里执行并返回结果（悲观锁等要求事务的查询用得到）。
     ///
-    /// @param work 事务体
+    /// @param work 事务体，非 `null`
     /// @param <R>  结果类型
-    /// @return 事务体返回值
+    /// @return 事务体的返回值，原样透传
     <R> R inTransaction(Supplier<R> work) {
         return harness.inTransaction(work);
     }
 
     /// 取走已抓到的 SQL。
     ///
-    /// @return SQL 列表
+    /// @return 按执行顺序排列的 SQL；取走后账本清空
     List<String> drainSql() {
         return harness.drainSql();
     }
