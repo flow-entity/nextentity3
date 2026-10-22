@@ -18,6 +18,7 @@
 - `nextentity-jpa`：`JpaMeta` / `JpaCompiler` / `JpaQueryBuilder` / `JpaPaths`（嵌套路径 LEFT JOIN + 前缀缓存）/ `JpaPredicates` / `JpaProjections` / `JpaExecutor` / `JpaPersistExecutor` / `JpaEntityOperationsFactory`。
 - `nextentity-spring`：`NextEntityAutoConfiguration`（`nextentity.enabled=true` 时注册唯一的 `EntityOperationsFactory` bean）、`AbstractRepository`（构造器注入工厂 + `query()` + `insert(T)`）。
 - `nextentity-testing` / `nextentity-tests-jpa`：后端无关的一致性基类 + SQL 快照工具（H2 `StatementInspector`），共 65 例。
+- `nextentity-tests-legacy`：把 2.2.3 的 `integration` 用例移植过来做语义回归，1,063 条注解 → 保留 603 条（单环境执行 593 条），H2 与真 MySQL 8.0 各全绿。装置用真实 Hibernate 而非 Spring，建表用 2.2.3 自带 DDL + 驼峰转下划线命名策略，交付上下文前复位以保证用例隔离。460 条按能力缺口删除，逐条依据（含 api 源码 `文件:行`）与 4 项裁决见模块 `porting/REPORT.md`。
 
 ### Changed
 

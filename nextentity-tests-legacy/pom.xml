@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.flow-entity</groupId>
+        <artifactId>nextentity</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>nextentity-tests-legacy</artifactId>
+    <name>nextentity-tests-legacy</name>
+    <description>2.2.3 遗留 integration 用例的移植载体：只做一致性回归，不作为新代码的风格样板</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.github.flow-entity</groupId>
+            <artifactId>nextentity-jpa</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- 用例要真实 Hibernate：JpaMeta 从 JPA 元模型解析，纯 mock 证明不了任何东西 -->
+        <dependency>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-core</artifactId>
+            <version>${hibernate.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>mysql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- 真方言环境要真驱动：Testcontainers 的 mysql 模块不带 JDBC 驱动 -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <version>8.0.33</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <properties>
+        <hibernate.version>7.1.8.Final</hibernate.version>
+        <!-- 没有 main 字节码，不跑二进制扫描 -->
+        <spotbugs.skip>true</spotbugs.skip>
+    </properties>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!-- 移植期一次列全所有编译错误，避免 javac 默认 100 条截断导致反复往返 -->
+                    <compilerArgs>
+                        <arg>-Xlint:deprecation,-processing</arg>
+                        <arg>-Werror</arg>
+                        <arg>-Xmaxerrs</arg>
+                        <arg>2000</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+            <!--
+              本模块是 2.2.3 测试语料的移植载体：源文件刻意保持与上游一致的排版与结构，
+              以便和 D:\source\java\nextentity 逐文件 diff 复核。
+              spotless / checkstyle / PMD 在这里一律跳过——对移植语料做风格整形会让 diff 失去可比性。
+            -->
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-pmd-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

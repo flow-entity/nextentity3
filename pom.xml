@@ -19,6 +19,7 @@
         <module>nextentity-spring</module>
         <module>nextentity-testing</module>
         <module>nextentity-tests-jpa</module>
+        <module>nextentity-tests-legacy</module>
         <module>nextentity-bom</module>
     </modules>
 
