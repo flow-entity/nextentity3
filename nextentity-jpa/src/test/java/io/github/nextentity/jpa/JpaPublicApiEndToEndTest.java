@@ -116,6 +116,74 @@ class JpaPublicApiEndToEndTest extends JpaTestSupport {
         });
     }
 
+    /// `selectDistinct` 的两个真实调用点（point-mall `DigitalCardRepository:85`、
+    /// `OrderImportRecordRepository:71`）都是「单列投影 + `.list()`」形态。
+    @Test
+    void selectDistinctSingleColumn() {
+        inTx(entityManager -> {
+            EntityOperations<ShopOrder> operations = operations(entityManager);
+            operations.insert(new ShopOrder(103L, null, OrderStatus.PAID, new BigDecimal("9.00"), null));
+
+            List<OrderStatus> all =
+                    operations.query().select(ShopOrder::getStatus).list();
+            assertThat(all).containsExactlyInAnyOrder(OrderStatus.PAID, OrderStatus.CREATED, OrderStatus.PAID);
+
+            List<OrderStatus> distinct =
+                    operations.query().selectDistinct(ShopOrder::getStatus).list();
+            assertThat(distinct).containsExactlyInAnyOrder(OrderStatus.PAID, OrderStatus.CREATED);
+            return null;
+        });
+    }
+
+    /// `insertAll` / `updateAll` 的真实调用点：point-mall `AppRepositoryImpl:103/119`。
+    ///
+    /// 两个调用分处不同事务（真实用法）：批量 UPDATE 是绕过持久化上下文的语句，
+    /// 同一事务里紧跟未 flush 的 persist 时库里还没有该行（2.2.3 同样如此），
+    /// 因此这里按「先提交插入、再另起事务更新」的形态测。
+    @Test
+    void insertAllThenUpdateAll() {
+        inTx(entityManager -> {
+            operations(entityManager)
+                    .insertAll(List.of(
+                            new ShopOrder(104L, null, OrderStatus.CREATED, new BigDecimal("1.00"), null),
+                            new ShopOrder(105L, null, OrderStatus.CREATED, new BigDecimal("2.00"), null)));
+            return null;
+        });
+        inTx(entityManager -> {
+            EntityOperations<ShopOrder> operations = operations(entityManager);
+            ShopOrder first =
+                    operations.query().where(ShopOrder::getId).eq(104L).single();
+            ShopOrder second =
+                    operations.query().where(ShopOrder::getId).eq(105L).single();
+            entityManager.detach(first);
+            entityManager.detach(second);
+            first.setAmount(new BigDecimal("11.00"));
+            second.setAmount(new BigDecimal("22.00"));
+            operations.updateAll(List.of(first, second));
+            assertThat(first.getVersion()).isEqualTo(1);
+            assertThat(second.getVersion()).isEqualTo(1);
+            return null;
+        });
+        inTx(entityManager -> {
+            EntityOperations<ShopOrder> operations = operations(entityManager);
+            assertThat(operations
+                            .query()
+                            .where(ShopOrder::getId)
+                            .eq(104L)
+                            .single()
+                            .getAmount())
+                    .isEqualByComparingTo("11.00");
+            assertThat(operations
+                            .query()
+                            .where(ShopOrder::getId)
+                            .eq(105L)
+                            .single()
+                            .getAmount())
+                    .isEqualByComparingTo("22.00");
+            return null;
+        });
+    }
+
     private static EntityOperations<ShopOrder> operations(EntityManager entityManager) {
         return new JpaEntityOperationsFactory(entityManager, entityManager.getEntityManagerFactory())
                 .operations(ShopOrder.class);
