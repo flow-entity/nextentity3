@@ -42,18 +42,23 @@ public interface Collector<T> {
     /// - 普通查询：满足条件的行数；
     /// - `distinct()`：**去重后的投影值个数**（`count(DISTINCT 投影)`，证据：
     ///   `jpa/exec/JpaExecutor.java:68-71`）；
-    /// - 带 `groupBy` 或聚合投影：不支持。
+    /// - 带 `groupBy` / `having` 或聚合投影：不支持。
     ///
     /// @return 行数，或 `distinct()` 时的去重投影值个数（多列去重不支持，抛 `UnsupportedOperationException`）
-    /// @throws UnsupportedOperationException 带 `groupBy` 或聚合投影的查询：照常数行会把「分组数」
-    ///     数成「总行数」，属于静默错数，因此直接拒绝而不是给出一个错答案
+    /// @throws UnsupportedOperationException 带 `groupBy` / `having` 或聚合投影的查询：照常数行会把
+    ///     「分组数」数成「总行数」，属于静默错数，因此直接拒绝而不是给出一个错答案
     long count();
 
     /// 过滤后是否存在任何行。
     ///
-    /// 忽略投影与聚合，只看条件：对 `groupBy` 规格等价于「是否存在分组」，没有命中行即为 `false`。
-    /// 与 2.2.3 `WhereImpl.java:134-148` 的 `SELECT_ANY` + limit 1 逐项一致。
+    /// 普通查询只看条件：没有命中行即为 `false`（与 2.2.3 `WhereImpl.java:134-148` 的
+    /// `SELECT_ANY` + limit 1 逐项一致）。
+    ///
+    /// 带 `groupBy` / `having` 或聚合投影的查询**不支持**：`having` 能把所有组都过滤掉，只渲染
+    /// `where` 会给出与查询**相反**的布尔值，因此直接拒绝而不是静默近似（证据：
+    /// `jpa/exec/JpaExecutor.java:91-97`）。与 `count()` 的处理一致。
     ///
     /// @return 命中至少一行返回 `true`
+    /// @throws UnsupportedOperationException 带 `groupBy` / `having` 或聚合投影的查询：静默近似会返回相反结论
     boolean exists();
 }
