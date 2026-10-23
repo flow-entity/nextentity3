@@ -59,7 +59,7 @@ final class RowAssembler {
     ///
     /// 长度 1 的数组列值与单列行在行形态上无法区分，因此长度 1 的行一律按"单列"拆包；
     /// 映射器路径统一产生按位置取值的 [TupleValue]，单列包成长度为 1 的元组（`map` 只收 `Tuple`），
-    /// 两列也不换成 [Tuple2Value]——映射器不需要具名访问器。
+    /// 两列也不换成 [Tuple2]——映射器只需要按位置取值，具名访问器是 `select(...)` 的返回类型才需要的。
     private static Tuple tuple(Object row, int columns) {
         return new TupleValue(columns == 1 ? new Object[] {row} : (Object[]) row);
     }
