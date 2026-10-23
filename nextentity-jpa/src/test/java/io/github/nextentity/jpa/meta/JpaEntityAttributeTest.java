@@ -37,6 +37,6 @@ class JpaEntityAttributeTest {
     void rejectsUnknownFieldOnWholeInheritanceChain() {
         assertThatThrownBy(() -> new JpaEntityAttribute(DerivedRecord.class, "missing"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("实体 io.github.nextentity.jpa.entity.DerivedRecord 上找不到字段 missing");
+                .hasMessage("实体 " + DerivedRecord.class.getName() + " 上找不到字段 missing");
     }
 }

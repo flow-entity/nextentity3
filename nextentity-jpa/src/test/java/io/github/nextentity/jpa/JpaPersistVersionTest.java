@@ -110,7 +110,7 @@ class JpaPersistVersionTest extends JpaTestSupport {
 
             assertThatThrownBy(() -> new JpaPersistExecutor<>(entityManager, meta(), Customer.class).update(ghost))
                     .isInstanceOf(EntityNotFoundException.class)
-                    .hasMessage("实体 io.github.nextentity.jpa.entity.Customer 不存在: id=999");
+                    .hasMessage("实体 " + Customer.class.getName() + " 不存在: id=999");
             return null;
         });
         inTx(entityManager -> {

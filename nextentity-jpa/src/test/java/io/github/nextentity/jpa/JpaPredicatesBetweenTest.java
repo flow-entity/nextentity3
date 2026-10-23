@@ -178,17 +178,17 @@ class JpaPredicatesBetweenTest extends JpaTestSupport {
 
     /// 下界字面量、上界表达式：`instanceof Literal` 的短路顺序里最后一格（`JpaPredicates.java:92`）。
     ///
-    /// 期望值与「两侧都是列」的用例相同，是因为夹具的边界列恰好都是 `[5,15]`；这里钉的是渲染
-    /// 分支本身，闭区间语义仍由上一格用例负责。区间取 `[5, upper_price]` 仍能切掉 3 行。
+    /// 下界取 10 使命中集合 `[1,3]` 与「两侧都是列」（`[1,3,4]`）不同，用来证明这一格真的按混合形态
+    /// 渲染：把这一格判反、或退化成「两侧都是列」，`value=5` 的第 4 行就会重新命中。
     @Test
-    @DisplayName("下界字面量 + 上界表达式：value between 5 and upper_price，3 行命中")
+    @DisplayName("下界字面量 + 上界表达式：value between 10 and upper_price，命中集合与两侧都是列不同")
     void mixedBoundsLowerLiteralUpperExpression() {
         QuerySpec spec = new QuerySpec(
                 PriceWindow.class,
                 new EntitySelection(),
                 new Between(
                         AttributePath.of(PriceWindow.class, "value"),
-                        Literal.of(new BigDecimal("5")),
+                        Literal.of(new BigDecimal("10")),
                         AttributePath.of(PriceWindow.class, "upper")),
                 List.of(),
                 null,
@@ -196,7 +196,7 @@ class JpaPredicatesBetweenTest extends JpaTestSupport {
                 Window.NONE,
                 null);
 
-        assertThat(priceWindowIds(spec)).containsExactly(1L, 3L, 4L);
+        assertThat(priceWindowIds(spec)).containsExactly(1L, 3L);
     }
 
     private List<Long> priceWindowIds(QuerySpec spec) {

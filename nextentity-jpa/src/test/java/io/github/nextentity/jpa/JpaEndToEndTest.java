@@ -143,8 +143,11 @@ class JpaEndToEndTest extends JpaTestSupport {
 
     /// `count()` 的两条契约拒绝（`exec/JpaExecutor.java:58`、`:69`）。
     ///
-    /// 两种形状都能从公开 api 写出来（`groupBy(...).count()`、`distinct().select(a, b).count()`），
-    /// 因此拒绝分支必须钉住：静默近似会给出与查询不一致的行数。
+    /// 公开 api 路径的同一拒绝由 `nextentity-tests-jpa` 的
+    /// `ItemAggregateTerminalContractTest#countRejectsGroupBy` 与
+    /// `#countRejectsMultiColumnDistinct` 钉住；这里手搭 `QuerySpec` 是为了在 **exec 层单独钉住两条
+    /// 文案**——两条消息带不同的诊断信息（一条说 2.2.3 走子查询计数，一条说多列 distinct 的方言语义
+    /// 不一致），必须在编译/执行入口就固定下来。
     @Test
     void countRejectsAggregateAndMultiColumnDistinct() {
         AttributePath status = AttributePath.of(ShopOrder.class, "status");
@@ -173,11 +176,10 @@ class JpaEndToEndTest extends JpaTestSupport {
             JpaExecutor executor = executor(entityManager);
             assertThatThrownBy(() -> executor.count(compiler.compile(grouped.forCount())))
                     .isInstanceOf(UnsupportedOperationException.class)
-                    .hasMessage("分组/聚合规格的 count 未实现（2.2.3 走子查询计数：" + "io.github.nextentity.jpa.entity.ShopOrder）");
+                    .hasMessage("分组/聚合规格的 count 未实现（2.2.3 走子查询计数：" + ShopOrder.class.getName() + "）");
             assertThatThrownBy(() -> executor.count(compiler.compile(multiColumnDistinct.forCount())))
                     .isInstanceOf(UnsupportedOperationException.class)
-                    .hasMessage(
-                            "多列 distinct 规格的 count 未实现（列数 2，方言语义不一致）：" + "io.github.nextentity.jpa.entity.ShopOrder");
+                    .hasMessage("多列 distinct 规格的 count 未实现（列数 2，方言语义不一致）：" + ShopOrder.class.getName());
             return null;
         });
     }

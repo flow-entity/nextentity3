@@ -34,7 +34,7 @@ class JpaEntityTypeTest {
 
         assertThatThrownBy(() -> JpaEntityType.of(metamodel, LabelOnlyEntity.class))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("实体 io.github.nextentity.jpa.entity.LabelOnlyEntity 没有 @Id 属性");
+                .hasMessage("实体 " + LabelOnlyEntity.class.getName() + " 没有 @Id 属性");
     }
 
     @Test
