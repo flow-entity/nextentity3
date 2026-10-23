@@ -43,7 +43,7 @@ Spring 下的仓储继承 `AbstractRepository`（构造器注入唯一的 `Entit
 
 ```java
 @Repository
-public class OrderRepository extends AbstractRepository<Order, Long> {
+public class OrderRepository extends AbstractRepository<Order> {
 
     public OrderRepository(EntityOperationsFactory factory) {
         super(factory);

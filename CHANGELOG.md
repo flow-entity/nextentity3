@@ -54,6 +54,7 @@
 
 ### Removed
 
+- `AbstractRepository<T, ID>` 的 `ID` 类型参数：本类从不使用它，Javadoc 里也写着「仅用于子类声明的可读性」。**为什么必须破**：未使用的类型参数会误导子类以为主键类型参与契约，且它让 `AbstractRepository` 的签名与 `EntityOperations` 的泛型面不一致。迁移是机械替换：`extends AbstractRepository<Order, Long>` → `extends AbstractRepository<Order>`（README、`docs/USAGE.md` 与本仓库示例已同步）。
 - 相对 nextentity 2.x 不再提供：JDBC 第二引擎与方言、自研元模型、实体事件总线、CGLIB 仓储代理、`Tuple5`~`Tuple10`。
 - `api` 包 44 个类型整体移除（完整清单与逐条理由见下方 Migration 第 1 节）。
 - `core.expression.*`、`core.meta.impl.DefaultMetamodel`、`core.util.Iterators`、`core.EntityTemplateFactory`、`spring.EntityFactoryBuilder` 等 2.x 内部符号不再提供。

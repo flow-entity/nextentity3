@@ -13,9 +13,8 @@ import org.springframework.core.ResolvableType;
 /// 2.2.3 里的 `findAll` / `count` / `insert` / `updateAll` / `delete` / `path(...)` 在 point-mall
 /// 零调用点，写操作走 `@Transactional` + `core.PersistExecutor`，不在本类复制。
 ///
-/// @param <T>  实体类型
-/// @param <ID> 主键类型（仅用于子类声明的可读性，本类不需要它）
-public abstract class AbstractRepository<T, ID> {
+/// @param <T> 实体类型
+public abstract class AbstractRepository<T> {
 
     private final EntityOperations<T> operations;
 

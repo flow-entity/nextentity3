@@ -14,7 +14,7 @@ JPA 之上的小型类型安全查询层。把「动态条件 + 排序 + 分页 
 
 ```java
 @Repository
-public class OrderRepository extends AbstractRepository<Order, Long> {
+public class OrderRepository extends AbstractRepository<Order> {
 
     public OrderRepository(EntityOperationsFactory factory) {
         super(factory);
