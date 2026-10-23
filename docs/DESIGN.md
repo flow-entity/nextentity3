@@ -136,7 +136,7 @@ L4 同样只有口径没有载体：`nextentity-tests-jpa` 里目前**没有任�
 
 | 指标 | 角色 | 目标 |
 |---|---|---|
-| 变异分数（PIT） | 主指标 | `core` ≥ 80%、`jpa` ≥ 70%（尚未接入，见下「尚未实施」） |
+| 变异分数（PIT） | 主指标 | `core` ≥ 95%、`jpa` ≥ 90%；当前实测均 **100%**（见下「变异测试」，阈值写在各模块 pom） |
 | 语义等价律条数 | 辅助 | 每条律至少 1 条差分用例，条数只增不减 |
 | 方言矩阵通过率 | 辅助 | 100% 通过；skip 数单独报表，只许降不许升（矩阵与报表均待建，见上「待整改」） |
 | 缺陷逃逸率 | 辅助 | 发版后发现的语义缺陷数 / 版本，趋势必须向下 |
@@ -150,14 +150,15 @@ L4 同样只有口径没有载体：`nextentity-tests-jpa` 里目前**没有任�
 |---|---|---|---|
 | 快 | 保存 / 提交 | L0 + L1 | < 60s |
 | PR | push / PR | L0–L2 | < 10min |
-| 夜间 | 每晚 | L0–L3（MySQL 方言矩阵待容器用例加入后才成立） | 不限 |
+| 夜间 | 每晚 | L0–L3 + 变异测试（MySQL 方言矩阵待容器用例加入后才成立） | 不限 |
 | 发版前 | 发版 | L0–L3 + 全量门禁（L4 待容器用例） | 不限 |
 
 待整改：`nextentity-tests-jpa` 目前把 H2 场景与容器场景混在 surefire 一个通道里。failsafe 已在模块 pom 声明，但其默认 includes 是 `**/IT*`、`**/*IT`、`**/*ITCase`，与 `*IntegrationTest` 命名不匹配——容器用例一旦加入，会被 surefire 跑掉、failsafe 一条也不收。目标是拆成 surefire（H2，无容器）+ failsafe（`*IntegrationTest`，需 Docker，含显式 includes 配置）。本轮未执行。
 
+**变异测试（PIT，已接入）**：`mvn -pl nextentity-core pitest:mutationCoverage`、`mvn -pl nextentity-jpa pitest:mutationCoverage`。它只出分数、不新增用例形态，所以是**度量层**而不是五层防线之一。基线：`core` 226/226、`jpa` 的 `compile` 包 49/49，均 100%；阈值（95% / 90%）写在各模块 pom，低于阈值构建失败。`jpa` 的 `exec` / `meta` 未纳入变异范围——它们的测试要起 Hibernate，逐变异重跑代价过高，正确性由 `nextentity-tests-jpa` 的落库用例兜底。
+
 **尚未实施**（方向，不是已有能力——写进这里的东西不得当成现状引用）：
 
-- 变异测试（PIT）：接上后作为**度量层 L5**，只出分数、不新增用例形态，故不列入上面五层防线。
 - 属性测试：Spec 生成器 + 差分 oracle，用生成替代手写组合。
 - H2 兼容模式矩阵：以 `MODE=MySQL` / `PostgreSQL` / `Oracle` 跑同一套一致性用例。
 - 故障注入：连接中断、锁超时、方言不支持路径。
