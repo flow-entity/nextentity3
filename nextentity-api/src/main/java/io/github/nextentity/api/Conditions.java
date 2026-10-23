@@ -86,6 +86,23 @@ final class Conditions {
             }
             return parent == null ? next : new Leaf<>(combine, List.of(), List.of(parent, next), null);
         }
+
+        /// 本次条件被短路时的返回值：只丢本次条件，链上已有的 `parent` 必须保留。
+        ///
+        /// 三种情形的语义都不同，不能合并成一个 `alwaysTrue()`：
+        /// - `suppressed`：整条链已恒真（`TRUE ∨ x`），后面加什么都恒真；
+        /// - 无 `parent`：本次就是唯一条件，短路后等于「无条件」；
+        /// - 有 `parent`：只丢本次条件，把 `parent` 原样交还。
+        ///
+        /// 有 `parent` 的情形若返回恒真占位，`x.eq(3).or(A::getScore).eqIfNotNull(null)`
+        /// 会退化成「无条件」（返回全表），而调用方写 `or(PathRef)` 要的是「可选条件」：
+        /// 参数为 `null` 时只该少这一条，已挂上的 `x = 3` 必须留着。
+        final Predicate<T> skip() {
+            if (suppressed) {
+                return alwaysTrue();
+            }
+            return parent == null ? alwaysTrue() : parent;
+        }
     }
 
     /// 叶子条件或逻辑组合；`AND`/`OR`/`NOT` 的子条件放在 `arguments()` 里。
@@ -225,7 +242,7 @@ final class Conditions {
 
         @Override
         public Predicate<T> eqIfNotNull(N value) {
-            return value == null ? alwaysTrue() : comparison(Operation.EQ, value);
+            return value == null ? skip() : comparison(Operation.EQ, value);
         }
 
         @Override
@@ -280,22 +297,22 @@ final class Conditions {
 
         @Override
         public Predicate<T> geIfNotNull(N value) {
-            return value == null ? alwaysTrue() : comparison(Operation.GE, value);
+            return value == null ? skip() : comparison(Operation.GE, value);
         }
 
         @Override
         public Predicate<T> gtIfNotNull(N value) {
-            return value == null ? alwaysTrue() : comparison(Operation.GT, value);
+            return value == null ? skip() : comparison(Operation.GT, value);
         }
 
         @Override
         public Predicate<T> leIfNotNull(N value) {
-            return value == null ? alwaysTrue() : comparison(Operation.LE, value);
+            return value == null ? skip() : comparison(Operation.LE, value);
         }
 
         @Override
         public Predicate<T> ltIfNotNull(N value) {
-            return value == null ? alwaysTrue() : comparison(Operation.LT, value);
+            return value == null ? skip() : comparison(Operation.LT, value);
         }
 
         @Override
@@ -330,7 +347,7 @@ final class Conditions {
 
         @Override
         public Predicate<T> inIfNotNull(Collection<? extends N> values) {
-            return values == null ? alwaysTrue() : membership(Operation.IN, new ArrayList<>(values));
+            return values == null ? skip() : membership(Operation.IN, new ArrayList<>(values));
         }
 
         @Override
