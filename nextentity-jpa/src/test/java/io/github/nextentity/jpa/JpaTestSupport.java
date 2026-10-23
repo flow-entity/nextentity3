@@ -5,6 +5,8 @@ import io.github.nextentity.jpa.entity.Note;
 import io.github.nextentity.jpa.entity.OrderStatus;
 import io.github.nextentity.jpa.entity.Organization;
 import io.github.nextentity.jpa.entity.ShopOrder;
+import io.github.nextentity.jpa.entity.VersionedEntry;
+import io.github.nextentity.jpa.entity.VersionedLedger;
 import io.github.nextentity.jpa.meta.JpaMeta;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityTransaction;
@@ -50,6 +52,8 @@ abstract class JpaTestSupport {
         configuration.addAnnotatedClass(Organization.class);
         configuration.addAnnotatedClass(Customer.class);
         configuration.addAnnotatedClass(ShopOrder.class);
+        configuration.addAnnotatedClass(VersionedLedger.class);
+        configuration.addAnnotatedClass(VersionedEntry.class);
         this.sessionFactory = configuration.buildSessionFactory();
         this.meta = new JpaMeta(sessionFactory);
     }
