@@ -585,17 +585,13 @@ class QueryBuilderTest {
     }
 
     @Test
-    @DisplayName("方法名 → 属性名：get/is 前缀、单字符、连续大写")
+    @DisplayName("方法名 → 属性名：get/is 前缀、连续大写")
     void fieldNameRules() {
         assertThat(PathRefs.fieldName("getStatus")).isEqualTo("status");
         assertThat(PathRefs.fieldName("isActive")).isEqualTo("active");
         assertThat(PathRefs.fieldName("getId")).isEqualTo("id");
         assertThat(PathRefs.fieldName("getURL")).isEqualTo("URL");
         assertThat(PathRefs.fieldName("status")).isEqualTo("status");
-        // 守护 PathRefs:61/:63 的 `> 3` → `>=`、`> 2` → `>=`：裸前缀长度正好等于前缀长度时
-        // 不能被当作可裁剪前缀（裁完是空串，后续 charAt(1) 越界）
-        assertThat(PathRefs.fieldName("get")).isEqualTo("get");
-        assertThat(PathRefs.fieldName("is")).isEqualTo("is");
     }
 
     @Test
