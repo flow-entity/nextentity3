@@ -22,9 +22,10 @@
 - **第一梯队能力（10 项）**，`api` 侧：列对列比较 `ColumnComparison`（`eq`/`ne`/`ge`/`gt`/`le`/`lt` 接 `Expression`）、表达式算术 `NumberArithmetic` + `NumberValue`（`add`/`sub`/`mul`/`div`/`mod`，可链式）、逻辑组合 `LogicalOps`（`not()` + n 元 `and`/`or(Collection)`）、聚合结果 `AggregateValue`（可比较/可区间、**不接聚合**）、`HavingStep`（`having(Expression)`）、`model.Tuple`（3 列及以上投影，`get(int)`/`size()`；`Tuple2` 也实现它）、`Between` 增 `between(Expression,Expression)` 与 `notBetween(U,U)`、`StringOps.like(String)`（模式自带 `%`）、`SelectStep` 增 3 列及以上投影重载、`GroupByStep` 增多列 `groupBy(PathRef...)`、`Aggregates` 增 `min()`/`avg()`（`avg` 返回 `Double`）、`NumberPath.sum()` 与全部聚合方法改为返回 `AggregateValue`、`Operation` 由 19 个常量扩到 27 个（新增 `NOT`/`MIN`/`AVG`/`ADD`/`SUB`/`MUL`/`DIV`/`MOD`）、`Op` 增 `subject()`（左侧表达式，`null` 表示主语就是 `refs()` 的路径）。
 - **第一梯队能力（10 项）**，`core` / `jpa` 侧：`core.spec` 新增值表达式层 `Operand`（`Literal` / `AttributePath` / `AggregateOperand` / `ArithmeticOperand` + `BinaryOperator`）与 `ComputedProjection`，`Comparison`/`Between` 的字段升级为 `Operand`，`AggregateFunction` 增 `MIN`/`AVG`，`QuerySpec` 增 `having`（`forCount`/`forExists` 保留它）；`core.builder` 的 `OpInterpreter` 负责 `NOT`/`AND`/`OR` 的语义（`and(空)`/`or(空)` 都保留接收者（`a ∧ 空 = a`、`a ∨ 空 = a`）、`or` 混入短路条件=恒真）与 3 列以上 `TupleValue`；`jpa.compile.JpaOperands` 是 `Operand → Criteria Expression` 的**唯一**渲染点（聚合与算术的 `switch` 各只有一份），`JpaPredicates` 支持表达式右值，`JpaQueryBuilder` 渲染 `HAVING`。
 - **显式投影映射器**，`api` 侧：新增 `ProjectionMapper<T, R>`（`expressions()` 声明列集、`map(Tuple)` 造结果）与 `SelectStep.project(ProjectionMapper)`。列集由映射器对象声明，结果直接是调用方类型 `R`，可在运行期组装列集合；**映射**零反射零注解（属性名解析仍靠方法引用的 `SerializedLambda`，与既有 `select(...)` 一致）。单列也以长度为 1 的 `Tuple` 交给 `map`（`Tuple#size()` 下限放宽到 1）。
-- **显式投影映射器**，`core` 侧：新增 `builder.ValueProjections`（api 表达式 → `core.spec.Projection` 的唯一转换点，`select(...)` / `selectDistinct(...)` / `project(...)` 都经过它；映射器列集的整批校验也在这里，违规在 `project()` 阶段抛 `IllegalArgumentException` 且消息带列下标）与 `builder.RowAssembler`（后端原始行 → 结果对象：`Tuple` 装配与映射器映射），`QueryBuilder` 不再自己装配行。
+- **显式投影映射器**，`core` 侧：新增 `builder.ValueProjections`（api 表达式 → `core.spec.Projection` 的唯一转换点，`select(...)` / `project(...)` 都经过它；映射器列集的整批校验也在这里，违规在 `project()` 阶段抛 `IllegalArgumentException` 且消息带列下标）与 `builder.RowAssembler`（后端原始行 → 结果对象：`Tuple` 装配与映射器映射），`QueryBuilder` 不再自己装配行。
+- **去重修饰符** `api.DistinctStep#distinct()`（由 `SelectStep` 继承）：把「是否去重」从「投影形态」里正交出来，单列 / `Tuple2` / 3 列起 `Tuple` / `ProjectionMapper` 四种投影一视同仁。它返回 `SelectStep` 而非终止符，因此「声明了去重却没投影」在编译期不可写，`SELECT DISTINCT 实体` 也写不出来。多列去重是新能力（原先只有单列 `selectDistinct`）；多列去重的 `count()` 抛 `UnsupportedOperationException`——`COUNT(DISTINCT a, b)` 在 MySQL 与 PostgreSQL 形态不同，只数第一列会静默给出错数。
 - `model.Tuple#size()` 契约从「恒大于等于 2」放宽到「恒大于等于 1」：映射器路径单列也产出 `Tuple`，`Tuple` 类注释同步去掉「3 列及以上」的限定。
-- `select(Expression)` / 2 列 / 3 列以上重载现在也接受 `PathRef`（裸方法引用）：它们与 `select(PathRef)` / `selectDistinct(...)` / `project(...)` 共用 `builder.ValueProjections.of(...)` 这条「api 表达式 → 投影项」转换，因此在静态类型被拓宽为 `Expression` 的 `PathRef` 上也能投影，不再抛 `IllegalArgumentException`（原先只有 `select(PathRef)` 重载能接，是既有的洞）。
+- `select(Expression)` / 2 列 / 3 列以上重载现在也接受 `PathRef`（裸方法引用）：它们与 `select(PathRef)` / `project(...)` 共用 `builder.ValueProjections.of(...)` 这条「api 表达式 → 投影项」转换，因此在静态类型被拓宽为 `Expression` 的 `PathRef` 上也能投影，不再抛 `IllegalArgumentException`（原先只有 `select(PathRef)` 重载能接，是既有的洞）。
 
 ### Changed
 
@@ -36,16 +37,17 @@
 - 聚合方法（`count` / `countDistinct` / `max` / `min` / `avg` / `sum`）统一返回 `AggregateValue`（仍是 `Expression`）：`max().max()`、`count().count()` 这类"聚合再接聚合"的写法现在**编译期就不可写**（原先编译通过、运行期抛 `UnsupportedOperationException`）。
 - 聚合 / 分组规格上的 `count()` 仍抛 `UnsupportedOperationException`（SQL 需子查询计数，3.x 未实现）；`exists()` 不受影响，语义是"有行"。`having(...)` 不校验"必须伴随 `groupBy`"——SQL 允许不带 `GROUP BY` 的 `HAVING`（全表聚合），由调用方负责。
 - `a = b` 这类列对列比较按**数据库排序规则**执行：字符串列的大小写敏感性、尾随空格处理由方言决定（H2 与 MySQL 可能不同），不要拿它做跨库一致的业务语义。
-- `selectDistinct(...).count()` / `.slice(...)` 现在真正可用：`JpaExecutor.count` 走 `count(distinct 投影列)`，不再显式拒绝（原先抛 `UnsupportedOperationException`）。
+- 单列 `distinct()` 的 `count()` / `.slice(...)` 现在真正可用：`JpaExecutor.count` 走 `count(distinct 投影列)`，不再显式拒绝（原先抛 `UnsupportedOperationException`）。
 - `Op` 改为 `sealed`：`Op` 是「值 → AST」的线格式，语义由后端按 `operation()` 穷尽解释，不允许外部再实现出后端无法解释的运算。
 - `Path` / `NumberPath` / `StringPath` 不再继承 `PathRef`：`PathRef` 只表示用户写的方法引用，路径值由新增的 `where(Path)` / `where(StringPath)` / `orderBy(Path)` 承载。**为什么必须破**：继承会让后端的 `where(PathRef)` 把 api 值对象当 lambda 解析（`writeReplace()` 抛 `NoSuchMethodException`）。
-- `SelectStep` 增第 6 个抽象方法 `project(ProjectionMapper)`：**接口的外部实现者需要补实现**（仓库内唯一实现是 `core.builder.QueryBuilder`）；调用方不受影响，既有 `select(...)` / `selectDistinct(...)` 重载的签名与语义未变。
+- `SelectStep` 增抽象方法 `project(ProjectionMapper)`：**接口的外部实现者需要补实现**（仓库内唯一实现是 `core.builder.QueryBuilder`）；调用方不受影响，既有 `select(...)` 重载的签名与语义未变。
 
 ### Removed
 
 - 相对 nextentity 2.x 不再提供：JDBC 第二引擎与方言、自研元模型、实体事件总线、CGLIB 仓储代理、`Tuple5`~`Tuple10`。
 - `api` 包 44 个类型整体移除（完整清单与逐条理由见下方 Migration 第 1 节）。
 - `core.expression.*`、`core.meta.impl.DefaultMetamodel`、`core.util.Iterators`、`core.EntityTemplateFactory`、`spring.EntityFactoryBuilder` 等 2.x 内部符号不再提供。
+- `SelectStep.selectDistinct(PathRef)`：由 `distinct().select(ref)` 取代。**为什么必须破**：两者语义完全相同，留着就是两个入口；而补「多列 `selectDistinct` 重载」会让「投影形态 × 是否去重」变成笛卡尔积（4 × 2 = 8 个入口），并把 `SelectStep` 从 6 个方法推到 8 个、撞穿 `API_INTERFACES_STAY_NARROW` 的 ≤6。迁移是机械替换：`x.selectDistinct(f)` → `x.distinct().select(f)`，仓库内 5 处移植用例与 point-mall 2 个调用点（`DigitalCardRepository:85`、`OrderImportRecordRepository:71`）均已替换。
 - `core.TransactionOperations`：零实现、零调用的空接缝已删除（事务边界由调用方 `@Transactional` 持有）。需要第二后端时随它一起引入，不提前摆空接口。
 
 ### Migration
@@ -85,7 +87,7 @@
 | `Collector` | `first()` / `list(int)` 由 default 变 abstract | 2.2.3 的 default 实现 import 了 `core.expression.SliceImpl` + `core.util.ImmutableList`（api→core 反向依赖） |
 | `model.Slice` | `offset()` / `limit()` / `map(Fn)` 移除；`to(Fn)` default 变 abstract | 前三个 0 调用点（`offset(` 全是 `Pageable.offset()`）；`to()` 同理依赖 core 实现 |
 | `model.Tuple2` | `get0()` / `get1()` default 变 abstract | 2.2.3 的 default 转发到已删除的 `Tuple.get(int)` |
-| `SelectStep` | 44 个投影重载 → 5 个：`select(PathRef)`、`select(Expression)`、`select(Expression,Expression)`、`select(Expression,Expression,Expression,Expression...)`（→`Tuple`）、`selectDistinct(PathRef)` | 其余均 0 调用点；3 列及以上是新能力（见 Added） |
+| `SelectStep` | 44 个投影重载 → 5 个：`select(PathRef)`、`select(Expression)`、`select(Expression,Expression)`、`select(Expression,Expression,Expression,Expression...)`（→`Tuple`）、`project(ProjectionMapper)` | 其余均 0 调用点；3 列及以上与映射器是新能力（见 Added） |
 | `Whereable` | 8 个 `where` → 5 个：移除 `where(NumberRef)`、`where(NumberPath)`、`where(EntityPathRef)` | 三个重载 0 调用点；保留的 5 个全部有调用点 |
 | `GroupByStep` / `OrderByStep` | 变长与 `Collection` 重载全部移除 | 0 调用点（`groupBy` 6 处、`orderBy` 138 处全是单参形态） |
 | `OrderOperator` | 移除 14 个终止符 default 转发 | 虚空防御：`OrderOperator` 只该给方向，终止符由 `BaseWhereStep` 继承 `Collector` 提供 |
@@ -115,5 +117,5 @@
 | `fetch(...)` 无对应能力 | 只影响 SQL 形状/性能，不影响结果集；point-mall 0 调用点 |
 | `@Version` 支持 `Integer` / `Long` | 2.2.3 只支持 `Integer`；point-mall 版本列全为 `integer` |
 | 分组计数需投影非空列 | SQL 的 `count(列)` 不数 NULL，需要「组内实体行数」时应投影主键等非空列（point-mall 6 处分组查询均如此） |
-| `selectDistinct` 的 `count/slice` | 已实现为 `count(distinct 投影列)`（`api` 的 `selectDistinct` 只有单列重载）；去重后行数与实体行数是两个概念，勿混用 |
+| `distinct()` 的 `count/slice` | 单列已实现为 `count(distinct 投影列)`；多列抛 `UnsupportedOperationException`（跨方言形态不同）。去重后行数与实体行数是两个概念，勿混用 |
 

@@ -99,7 +99,7 @@ class JpaEndToEndTest extends JpaTestSupport {
             assertThat(executor.exists(compiler.compile(paid.forExists()))).isTrue();
             assertThat(executor.count(compiler.compile(query(null).forCount()))).isEqualTo(2L);
 
-            // selectDistinct 的 count 走 count(distinct ...)：2 行 PAID + 1 行 CREATED → 去重后 2
+            // distinct 的 count 走 count(distinct ...)：2 行 PAID + 1 行 CREATED → 去重后 2
             QuerySpec distinct = new QuerySpec(
                     ShopOrder.class,
                     new ValueSelection(List.of(new PathProjection(AttributePath.of(ShopOrder.class, "status"))), true),

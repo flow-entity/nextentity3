@@ -358,7 +358,7 @@ public class NumericOperationsIntegrationTest {
     void shouldSelectDistinctNumeric(IntegrationTestContext context) {
         // When
         List<Long> deptIds = context.queryEmployees()
-                .selectDistinct(Employee::getDepartmentId)
+                .distinct().select(Employee::getDepartmentId)
                 .orderBy(Employee::getDepartmentId).asc()
                 .list();
 

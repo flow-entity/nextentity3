@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 ///
 /// 3.x 的对位改动只有调用形态：`.list(offset, limit)` → `.slice(offset, limit).data()`；
 /// `Predicate.and(PathRef)` → `Predicate.and(Path.of(...).op(...))`。断言原样保留。
-/// `avg` / `min` / `select(Class)` / `Tuple3+` / 多列 `selectDistinct` / 算术表达式 / `Predicate.not()`
+/// `select(Class)`（`avg`/`min`/`Tuple3+`/算术/`Predicate.not()` 与多列去重现已由 `distinct()` 支持，用例待回填）
 /// 对应的用例已删除（见 `tmp/legacy/NOT-PORTED-port-b.md`）。
 class EntityQueryIntegrationTest {
 
@@ -196,7 +196,7 @@ class EntityQueryIntegrationTest {
     void selectDistinct_ShouldReturnUniqueResults(IntegrationTestContext context) {
         // when
         List<Long> deptIds = context.queryEmployees()
-                .selectDistinct(Employee::getDepartmentId)
+                .distinct().select(Employee::getDepartmentId)
                 .list();
 
         // then

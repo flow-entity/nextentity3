@@ -146,12 +146,6 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     }
 
     @Override
-    public <R> BaseWhereStep<T, R> selectDistinct(PathRef<T, R> ref) {
-        pendingDistinct = false;
-        return applySelection(new ValueSelection(List.of(ValueProjections.of(ref)), true), null);
-    }
-
-    @Override
     public <R> BaseWhereStep<T, R> project(ProjectionMapper<T, R> mapper) {
         Objects.requireNonNull(mapper, "mapper");
         // expressions() 只求值一次：求值两次时「校验用的列集」与「建投影用的列集」会分叉

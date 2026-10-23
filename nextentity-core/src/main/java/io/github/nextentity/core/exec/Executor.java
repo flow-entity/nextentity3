@@ -24,7 +24,7 @@ public interface Executor<S> {
     /// 计数：同一份规格（已由 `QuerySpec.forCount()` 清排序/窗口/锁）渲染成计数语句。
     ///
     /// @param query 后端语句，非 `null`
-    /// @return 行数；`selectDistinct` 规格返回去重后的投影值个数
+    /// @return 行数；单列 `distinct` 规格返回去重后的投影值个数
     long count(S query);
 
     /// 存在性：同一份规格（已由 `QuerySpec.forExists()` 清排序并限 1 行）。

@@ -269,12 +269,12 @@ List<Tuple> rows3 = query().select(
 Object id0 = rows3.getFirst().get(0);
 
 // 去重单列
-List<Long> uniq = query().selectDistinct(Order::getCustomerId).list();
+List<Long> uniq = query().distinct().select(Order::getCustomerId).list();
 ```
 
 投影参数可以是 `Path.of(...)`、聚合/算术结果，也可以是裸方法引用（`PathRef` 本身就是 `Expression`）：`select(Order::getId)` 走 `select(PathRef)` 重载；把 `PathRef` 放进 `List<Expression<T, ?>>`（即 `expressions()` 的声明类型）后同样可用，两种形态由同一个转换点 `core.builder.ValueProjections.of(...)` 处理。`Tuple2` 也是 `Tuple`（`size()` 恒为 2），所以「2 列用 `Tuple2`、3 列起用 `Tuple`」是同一个体系；映射器路径是例外——它无论几列都给按位置取值的 `Tuple`，2 列也不保证是 `Tuple2`（见 §6.1）。
 
-`selectDistinct` 只有单列重载，但 `count()` / `slice(...)` 可用：`count()` 数的是**不同的投影值**（数据库侧 `count(distinct 列)`），不是实体行数——两者在列有 `null` 或重复时会不同。
+`distinct()` 对四种投影形态都适用（单列、`Tuple2`、3 列起 `Tuple`、映射器）。单列时 `count()` / `slice(...)` 可用：`count()` 数的是**不同的投影值**（数据库侧 `count(distinct 列)`），不是实体行数——两者在列有 `null` 或重复时会不同。**多列去重的 `count()` 抛 `UnsupportedOperationException`**：`COUNT(DISTINCT a, b)` 在 MySQL 与 PostgreSQL 形态不同，只数第一列会静默给出错数。
 
 ### 6.1 显式映射器：列集与结果类型由调用方决定
 
@@ -317,7 +317,7 @@ List<ShopTotal> totals = query().project(new ShopTotalMapper())
 
 1. **单列也是 `Tuple`**：`map(Tuple)` 收到的行永远按位置装配，列数等于 `expressions().size()`；单列时是长度为 1 的 `Tuple`（`Tuple#size()` 的下限是 1，不是 2），不会直接给裸值。
 2. **映射器必须无状态**：可以做成单例（如 Spring bean）跨查询复用，`map` 不得依赖上一次调用留下的状态。
-3. **一次查询只有一份投影**：`expressions()` 每次 `project(...)` 求值一次；在同一个查询入口上再调 `select(...)` / `selectDistinct(...)` 会整体替换掉映射器（反之亦然）——互相覆盖，不报错。
+3. **一次查询只有一份投影**：`expressions()` 每次 `project(...)` 求值一次；在同一个查询入口上再调 `select(...)` / `project(...)` 会整体替换掉映射器（反之亦然）——互相覆盖，不报错。
 
 ⚠️ 聚合表达式没配 `groupBy` 时，SQL 把整表当一个分组：**恒返回 1 行**（空表也一样：`count` 给 `0`、其余给 `null`）。漏写 `groupBy` 不会报错，只会拿到一行总数：
 

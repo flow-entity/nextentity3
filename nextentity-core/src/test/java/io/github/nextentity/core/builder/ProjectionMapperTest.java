@@ -212,13 +212,13 @@ class ProjectionMapperTest {
     }
 
     @Test
-    @DisplayName("project 之后再 selectDistinct：映射器同样失效，取行是裸值列表且规格带 distinct")
-    void selectDistinctAfterProjectDropsMapper() {
+    @DisplayName("project 之后再 distinct().select：映射器同样失效，取行是裸值列表且规格带 distinct")
+    void distinctSelectAfterProjectDropsMapper() {
         backend.rows = List.of((Object) "PAID");
         QueryBuilder<Order, QuerySpec> builder = query();
         builder.project(new ReportMapper());
 
-        List<String> statuses = builder.selectDistinct(Order::getStatus).list();
+        List<String> statuses = builder.distinct().select(Order::getStatus).list();
 
         ValueSelection selection = (ValueSelection) backend.last().selection();
         assertThat(selection.distinct()).isTrue();

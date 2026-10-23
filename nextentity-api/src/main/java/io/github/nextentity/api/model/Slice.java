@@ -18,7 +18,7 @@ public interface Slice<T> {
 
     /// 满足条件的总行数。
     ///
-    /// @return 总行数；`selectDistinct(...)` 时是去重后的投影值个数（与 `Collector#count()` 同口径）
+    /// @return 总行数；`distinct()` 时是去重后的投影值个数（与 `Collector#count()` 同口径）
     long total();
 
     /// 把整个分页结果映射成另一种类型（例如消费方自己的 `Page`）。

@@ -107,10 +107,10 @@ class JpaPublicApiEndToEndTest extends JpaTestSupport {
         });
     }
 
-    /// `selectDistinct` 的两个真实调用点（point-mall `DigitalCardRepository:85`、
+    /// `distinct().select(单列)` 的形态：point-mall 的两个真实调用点（`DigitalCardRepository:85`、
     /// `OrderImportRecordRepository:71`）都是「单列投影 + `.list()`」形态。
     @Test
-    void selectDistinctSingleColumn() {
+    void distinctSingleColumn() {
         inTx(entityManager -> {
             EntityOperations<ShopOrder> operations = operations(entityManager);
             operations.insert(new ShopOrder(103L, null, OrderStatus.PAID, new BigDecimal("9.00"), null));
@@ -120,11 +120,15 @@ class JpaPublicApiEndToEndTest extends JpaTestSupport {
             assertThat(all).containsExactlyInAnyOrder(OrderStatus.PAID, OrderStatus.CREATED, OrderStatus.PAID);
 
             List<OrderStatus> distinct =
-                    operations.query().selectDistinct(ShopOrder::getStatus).list();
+                    operations.query().distinct().select(ShopOrder::getStatus).list();
             assertThat(distinct).containsExactlyInAnyOrder(OrderStatus.PAID, OrderStatus.CREATED);
 
             // 去重查询的 count 必须是 count(distinct ...)，而不是总行数（3）
-            assertThat(operations.query().selectDistinct(ShopOrder::getStatus).count())
+            assertThat(operations
+                            .query()
+                            .distinct()
+                            .select(ShopOrder::getStatus)
+                            .count())
                     .isEqualTo(2L);
             assertThat(operations.query().select(ShopOrder::getStatus).count()).isEqualTo(3L);
             return null;

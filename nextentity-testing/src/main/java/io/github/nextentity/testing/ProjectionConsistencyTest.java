@@ -74,14 +74,14 @@ public abstract class ProjectionConsistencyTest<T extends Item> extends Consiste
         assertThat(sum).containsExactly(50);
     }
 
-    /// `selectDistinct` 单列去重：point-mall 的调用点都是单列投影 + `list()`
+    /// `distinct()` 单列去重：point-mall 的调用点都是单列投影 + `list()`
     /// （`DigitalCardRepository:85`、`OrderImportRecordRepository:71`）。
     ///
     /// `DISTINCT` 把 `NULL` 当作一个分组（SQL 标准，H2/MySQL 一致），所以夹具的两个空 `note`
     /// 只会出现一次——这既是去重的证据，也解释了消费方为什么总在非空列上去重。
     @Test
-    void selectDistinctCollapsesDuplicateValues() {
-        List<String> notes = query().selectDistinct(noteRef()).list();
+    void distinctCollapsesDuplicateValues() {
+        List<String> notes = query().distinct().select(noteRef()).list();
 
         assertThat(notes).hasSize(3);
         assertThat(notes.stream().filter(Objects::nonNull).toList()).containsExactlyInAnyOrder(NOTE_1, NOTE_2);

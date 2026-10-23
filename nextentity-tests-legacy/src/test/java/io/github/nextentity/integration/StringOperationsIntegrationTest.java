@@ -271,7 +271,7 @@ public class StringOperationsIntegrationTest {
     void shouldSelectDistinctString(IntegrationTestContext context) {
         // When
         List<String> emails = context.queryEmployees()
-                .selectDistinct(Employee::getEmail)
+                .distinct().select(Employee::getEmail)
                 .list();
 
         // Then

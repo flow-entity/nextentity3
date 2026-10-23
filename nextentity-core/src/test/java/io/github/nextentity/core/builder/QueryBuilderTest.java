@@ -235,16 +235,6 @@ class QueryBuilderTest {
     }
 
     @Test
-    @DisplayName("selectDistinct：带 distinct 标志")
-    void selectDistinct() {
-        query().selectDistinct(Order::getName).list();
-
-        ValueSelection selection = (ValueSelection) backend.last().selection();
-        assertThat(selection.distinct()).isTrue();
-        assertThat(selection.items()).containsExactly(new PathProjection(path("name")));
-    }
-
-    @Test
     @DisplayName("双列投影：后端返回 Object[] 时装配成 Tuple2")
     void tupleAssembly() {
         backend.rows = List.of((Object) new Object[] {1L, 5});
@@ -259,7 +249,7 @@ class QueryBuilderTest {
     }
 
     @Test
-    @DisplayName("distinct().select(单列)：与 selectDistinct 等价")
+    @DisplayName("distinct().select(单列)：单投影带 distinct 标志")
     void distinctBeforeSingleColumnSelect() {
         query().distinct().select(Order::getName).list();
 

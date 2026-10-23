@@ -16,8 +16,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 ///
 /// Select API integration tests.
 ///
-/// 3.x 的投影面只有四种：`select(PathRef)`、`select(Expression)`、`select(Expression, Expression)`（`Tuple2`）、
-/// `selectDistinct(PathRef)`——证据 `api/SelectStep.java`。因此只保留能对位的用例；
+/// 3.x 的投影面：`select(PathRef)`、`select(Expression)`、`select(Expression, Expression)`（`Tuple2`）、
+/// 3 列起 `select(...)`（`Tuple`）、`distinct()` 修饰符——证据 `api/SelectStep.java` / `api/DistinctStep.java`。因此只保留能对位的用例；
 /// `Tuple3~10`、`select(Collection)`、多列 `selectDistinct`、`select(Class)`、`min`/`avg`
 /// 对应的用例已删除（见 `tmp/legacy/NOT-PORTED-port-b.md`）。
 ///
@@ -80,7 +80,7 @@ public class SelectApiIntegrationTest {
     void shouldSelectDistinctSinglePath(IntegrationTestContext context) {
         // When
         List<Long> deptIds = context.queryEmployees()
-                .selectDistinct(Employee::getDepartmentId)
+                .distinct().select(Employee::getDepartmentId)
                 .orderBy(Employee::getDepartmentId).asc()
                 .list();
 

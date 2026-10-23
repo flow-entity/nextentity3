@@ -50,20 +50,10 @@ public interface SelectStep<T> extends DistinctStep<T> {
     <A, B, C> BaseWhereStep<T, Tuple> select(
             Expression<T, A> first, Expression<T, B> second, Expression<T, C> third, Expression<T, ?>... rest);
 
-    /// 去重投影单列（`distinct().select(ref)` 的等价简写）。
-    ///
-    /// 去重发生在数据库侧（`SELECT DISTINCT`），`count()` 相应返回去重后的投影值个数。
-    /// 需要多列去重时用 [DistinctStep#distinct()]：`distinct().select(a, b, c)`。
-    ///
-    /// @param ref 属性路径，非 `null`
-    /// @param <R> 投影类型
-    /// @return 后续步骤；一次查询只有一份投影，再次 `select`/`selectDistinct` 会替换前一份
-    <R> BaseWhereStep<T, R> selectDistinct(PathRef<T, R> ref);
-
     /// 用显式映射器投影：查哪些列、每行怎么造 `R` 都由映射器决定。
     ///
     /// 列数没有下限（单列也允许），列序即 [ProjectionMapper#expressions()] 的顺序。映射器只在这一步
-    /// 求值一次，随后 `select(...)` / `selectDistinct(...)` 会把它整体替换掉。
+    /// 求值一次，随后再次投影（`select(...)` 或 `project(...)`）会把它整体替换掉。
     ///
     /// @param mapper 投影映射器，非 `null`
     /// @param <R> 结果类型

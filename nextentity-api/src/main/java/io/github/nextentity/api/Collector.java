@@ -40,11 +40,11 @@ public interface Collector<T> {
     /// 计数。结果含义随查询形态变化：
     ///
     /// - 普通查询：满足条件的行数；
-    /// - `selectDistinct(...)`：**去重后的投影值个数**（`count(DISTINCT 投影)`，证据：
+    /// - `distinct()`：**去重后的投影值个数**（`count(DISTINCT 投影)`，证据：
     ///   `jpa/exec/JpaExecutor.java:68-71`）；
     /// - 带 `groupBy` 或聚合投影：不支持。
     ///
-    /// @return 行数，或 `selectDistinct` 时的去重投影值个数
+    /// @return 行数，或 `distinct()` 时的去重投影值个数（多列去重不支持，抛 `UnsupportedOperationException`）
     /// @throws UnsupportedOperationException 带 `groupBy` 或聚合投影的查询：照常数行会把「分组数」
     ///     数成「总行数」，属于静默错数，因此直接拒绝而不是给出一个错答案
     long count();
