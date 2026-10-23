@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.nextentity.api.EntityPath;
 import io.github.nextentity.api.EntityQuery;
 import io.github.nextentity.api.Expression;
+import io.github.nextentity.api.LockMode;
 import io.github.nextentity.api.Path;
 import io.github.nextentity.api.PathRef;
 import io.github.nextentity.api.Predicate;
@@ -132,6 +133,21 @@ class QueryBuilderTest {
         assertThat(backend.last().where()).isNull();
     }
 
+    /// 守护 `QueryBuilder:305` 的 `return current` → `null`：只有「已有条件 + 再追加恒真占位」
+    /// 才走这条分支，单条件用例碰不到它。
+    @Test
+    @DisplayName("已有条件 + 恒真占位：原有条件不被丢弃")
+    void constantTrueAfterConditionKeepsPrevious() {
+        query().where(Order::getStatus)
+                .eq("A")
+                .where(Order::getId)
+                .notIn(List.of())
+                .list();
+
+        assertThat(backend.last().where())
+                .isEqualTo(new Comparison(path("status"), ComparisonOperator.EQ, Literal.of("A")));
+    }
+
     @Test
     @DisplayName("in(非空集合)：值被复制进节点")
     void inKeepsValues() {
@@ -248,6 +264,34 @@ class QueryBuilderTest {
         assertThat(rows.getFirst().get1()).isEqualTo(5);
     }
 
+    /// 守护 `QueryBuilder:138` 的 `3 + rest.length` → `3 - rest.length`：容量只是预分配提示，
+    /// 小容量只会触发扩容而不报错，因此**必须**给到 `rest.length >= 4` 才让错误容量变成负数
+    /// （构造 `ArrayList` 当场抛 `IllegalArgumentException`）；列序断言同时守住「少列/错序」。
+    @Test
+    @DisplayName("select(三列 + 变长 4 列)：投影列数与顺序保持")
+    void selectThreeFixedPlusFourVarargsColumns() {
+        query().select(
+                        Path.of(Order::getId),
+                        Path.of(Order::getOrgId),
+                        Path.of(Order::getName),
+                        Path.of(Order::getStatus),
+                        Path.of(Order::getAge),
+                        Path.of(Order::getCreditType),
+                        Path.of(Order::getDebitType))
+                .list();
+
+        ValueSelection selection = (ValueSelection) backend.last().selection();
+        assertThat(selection.items())
+                .containsExactly(
+                        new PathProjection(path("id")),
+                        new PathProjection(path("orgId")),
+                        new PathProjection(path("name")),
+                        new PathProjection(path("status")),
+                        new PathProjection(path("age")),
+                        new PathProjection(path("creditType")),
+                        new PathProjection(path("debitType")));
+    }
+
     @Test
     @DisplayName("distinct().select(单列)：单投影带 distinct 标志")
     void distinctBeforeSingleColumnSelect() {
@@ -326,6 +370,16 @@ class QueryBuilderTest {
                         new Ordering(path("id"), Ordering.Direction.ASC));
     }
 
+    /// 守护 `QueryBuilder:164` 的 `return orderBy(PathRefs.resolve(...))` → `null`：
+    /// `orderBy(Path)` 重载必须返回可链式的算子，`.desc()` 之后排序项要进规格。
+    @Test
+    @DisplayName("orderBy(Path)：值对象路径同样产生排序项")
+    void orderByPathValueObject() {
+        query().orderBy(Path.of(Order::getCreatedAt)).desc().list();
+
+        assertThat(backend.last().orderBy()).containsExactly(new Ordering(path("createdAt"), Ordering.Direction.DESC));
+    }
+
     @Test
     @DisplayName("分页无 orderBy：自动补主键升序（2.2.3 autoAddIdOrder 默认开启）")
     void pagingAddsIdOrder() {
@@ -362,7 +416,34 @@ class QueryBuilderTest {
         assertThat(backend.last().orderBy()).isEmpty();
     }
 
+    // ------------------------------------------------------------------- lock
+
+    /// 守护 `QueryBuilder:195` 的 `return this` → `null`：返回 null 时链式调用 `.list()`
+    /// 直接 NPE，且锁模式进不了规格。
+    @Test
+    @DisplayName("lock(mode)：链式调用可用，锁模式进入查询规格")
+    void lockChainsIntoSpec() {
+        query().where(Order::getStatus).eq("A").lock(LockMode.PESSIMISTIC_WRITE).list();
+
+        assertThat(backend.last().lock()).isEqualTo(LockMode.PESSIMISTIC_WRITE);
+    }
+
     // ------------------------------------------------------------- terminate
+
+    /// 守护 `QueryBuilder:207` 的 `return fetch(...)` → `return List.of()`：limit 版本必须
+    /// 返回执行器给出的行，而不是恒定空列表。
+    @Test
+    @DisplayName("list(limit)：返回执行器给出的行，顺序不变")
+    void listWithLimitReturnsRows() {
+        Order first = new Order();
+        Order second = new Order();
+        backend.rows = List.of(first, second);
+
+        List<Order> rows = query().list(2);
+
+        assertThat(rows).containsExactly(first, second);
+        assertThat(backend.last().window()).isEqualTo(new Window(0, 2));
+    }
 
     @Test
     @DisplayName("first()：list(0,1) 取首行")
@@ -407,6 +488,15 @@ class QueryBuilderTest {
         assertThat(backend.last().window()).isEqualTo(new Window(null, 1));
     }
 
+    /// 守护 `QueryBuilder:232` 的 `return executor.exists(...)` → `true`：只测 true 时，
+    /// 恒 true 的变异也能过，因此必须有一条无命中的 false 用例。
+    @Test
+    @DisplayName("exists()：无命中时为 false")
+    void existsIsFalseWithoutMatch() {
+        assertThat(query().exists()).isFalse();
+        assertThat(backend.last().window()).isEqualTo(new Window(null, 1));
+    }
+
     @Test
     @DisplayName("slice()：先 count 再取一页，total 进 Slice")
     void sliceRunsCountThenList() {
@@ -434,6 +524,20 @@ class QueryBuilderTest {
         assertThat(backend.specs).hasSize(1);
     }
 
+    /// 守护 `QueryBuilder:238` 的 `total <= offset` → `total < offset`：边界值 `offset == total`
+    /// 必须同样短路——否则会白跑一次列表查询。
+    @Test
+    @DisplayName("slice()：offset 恰好等于总数时返回空页，且不再跑列表查询")
+    void sliceShortCircuitsWhenOffsetEqualsTotal() {
+        backend.total = 3L;
+
+        Slice<Order> slice = query().slice(3, 5);
+
+        assertThat(slice.data()).isEmpty();
+        assertThat(slice.total()).isEqualTo(3L);
+        assertThat(backend.specs).hasSize(1);
+    }
+
     @Test
     @DisplayName("方法名 → 属性名：get/is 前缀、单字符、连续大写")
     void fieldNameRules() {
@@ -442,6 +546,10 @@ class QueryBuilderTest {
         assertThat(PathRefs.fieldName("getId")).isEqualTo("id");
         assertThat(PathRefs.fieldName("getURL")).isEqualTo("URL");
         assertThat(PathRefs.fieldName("status")).isEqualTo("status");
+        // 守护 PathRefs:61/:63 的 `> 3` → `>=`、`> 2` → `>=`：裸前缀长度正好等于前缀长度时
+        // 不能被当作可裁剪前缀（裁完是空串，后续 charAt(1) 越界）
+        assertThat(PathRefs.fieldName("get")).isEqualTo("get");
+        assertThat(PathRefs.fieldName("is")).isEqualTo("is");
     }
 
     @Test
