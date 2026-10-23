@@ -235,6 +235,17 @@ class QueryBuilderTest {
                 .isEqualTo(new ValueSelection(List.of(new PathProjection(path("id"))), false));
     }
 
+    /// 守护 `QueryBuilder:124` 的 `return applySelection(...)` → `null`：`select(Expression)`
+    /// 重载把 api 的值对象路径当投影，返回 null 时链式 `.list()` 直接 NPE。
+    @Test
+    @DisplayName("select(Expression)：值对象路径作为投影")
+    void selectExpressionValueObject() {
+        query().select(Path.of(Order::getName)).list();
+
+        assertThat(backend.last().selection())
+                .isEqualTo(new ValueSelection(List.of(new PathProjection(path("name"))), false));
+    }
+
     @Test
     @DisplayName("select(聚合)：max 投影 + 分组")
     void selectAggregateWithGroupBy() {
@@ -414,6 +425,41 @@ class QueryBuilderTest {
                 .list(5);
 
         assertThat(backend.last().orderBy()).isEmpty();
+    }
+
+    // ------------------------------------------------------- groupBy / having
+
+    /// 守护 `QueryBuilder:181` 的 `return this` → `null`：变长 `groupBy(refs...)` 只有多列
+    /// 调用才走到，返回 null 时链式 `.list()` 直接 NPE，且两列都要进分组。
+    @Test
+    @DisplayName("groupBy(refs...)：多列分组按调用顺序累积")
+    void groupByVarargsKeepsBothColumns() {
+        query().groupBy(Order::getOrgId, Order::getStatus).list();
+
+        assertThat(backend.last().groupBy()).containsExactly(path("orgId"), path("status"));
+    }
+
+    /// 守护 `QueryBuilder:189` 的 `return this` → `null` 与 `QueryBuilder:186` 的 instanceof
+    /// 取反：正常 `having(Op)` 必须翻译成节点并链式返回；取反后整段被跳过，having 变 null。
+    @Test
+    @DisplayName("having(Op)：条件翻译成节点，且链式可继续")
+    void havingOpBecomesSpec() {
+        query().groupBy(Order::getOrgId).having(Path.of(Order::getAge).gt(1)).list();
+
+        assertThat(backend.last().having())
+                .isEqualTo(new Comparison(path("age"), ComparisonOperator.GT, Literal.of(1)));
+    }
+
+    /// `QueryBuilder:186` 的另一半语义（同 `where(Expression)`）：`*IfNotNull(null)` 短路出来的
+    /// 谓词不实现 `Op`，是「恒真占位」，不追加 HAVING 节点，而不是被当成恒真去渲染。
+    @Test
+    @DisplayName("having(恒真占位)：不实现 Op 的谓词被忽略，HAVING 保持为空")
+    void havingAlwaysTruePlaceholderIgnored() {
+        query().groupBy(Order::getOrgId)
+                .having(Path.of(Order::getStatus).eqIfNotNull(null))
+                .list();
+
+        assertThat(backend.last().having()).isNull();
     }
 
     // ------------------------------------------------------------------- lock
