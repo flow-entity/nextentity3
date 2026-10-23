@@ -119,6 +119,8 @@
                     <targetTests>
                         <param>io.github.nextentity.core.*</param>
                     </targetTests>
+                    <!-- 基线 226/226 = 100%；留 5 点余量给等价变异与新代码的磨合期 -->
+                    <mutationThreshold>95</mutationThreshold>
                 </configuration>
             </plugin>
         </plugins>

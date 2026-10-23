@@ -91,6 +91,8 @@
                     <targetTests>
                         <param>io.github.nextentity.jpa.*</param>
                     </targetTests>
+                    <!-- 基线 49/49 = 100%；留 10 点余量（本模块测试要起 Hibernate，磨合成本更高） -->
+                    <mutationThreshold>90</mutationThreshold>
                 </configuration>
             </plugin>
         </plugins>
