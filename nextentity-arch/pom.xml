@@ -39,6 +39,15 @@
             <artifactId>nextentity-spring</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+          TESTING_STAYS_BACKEND_FREE 要靠它才看得见 io.github.nextentity.testing 的类；
+          缺这条依赖时规则一条类也匹配不到，allowEmptyShould(true) 会让它静默变绿。
+        -->
+        <dependency>
+            <groupId>io.github.flow-entity</groupId>
+            <artifactId>nextentity-testing</artifactId>
+            <scope>test</scope>
+        </dependency>
 
         <dependency>
             <groupId>com.tngtech.archunit</groupId>

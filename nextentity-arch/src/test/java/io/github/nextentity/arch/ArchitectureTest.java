@@ -142,6 +142,15 @@ class ArchitectureTest {
             .because("TEAM-CONTRACT §3：Spring 装配与属性归 spring，查询逻辑一律不进 spring");
 
     /// 一致性测试基类不得被某个后端绑架：`testing` 只准依赖 `api` + `core` 接口。
+    ///
+    /// 顺带说明它守不住的那一半：这条规则按类型依赖执法，能挡住基类引用
+    /// `java.sql..` / `jakarta..` / `org.hibernate..` / `org.springframework..`；
+    /// 但「基类里拿一个 `String` 拼 SQL 再断言」没有任何类型特征，ArchUnit 看不到数据流，
+    /// 那一半只能靠评审（DESIGN §5「编写约定」）兜底，不要再堆一条空转规则假装覆盖。
+    ///
+    /// 不设 `allowEmptyShould(true)`：本模块 pom 已依赖 `nextentity-testing`，规则必须真能匹配到
+    /// 该包下的类。曾经缺这条依赖、靠 `allowEmptyShould(true)` 静默变绿——一条匹配不到任何类的
+    /// 门禁等于没有门禁，而它看上去是绿的，比没有更糟。包名漂移或依赖被删时直接红，才是该有的行为。
     @ArchTest
     static final ArchRule TESTING_STAYS_BACKEND_FREE = noClasses()
             .that()
@@ -149,8 +158,44 @@ class ArchitectureTest {
             .should()
             .dependOnClassesThat()
             .resideInAnyPackage("jakarta..", "org.hibernate..", "org.springframework..", "java.sql..")
-            .allowEmptyShould(true)
             .because("DESIGN §5：基类里出现 EntityManager / Criteria / SQL，新后端就得改基类，接缝随之失效");
+
+    /// 生产代码不得依赖 mock 框架或测试框架。
+    ///
+    /// 守的是什么：`api` / `core` / `jpa` / `spring` 的 `src/main` 里一旦出现
+    /// `org.mockito..` / `org.easymock..` / `org.powermock..` / `org.junit..` / `org.assertj..` /
+    /// `com.tngtech.archunit..` 的任何引用即违规。mock 只能证明「调用形状对」
+    /// （AGENTS「mock 只许证形状」），它漏进生产代码就等于线上路径跑在假对象上。
+    ///
+    /// 为什么现在抓：enforcer 的 `bannedDependencies` 只禁了 core 的 `jakarta` / `hibernate` / `spring`
+    /// 与 jpa 的 `spring`，没有任何一条禁令阻止把 `mockito-core` 声明成 compile 依赖再 `import` 进
+    /// `core` / `jpa` / `spring`；而 `nextentity-testing` 整模块的 main 代码都是 JUnit + AssertJ，
+    /// 把它那套写法抄进生产模块的成本极低，编译期与 enforcer 都不会出声。
+    ///
+    /// 为什么逐包列四个生产模块、而不写 `io.github.nextentity..`：`nextentity-testing` 的 main 代码
+    /// 合法地依赖 JUnit / AssertJ（它本身就是测试基座）。用通配包名会把它一起判红——一旦它被加进
+    /// 本模块 classpath（修好 `TESTING_STAYS_BACKEND_FREE` 的正确做法），这条规则就会假红。
+    ///
+    /// 测试代码里的 mock 不在范围内：`spring` 的自动配置用例正当地 mock 掉
+    /// `EntityManagerFactory` / `EntityManager`；本类用 `DoNotIncludeTests` 导入，天然只看生产代码。
+    @ArchTest
+    static final ArchRule PRODUCTION_CODE_IS_FREE_OF_TEST_FRAMEWORKS = noClasses()
+            .that()
+            .resideInAnyPackage(
+                    "io.github.nextentity.api..",
+                    "io.github.nextentity.core..",
+                    "io.github.nextentity.jpa..",
+                    "io.github.nextentity.spring..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAnyPackage(
+                    "org.mockito..",
+                    "org.easymock..",
+                    "org.powermock..",
+                    "org.junit..",
+                    "org.assertj..",
+                    "com.tngtech.archunit..")
+            .because("生产代码依赖 mock / 测试框架 = 线上路径跑在假对象上；enforcer 的 bannedDependencies 没有这条禁令");
 
     /// `api` 包的 class 只能来自 `nextentity-api` 自己的产物。
     ///
