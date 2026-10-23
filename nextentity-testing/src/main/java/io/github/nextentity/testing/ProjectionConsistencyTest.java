@@ -3,6 +3,7 @@ package io.github.nextentity.testing;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.nextentity.api.Path;
+import io.github.nextentity.api.model.Tuple;
 import io.github.nextentity.api.model.Tuple2;
 import java.util.List;
 import java.util.Map;
@@ -107,5 +108,51 @@ public abstract class ProjectionConsistencyTest<T extends Item> extends Consiste
                 .filteredOn(row -> row.get0() == null)
                 .extracting(Tuple2::get1)
                 .containsExactly(2L);
+    }
+
+    /// `min()` 聚合：忽略 `null`，取最小非空值。
+    @Test
+    void minAggregateIgnoresNull() {
+        List<Integer> min = query().select(Path.of(scoreRef()).min()).list();
+
+        assertThat(min).containsExactly(10);
+    }
+
+    /// `avg()` 聚合：返回 `Double`，分母是**非空**值的个数（10+20+30 除以 3）。
+    @Test
+    void avgAggregateIgnoresNullAndReturnsDouble() {
+        List<Double> avg = query().select(Path.of(scoreRef()).avg()).list();
+
+        assertThat(avg).containsExactly(20.0);
+    }
+
+    /// 三列投影返回 `Tuple`：按位置取列，列序即实参顺序。
+    @Test
+    void selectThreeColumnsReturnsTuple() {
+        List<Tuple> rows = query().select(Path.of(idRef()), Path.of(nameRef()), Path.of(scoreRef()))
+                .orderBy(idRef())
+                .asc()
+                .list();
+
+        assertThat(rows).hasSize(4);
+        assertThat(rows.getFirst().size()).isEqualTo(3);
+        assertThat(rows.getFirst().get(0)).isEqualTo(APPLE_ID);
+        assertThat(rows.getFirst().get(1)).isEqualTo(APPLE_NAME);
+        assertThat(rows.getFirst().get(2)).isEqualTo(10);
+        assertThat(rows.getLast().get(2)).isNull();
+    }
+
+    /// 两列投影仍是 `Tuple2`，但也能按位置 `get(int)`（`Tuple2 extends Tuple`）。
+    @Test
+    void tuple2AlsoSupportsPositionalAccess() {
+        List<Tuple2<Long, String>> rows = query().select(Path.of(idRef()), Path.of(nameRef()))
+                .orderBy(idRef())
+                .asc()
+                .list();
+
+        assertThat(rows.getFirst().size()).isEqualTo(2);
+        assertThat(rows.getFirst().get(0)).isEqualTo(APPLE_ID);
+        assertThat(rows.getFirst().get(1)).isEqualTo(APPLE_NAME);
+        assertThat(rows.getFirst().get(1)).isEqualTo(rows.getFirst().get1());
     }
 }

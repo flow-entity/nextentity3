@@ -11,11 +11,14 @@ import org.junit.jupiter.api.BeforeEach;
 ///
 /// 固定夹具（每个用例执行前重建），后续断言全部按这份数据手算：
 /// ```text
-/// id=1 name=apple     score=10    note=null
-/// id=2 name=banana    score=20    note=n1
-/// id=3 name=cherry    score=30    note=n2
-/// id=4 name=apple pie score=null  note=null
+/// id=1 name=apple     score=10   score2=10   note=null status=NEW
+/// id=2 name=banana    score=20   score2=10   note=n1   status=ACTIVE
+/// id=3 name=cherry    score=30   score2=null note=n2   status=DONE
+/// id=4 name=apple pie score=null score2=5    note=null status=NEW
 /// ```
+///
+/// `score` / `score2` 一列或两列为 `null` 的行（3、4）专门用来钉死 SQL 三值逻辑：
+/// 它们既不满足 `a = b` 也不满足 `a <> b`，也不出现在 `between` / `notBetween` 的任何一侧。
 ///
 /// @param <T> 后端实体类型，必须实现 {@link Item}
 public abstract class ConsistencyTestBase<T extends Item> {
@@ -49,10 +52,10 @@ public abstract class ConsistencyTestBase<T extends Item> {
     final void seed() {
         ConsistencySupport<T> support = support();
         support.seedData(List.of(
-                support.newItem(APPLE_ID, APPLE_NAME, 10, null, ItemStatus.NEW),
-                support.newItem(BANANA_ID, BANANA_NAME, 20, NOTE_1, ItemStatus.ACTIVE),
-                support.newItem(CHERRY_ID, CHERRY_NAME, 30, NOTE_2, ItemStatus.DONE),
-                support.newItem(APPLE_PIE_ID, APPLE_PIE_NAME, null, null, ItemStatus.NEW)));
+                support.newItem(APPLE_ID, APPLE_NAME, 10, 10, null, ItemStatus.NEW),
+                support.newItem(BANANA_ID, BANANA_NAME, 20, 10, NOTE_1, ItemStatus.ACTIVE),
+                support.newItem(CHERRY_ID, CHERRY_NAME, 30, null, NOTE_2, ItemStatus.DONE),
+                support.newItem(APPLE_PIE_ID, APPLE_PIE_NAME, null, 5, null, ItemStatus.NEW)));
     }
 
     /// 后端接线（由具体后端提供）。
@@ -86,6 +89,13 @@ public abstract class ConsistencyTestBase<T extends Item> {
     /// @return 方法引用形式的数值
     protected final PathRef.NumberRef<T, Integer> scoreRef() {
         return support().scoreRef();
+    }
+
+    /// 第二列数值属性引用。
+    ///
+    /// @return 方法引用形式的第二列数值
+    protected final PathRef.NumberRef<T, Integer> score2Ref() {
+        return support().score2Ref();
     }
 
     /// 文本属性引用。

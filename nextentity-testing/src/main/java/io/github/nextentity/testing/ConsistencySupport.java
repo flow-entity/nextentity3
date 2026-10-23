@@ -35,10 +35,11 @@ public interface ConsistencySupport<T extends Item> {
     /// @param id     主键；同一夹具内唯一
     /// @param name   名称，非 `null`
     /// @param score  数值或 `null`
+    /// @param score2 第二列数值或 `null`（列对列比较与算术用）
     /// @param note   文本或 `null`
     /// @param status 枚举状态，非 `null`
     /// @return 未入库的实体实例
-    T newItem(long id, String name, Integer score, String note, ItemStatus status);
+    T newItem(long id, String name, Integer score, Integer score2, String note, ItemStatus status);
 
     /// 主键属性引用。
     ///
@@ -54,6 +55,11 @@ public interface ConsistencySupport<T extends Item> {
     ///
     /// @return 方法引用形式的数值：类型为 `Integer`，可参与区间比较
     PathRef.NumberRef<T, Integer> scoreRef();
+
+    /// 第二列数值属性引用（列对列比较与算术用，与 {@link #scoreRef()} 同型）。
+    ///
+    /// @return 方法引用形式的第二列数值
+    PathRef.NumberRef<T, Integer> score2Ref();
 
     /// 文本属性引用。
     ///

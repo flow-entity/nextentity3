@@ -18,6 +18,11 @@ public interface Item {
     /// 可比较、可为空的数值（用于验证 `null` 参与的区间条件）。
     Integer score();
 
+    /// 第二列可比较数值：用于列对列比较与算术（可为空）。
+    ///
+    /// 与 {@link #score()} 同类型，才能写 `a = b`、`a - b` 这类两侧同型的表达式。
+    Integer score2();
+
     /// 可为空的文本（用于验证 `isNull` / `isNotNull`）。
     String note();
 

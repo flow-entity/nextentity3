@@ -26,7 +26,7 @@ class ItemLockConsistencyTest {
 
     @Test
     void pessimisticWriteLockReadsRowAndEmitsForUpdate() {
-        support.seedData(List.of(support.newItem(1L, "apple", 10, null, ItemStatus.NEW)));
+        support.seedData(List.of(support.newItem(1L, "apple", 10, 10, null, ItemStatus.NEW)));
         support.clearSql();
 
         List<ItemEntity> rows = support.inTransaction(() -> support.query()
@@ -41,7 +41,7 @@ class ItemLockConsistencyTest {
 
     @Test
     void pessimisticWriteLockOnMissingRowReturnsEmpty() {
-        support.seedData(List.of(support.newItem(1L, "apple", 10, null, ItemStatus.NEW)));
+        support.seedData(List.of(support.newItem(1L, "apple", 10, 10, null, ItemStatus.NEW)));
 
         List<ItemEntity> rows = support.inTransaction(() -> support.query()
                 .where(support.idRef())

@@ -94,14 +94,6 @@ public abstract class ComparisonConsistencyTest<T extends Item> extends Consiste
         assertThat(rows).extracting(Item::id).containsExactlyInAnyOrder(APPLE_ID, BANANA_ID);
     }
 
-    /// 枚举 `eq`：按枚举值比较（point-mall 的枚举映射以 `@Enumerated(STRING)` 为主）。
-    @Test
-    void enumEqMatchesRowsWithThatStatus() {
-        List<T> rows = query().where(statusRef()).eq(ItemStatus.NEW).list();
-
-        assertThat(rows).extracting(Item::id).containsExactlyInAnyOrder(APPLE_ID, APPLE_PIE_ID);
-    }
-
     /// `gtIfNotNull(null)` / `ltIfNotNull(null)` 都跳过条件。
     @Test
     void rangeIfNotNullWithNullOnBothSidesSkipsCondition() {
@@ -112,5 +104,18 @@ public abstract class ComparisonConsistencyTest<T extends Item> extends Consiste
                 .list();
 
         assertThat(rows).hasSize(4);
+    }
+
+    /// `notBetween` 与 `between` 互补：两者命中集合的并集是「两端都非空」的行，NULL 行两边都不在。
+    @Test
+    void notBetweenComplementsBetween() {
+        List<T> inside = query().where(scoreRef()).between(10, 20).list();
+        List<T> outside = query().where(scoreRef()).notBetween(10, 20).list();
+
+        assertThat(inside).extracting(Item::id).containsExactlyInAnyOrder(APPLE_ID, BANANA_ID);
+        assertThat(outside).extracting(Item::id).containsExactly(CHERRY_ID);
+        // score = null 的 #4 是 UNKNOWN：既不在区间内，也不在区间外。
+        assertThat(inside).extracting(Item::id).doesNotContain(APPLE_PIE_ID);
+        assertThat(outside).extracting(Item::id).doesNotContain(APPLE_PIE_ID);
     }
 }

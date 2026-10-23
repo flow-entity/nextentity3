@@ -24,6 +24,8 @@ public class ItemEntity implements Item {
 
     private Integer score;
 
+    private Integer score2;
+
     private String note;
 
     @Enumerated(EnumType.STRING)
@@ -31,10 +33,11 @@ public class ItemEntity implements Item {
 
     protected ItemEntity() {}
 
-    public ItemEntity(long id, String name, Integer score, String note, ItemStatus status) {
+    public ItemEntity(long id, String name, Integer score, Integer score2, String note, ItemStatus status) {
         this.id = id;
         this.name = name;
         this.score = score;
+        this.score2 = score2;
         this.note = note;
         this.status = status;
     }
@@ -52,6 +55,11 @@ public class ItemEntity implements Item {
     @Override
     public Integer score() {
         return score;
+    }
+
+    @Override
+    public Integer score2() {
+        return score2;
     }
 
     @Override

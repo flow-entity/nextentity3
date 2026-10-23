@@ -44,8 +44,8 @@ final class JpaItemSupport implements ConsistencySupport<ItemEntity>, AutoClosea
     }
 
     @Override
-    public ItemEntity newItem(long id, String name, Integer score, String note, ItemStatus status) {
-        return new ItemEntity(id, name, score, note, status);
+    public ItemEntity newItem(long id, String name, Integer score, Integer score2, String note, ItemStatus status) {
+        return new ItemEntity(id, name, score, score2, note, status);
     }
 
     @Override
@@ -61,6 +61,11 @@ final class JpaItemSupport implements ConsistencySupport<ItemEntity>, AutoClosea
     @Override
     public PathRef.NumberRef<ItemEntity, Integer> scoreRef() {
         return ItemEntity::score;
+    }
+
+    @Override
+    public PathRef.NumberRef<ItemEntity, Integer> score2Ref() {
+        return ItemEntity::score2;
     }
 
     @Override

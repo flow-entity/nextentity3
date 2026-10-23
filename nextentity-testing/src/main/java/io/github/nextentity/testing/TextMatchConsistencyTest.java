@@ -49,4 +49,20 @@ public abstract class TextMatchConsistencyTest<T extends Item> extends Consisten
 
         assertThat(rows).hasSize(4);
     }
+
+    /// 纯 `like`：模式原样进 SQL，api **不**替调用方包 `%`。
+    @Test
+    void likeUsesPatternAsIs() {
+        List<T> rows = query().where(nameRef()).like("%pie").list();
+
+        assertThat(rows).extracting(Item::id).containsExactly(APPLE_PIE_ID);
+    }
+
+    /// 纯 `like` 不带通配符时是精确匹配，与 `contains` 的 `%v%` 语义不同。
+    @Test
+    void likeWithoutWildcardMatchesExactly() {
+        List<T> rows = query().where(nameRef()).like(APPLE_NAME).list();
+
+        assertThat(rows).extracting(Item::id).containsExactly(APPLE_ID);
+    }
 }
