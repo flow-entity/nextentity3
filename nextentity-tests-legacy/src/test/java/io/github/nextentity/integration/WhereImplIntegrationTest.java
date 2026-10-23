@@ -179,7 +179,6 @@ public class WhereImplIntegrationTest {
                     .list();
             double minSalary = allEmployees.getFirst().getSalary();
             double maxSalary = allEmployees.getLast().getSalary();
-            double midSalary = allEmployees.get(allEmployees.size() / 2).getSalary();
 
             NumberPath<Employee, Double> salaryPath = Path.of(Employee::getSalary);
 

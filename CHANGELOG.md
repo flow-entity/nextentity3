@@ -50,6 +50,7 @@
 - 修正失效的 Javadoc / `@see` 引用：`api.DistinctStep` 指向 `core.spec.EntitySelection`（`api` 不依赖 `core`，链接永远解析不到，且暴露实现细节）；`jpa.compile.JpaOperands` 指向 private 的 `JpaPredicates#comparison`。
 - 删除死代码：`Conditions.Leaf` 从未被调用的三参构造器、`PathValues.StringRoot`（无静态工厂可达，`StringPath` 没有 `of(...)`）、`Conditions.arithmetic` 恒为 `null` 的 `leftSubject` 形参。`Leaf` 与 `SimpleEntityOperationsFactory.Operations` 改为 record（组件名与 `Op` 的读取方法一一对应，不再手写 getter）。
 - `JpaEntityAttribute` 构造器对 `entityType` 做 `requireNonNull`：错误消息里 `entityType.getName()` 在入参为 `null` 时会先抛 NPE，把「找不到字段」的真实原因盖掉。
+- `nextentity-tests-legacy` 清理未使用 import / 未使用变量 / 未使用 logger 与指向已删除符号的 `@see`（该模块仍按「移植语料」保持与 2.2.3 同排版，仅清理无意义的死符号）。
 
 ### Removed
 

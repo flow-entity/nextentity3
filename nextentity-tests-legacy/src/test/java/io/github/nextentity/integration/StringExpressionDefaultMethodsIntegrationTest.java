@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// These tests run against MySQL and PostgreSQL using 测试containers.
 ///
 /// @author HuangChengwei
-/// @see io.github.nextentity.api.StringExpression
+/// @see io.github.nextentity.api.StringPath
 @DisplayName("StringExpression Default Methods Integration Tests")
 public class StringExpressionDefaultMethodsIntegrationTest {
 

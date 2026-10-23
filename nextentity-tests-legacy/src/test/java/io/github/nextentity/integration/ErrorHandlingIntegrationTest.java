@@ -71,9 +71,7 @@ public class ErrorHandlingIntegrationTest {
         try {
             context.operations(Employee.class).update(nonExistent);
             // If no exception, verify the entity wasn't accidentally created
-            Employee found = context.queryEmployees()
-                    .where(Employee::getId).eq(99999L)
-                    .single();
+            context.queryEmployees().where(Employee::getId).eq(99999L).single();
             // Entity might have been created (JPA merge behavior) or not found
         } catch (Exception e) {
             // Some implementations might throw an exception

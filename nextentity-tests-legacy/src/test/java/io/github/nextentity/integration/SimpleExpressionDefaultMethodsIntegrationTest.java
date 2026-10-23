@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// 这些测试使用 Testcontainers 针对 MySQL 和 PostgreSQL 运行。
 ///
 /// @author HuangChengwei
-/// @see io.github.nextentity.api.SimpleExpression
+/// @see io.github.nextentity.api.Path
 @DisplayName("SimpleExpression Default Methods Integration Tests")
 public class SimpleExpressionDefaultMethodsIntegrationTest {
 

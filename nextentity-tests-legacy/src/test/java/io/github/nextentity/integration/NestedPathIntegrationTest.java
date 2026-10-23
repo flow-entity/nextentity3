@@ -1,7 +1,5 @@
 package io.github.nextentity.integration;
 
-import io.github.nextentity.api.Path;
-
 import io.github.nextentity.api.EntityPath;
 import io.github.nextentity.integration.config.IntegrationTestContext;
 import io.github.nextentity.integration.config.IntegrationTestProvider;

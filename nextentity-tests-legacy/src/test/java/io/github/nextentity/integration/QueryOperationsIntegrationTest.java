@@ -11,8 +11,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ArgumentsSource;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
@@ -32,8 +30,6 @@ import static org.junit.jupiter.api.Assertions.*;
 /// @author HuangChengwei
 @DisplayName("Query Operations Integration Tests")
 public class QueryOperationsIntegrationTest {
-
-    private static final Logger log = LoggerFactory.getLogger(QueryOperationsIntegrationTest.class);
 
     ///
     /// 测试s selecting all records from a table.

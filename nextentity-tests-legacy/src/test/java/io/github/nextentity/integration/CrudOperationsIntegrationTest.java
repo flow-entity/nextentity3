@@ -9,8 +9,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ArgumentsSource;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -32,8 +30,6 @@ import static org.assertj.core.api.Assertions.*;
 /// @author HuangChengwei
 @DisplayName("CRUD Operations Integration Tests")
 public class CrudOperationsIntegrationTest {
-
-    private static final Logger log = LoggerFactory.getLogger(CrudOperationsIntegrationTest.class);
 
     @AfterEach
     void tearDown() {
@@ -349,14 +345,12 @@ public class CrudOperationsIntegrationTest {
 
     }
 
-    ///
-    /// 删除不存在的实体：**3.x 无对位，用例已移除**。
-    /// <p>
-    /// 2.2.3 这条断言的是 `PersistExecutor.delete(entity, descriptor)` 在实参不存在时抛 `RuntimeException`，
-    /// 而它自己的注释写的是「should not throw exception」——断言与注释自相矛盾。
-    /// 3.x 的写入接缝按调用点裁掉了 `delete`，删除由消费方的 Spring Data 承担，这里没有被测对象；
-    /// 若把断言指向测试装置里的 `delete` 辅助方法，证明的只是辅助方法自己，与库无关。
-    /// 裁决记录见 `tmp/legacy/ADJUDICATION.md` 第 1 条。
+    // 删除不存在的实体：**3.x 无对位，用例已移除**。
+    // 2.2.3 这条断言的是 `PersistExecutor.delete(entity, descriptor)` 在实参不存在时抛 `RuntimeException`，
+    // 而它自己的注释写的是「should not throw exception」——断言与注释自相矛盾。
+    // 3.x 的写入接缝按调用点裁掉了 `delete`，删除由消费方的 Spring Data 承担，这里没有被测对象；
+    // 若把断言指向测试装置里的 `delete` 辅助方法，证明的只是辅助方法自己，与库无关。
+    // 裁决记录见 `tmp/legacy/ADJUDICATION.md` 第 1 条。
 
     ///
     /// 测试s inserting employee with null email.

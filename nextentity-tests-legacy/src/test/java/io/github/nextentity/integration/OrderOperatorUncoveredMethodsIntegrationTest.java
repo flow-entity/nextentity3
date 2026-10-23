@@ -1,6 +1,5 @@
 package io.github.nextentity.integration;
 
-import io.github.nextentity.api.OrderOperator;
 import io.github.nextentity.api.model.Slice;
 import io.github.nextentity.integration.config.IntegrationTestContext;
 import io.github.nextentity.integration.config.IntegrationTestProvider;

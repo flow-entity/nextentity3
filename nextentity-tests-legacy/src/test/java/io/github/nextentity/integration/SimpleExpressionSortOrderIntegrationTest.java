@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// These tests run against MySQL and PostgreSQL using 测试containers.
 ///
 /// @author HuangChengwei
-/// @see io.github.nextentity.api.SimpleExpression
+/// @see io.github.nextentity.api.OrderOperator
 @DisplayName("SimpleExpression Sort Order Integration Tests")
 public class SimpleExpressionSortOrderIntegrationTest {
 
