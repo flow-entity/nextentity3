@@ -2,6 +2,8 @@ package io.github.nextentity.core.builder;
 
 import io.github.nextentity.api.ProjectionMapper;
 import io.github.nextentity.api.model.Tuple;
+import io.github.nextentity.api.model.Tuple2;
+import io.github.nextentity.api.model.Tuple3;
 import io.github.nextentity.core.spec.Selection;
 import io.github.nextentity.core.spec.ValueSelection;
 import java.util.ArrayList;
@@ -39,11 +41,16 @@ final class RowAssembler {
         if (columns == 1) {
             return rows;
         }
-        boolean pair = columns == 2;
         List<Object> assembled = new ArrayList<>(rows.size());
         for (Object row : rows) {
             Object[] cells = (Object[]) row;
-            assembled.add(pair ? new Tuple2Value<>(cells[0], cells[1]) : new TupleValue(cells));
+            assembled.add(
+                    switch (columns) {
+                        case 2 -> new Tuple2<>(cells[0], cells[1]);
+                        case 3 -> new Tuple3<>(cells[0], cells[1], cells[2]);
+                        // 1 列在上面已返回；select(...) 只到 3 列，走到这里说明装配与投影面脱节
+                        default -> throw new IllegalStateException("select 投影只支持 1~3 列，实际 " + columns + " 列");
+                    });
         }
         return assembled;
     }

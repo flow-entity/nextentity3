@@ -6,8 +6,10 @@ import io.github.nextentity.api.EntityQuery;
 import io.github.nextentity.api.NumberPath;
 import io.github.nextentity.api.Path;
 import io.github.nextentity.api.Predicate;
-import io.github.nextentity.api.model.Tuple;
+import io.github.nextentity.api.ProjectionMappers;
 import io.github.nextentity.api.model.Tuple2;
+import io.github.nextentity.api.model.Tuple3;
+import io.github.nextentity.api.model.Tuple4;
 import io.github.nextentity.core.compile.Compiler;
 import io.github.nextentity.core.exec.Executor;
 import io.github.nextentity.core.meta.EntityAttribute;
@@ -262,37 +264,42 @@ class Tier1CapabilitiesTest {
     // --------------------------------------------------- 多列投影（能力 5）
 
     @Test
-    @DisplayName("三列投影：selection 三项，装配成 Tuple 按位置取值")
-    @SuppressWarnings("unchecked") // select 的变长参数在接口上是 abstract，调用点必然产生 unchecked 提示
+    @DisplayName("三列投影：装配成 Tuple3，具名访问器带类型、按位置取值一致")
     void threeColumnProjection() {
         backend.rows = List.of((Object) new Object[] {1L, "PAID", BigDecimal.TEN});
 
-        List<Tuple> rows = query().select(Path.of(Order::getId), Path.of(Order::getStatus), Path.of(Order::getAmount))
+        List<Tuple3<Long, String, BigDecimal>> rows = query().select(
+                        Path.of(Order::getId), Path.of(Order::getStatus), Path.of(Order::getAmount))
                 .list();
 
         assertThat(rows).hasSize(1);
-        Tuple tuple = rows.getFirst();
-        assertThat(tuple.size()).isEqualTo(3);
-        assertThat(tuple.get(0)).isEqualTo(1L);
-        assertThat(tuple.get(1)).isEqualTo("PAID");
-        assertThat(tuple.get(2)).isEqualTo(BigDecimal.TEN);
+        Tuple3<Long, String, BigDecimal> row = rows.getFirst();
+        assertThat(row.size()).isEqualTo(3);
+        assertThat(row.get0()).isEqualTo(1L);
+        assertThat(row.get1()).isEqualTo("PAID");
+        assertThat(row.get2()).isEqualTo(BigDecimal.TEN);
+        assertThat(row.get(2)).isEqualTo(row.get2());
     }
 
     @Test
-    @DisplayName("四列投影：Tuple 带 4 列")
-    @SuppressWarnings("unchecked") // select 的变长参数在接口上是 abstract，调用点必然产生 unchecked 提示
+    @DisplayName("四列投影：由 ProjectionMappers 产出映射器，结果为带类型的 Tuple4")
     void fourColumnProjection() {
-        backend.rows = List.of((Object) new Object[] {1L, 2L, 3L, 4L});
+        backend.rows = List.of((Object) new Object[] {1L, 2L, 3.5d, 7});
 
-        List<Tuple> rows = query().select(
+        List<Tuple4<Long, Long, Double, Integer>> rows = query().project(ProjectionMappers.select(
                         Path.of(Order::getId),
                         Path.of(Order::getOrgId),
                         Path.of(Order::getBaseSalary),
-                        Path.of(Order::getScore))
+                        Path.of(Order::getScore)))
                 .list();
 
-        assertThat(rows.getFirst().size()).isEqualTo(4);
-        assertThat(rows.getFirst().get(3)).isEqualTo(4L);
+        assertThat(rows).hasSize(1);
+        Tuple4<Long, Long, Double, Integer> row = rows.getFirst();
+        assertThat(row.size()).isEqualTo(4);
+        assertThat(row.get0()).isEqualTo(1L);
+        assertThat(row.get2()).isEqualTo(3.5d);
+        assertThat(row.get3()).isEqualTo(7);
+        assertThat(row.get(3)).isEqualTo(row.get3());
     }
 
     @Test

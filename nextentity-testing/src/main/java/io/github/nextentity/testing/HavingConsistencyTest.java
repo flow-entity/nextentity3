@@ -3,8 +3,8 @@ package io.github.nextentity.testing;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.nextentity.api.Path;
-import io.github.nextentity.api.model.Tuple;
 import io.github.nextentity.api.model.Tuple2;
+import io.github.nextentity.api.model.Tuple3;
 import java.util.List;
 import java.util.Objects;
 import org.junit.jupiter.api.Test;
@@ -87,7 +87,7 @@ public abstract class HavingConsistencyTest<T extends Item> extends ConsistencyT
     /// 两列分组 + 三列投影：`(note, status, count(id))` 恰好三组。
     @Test
     void multiColumnGroupByProducesOneRowPerGroup() {
-        List<Tuple> rows = query().select(
+        List<Tuple3<String, ItemStatus, Long>> rows = query().select(
                         Path.of(noteRef()),
                         Path.of(statusRef()),
                         Path.of(idRef()).count())

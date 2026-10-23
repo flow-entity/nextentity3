@@ -1,13 +1,13 @@
 package io.github.nextentity.api;
 
-import io.github.nextentity.api.model.Tuple;
 import io.github.nextentity.api.model.Tuple2;
+import io.github.nextentity.api.model.Tuple3;
 
 /// 投影入口：决定查询返回什么。
 ///
-/// 投影形态：单列、双列 [Tuple2]、**3 列及以上 [Tuple]**、聚合/算术表达式，
+/// 投影形态：单列、双列 [Tuple2]、三列 [Tuple3]、聚合/算术表达式，
 /// 以及列集由 [ProjectionMapper] 声明、不在本接口签名里写死的投影（结果类型由映射器决定）。
-/// 四种形态都能被 [DistinctStep#distinct()] 修饰成 `SELECT DISTINCT`。
+/// 四列及以上由 [ProjectionMappers] 产出的映射器覆盖。以上形态都能被 [DistinctStep#distinct()] 修饰成 `SELECT DISTINCT`。
 /// 投影成 DTO 靠调用方自己的映射代码（[#project(ProjectionMapper)] 的映射器，或
 /// [io.github.nextentity.api.model.Slice#to] 之类的手写转换）；本接口不提供按类反射/注解自动映射的重载。
 ///
@@ -37,17 +37,19 @@ public interface SelectStep<T> extends DistinctStep<T> {
     /// @return 后续步骤；一次查询只有一份投影，再次 `select` 会替换前一份
     <A, B> BaseWhereStep<T, Tuple2<A, B>> select(Expression<T, A> first, Expression<T, B> second);
 
-    /// 投影三列及以上，结果为 [Tuple]（按位置取列，列序即实参顺序）。
+    /// 投影三列，结果为 [Tuple3]（具名 `get0`~`get2` 且带类型参数，列序写反是编译错误）。
     ///
     /// @param first  第一列，非 `null`
     /// @param second 第二列，非 `null`
     /// @param third  第三列，非 `null`
-    /// @param rest   第四列起的其余列，可省略；元素非 `null`
+    /// @param <A> 第一列类型
+    /// @param <B> 第二列类型
+    /// @param <C> 第三列类型
     /// @return 后续步骤；一次查询只有一份投影，再次 `select` 会替换前一份
     ///
-    /// 三列的类型不进返回类型（结果是按位置取值的 [Tuple]），所以不声明逐列类型参数。
-    BaseWhereStep<T, Tuple> select(
-            Expression<T, ?> first, Expression<T, ?> second, Expression<T, ?> third, Expression<T, ?>... rest);
+    /// 四列及以上不在这里加重载（本接口方法数有上限），改用 [ProjectionMappers] 产出的映射器。
+    <A, B, C> BaseWhereStep<T, Tuple3<A, B, C>> select(
+            Expression<T, A> first, Expression<T, B> second, Expression<T, C> third);
 
     /// 用显式映射器投影：查哪些列、每行怎么造 `R` 都由映射器决定。
     ///

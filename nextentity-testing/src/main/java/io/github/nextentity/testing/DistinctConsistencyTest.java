@@ -3,8 +3,8 @@ package io.github.nextentity.testing;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.nextentity.api.Path;
-import io.github.nextentity.api.model.Tuple;
 import io.github.nextentity.api.model.Tuple2;
+import io.github.nextentity.api.model.Tuple3;
 import java.util.List;
 import java.util.Objects;
 import org.junit.jupiter.api.Test;
@@ -43,11 +43,15 @@ public abstract class DistinctConsistencyTest<T extends Item> extends Consistenc
     /// 三列去重：列数不受 2 限制；夹具四行本就互不相同，因此一行都不折。
     @Test
     void distinctAppliesToThreeColumns() {
-        List<Tuple> rows = query().distinct()
+        List<Tuple3<ItemStatus, String, Integer>> rows = query().distinct()
                 .select(Path.of(statusRef()), Path.of(noteRef()), Path.of(score2Ref()))
                 .list();
 
         assertThat(rows).hasSize(4);
         assertThat(rows.getFirst().size()).isEqualTo(3);
+        // 没有 orderBy 时行序由数据库决定，只能按集合断言列 0 的取值
+        assertThat(rows)
+                .extracting(Tuple3::get0)
+                .containsExactlyInAnyOrder(ItemStatus.NEW, ItemStatus.ACTIVE, ItemStatus.DONE, ItemStatus.NEW);
     }
 }

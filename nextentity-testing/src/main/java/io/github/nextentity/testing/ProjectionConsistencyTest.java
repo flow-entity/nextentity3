@@ -3,8 +3,8 @@ package io.github.nextentity.testing;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.nextentity.api.Path;
-import io.github.nextentity.api.model.Tuple;
 import io.github.nextentity.api.model.Tuple2;
+import io.github.nextentity.api.model.Tuple3;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -126,10 +126,11 @@ public abstract class ProjectionConsistencyTest<T extends Item> extends Consiste
         assertThat(avg).containsExactly(20.0);
     }
 
-    /// 三列投影返回 `Tuple`：按位置取列，列序即实参顺序。
+    /// 三列投影返回 `Tuple3`：具名访问器带类型，按位置取值与之一致。
     @Test
     void selectThreeColumnsReturnsTuple() {
-        List<Tuple> rows = query().select(Path.of(idRef()), Path.of(nameRef()), Path.of(scoreRef()))
+        List<Tuple3<Long, String, Integer>> rows = query().select(
+                        Path.of(idRef()), Path.of(nameRef()), Path.of(scoreRef()))
                 .orderBy(idRef())
                 .asc()
                 .list();
@@ -139,6 +140,7 @@ public abstract class ProjectionConsistencyTest<T extends Item> extends Consiste
         assertThat(rows.getFirst().get(0)).isEqualTo(APPLE_ID);
         assertThat(rows.getFirst().get(1)).isEqualTo(APPLE_NAME);
         assertThat(rows.getFirst().get(2)).isEqualTo(10);
+        assertThat(rows.getFirst().get2()).isEqualTo(10);
         assertThat(rows.getLast().get(2)).isNull();
     }
 

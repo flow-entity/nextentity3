@@ -15,8 +15,8 @@ import io.github.nextentity.api.SelectStep;
 import io.github.nextentity.api.StringOperator;
 import io.github.nextentity.api.StringPath;
 import io.github.nextentity.api.model.Slice;
-import io.github.nextentity.api.model.Tuple;
 import io.github.nextentity.api.model.Tuple2;
+import io.github.nextentity.api.model.Tuple3;
 import io.github.nextentity.core.compile.Compiler;
 import io.github.nextentity.core.exec.Executor;
 import io.github.nextentity.core.meta.EntityType;
@@ -25,7 +25,6 @@ import io.github.nextentity.core.spec.Constant;
 import io.github.nextentity.core.spec.EntitySelection;
 import io.github.nextentity.core.spec.Logical;
 import io.github.nextentity.core.spec.Ordering;
-import io.github.nextentity.core.spec.Projection;
 import io.github.nextentity.core.spec.QuerySpec;
 import io.github.nextentity.core.spec.Selection;
 import io.github.nextentity.core.spec.Spec;
@@ -132,17 +131,13 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     }
 
     @Override
-    @SafeVarargs
-    public final BaseWhereStep<T, Tuple> select(
-            Expression<T, ?> first, Expression<T, ?> second, Expression<T, ?> third, Expression<T, ?>... rest) {
-        List<Projection> items = new ArrayList<>(3 + rest.length);
-        items.add(ValueProjections.of(first));
-        items.add(ValueProjections.of(second));
-        items.add(ValueProjections.of(third));
-        for (Expression<T, ?> expression : rest) {
-            items.add(ValueProjections.of(expression));
-        }
-        return applySelection(new ValueSelection(items, takeDistinct()), null);
+    public <A, B, C> BaseWhereStep<T, Tuple3<A, B, C>> select(
+            Expression<T, A> first, Expression<T, B> second, Expression<T, C> third) {
+        return applySelection(
+                new ValueSelection(
+                        List.of(ValueProjections.of(first), ValueProjections.of(second), ValueProjections.of(third)),
+                        takeDistinct()),
+                null);
     }
 
     @Override

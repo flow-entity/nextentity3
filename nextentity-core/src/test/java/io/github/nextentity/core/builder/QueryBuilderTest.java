@@ -275,34 +275,6 @@ class QueryBuilderTest {
         assertThat(rows.getFirst().get1()).isEqualTo(5);
     }
 
-    /// 守护 `QueryBuilder:138` 的 `3 + rest.length` → `3 - rest.length`：容量只是预分配提示，
-    /// 小容量只会触发扩容而不报错，因此**必须**给到 `rest.length >= 4` 才让错误容量变成负数
-    /// （构造 `ArrayList` 当场抛 `IllegalArgumentException`）；列序断言同时守住「少列/错序」。
-    @Test
-    @DisplayName("select(三列 + 变长 4 列)：投影列数与顺序保持")
-    void selectThreeFixedPlusFourVarargsColumns() {
-        query().select(
-                        Path.of(Order::getId),
-                        Path.of(Order::getOrgId),
-                        Path.of(Order::getName),
-                        Path.of(Order::getStatus),
-                        Path.of(Order::getAge),
-                        Path.of(Order::getCreditType),
-                        Path.of(Order::getDebitType))
-                .list();
-
-        ValueSelection selection = (ValueSelection) backend.last().selection();
-        assertThat(selection.items())
-                .containsExactly(
-                        new PathProjection(path("id")),
-                        new PathProjection(path("orgId")),
-                        new PathProjection(path("name")),
-                        new PathProjection(path("status")),
-                        new PathProjection(path("age")),
-                        new PathProjection(path("creditType")),
-                        new PathProjection(path("debitType")));
-    }
-
     @Test
     @DisplayName("distinct().select(单列)：单投影带 distinct 标志")
     void distinctBeforeSingleColumnSelect() {

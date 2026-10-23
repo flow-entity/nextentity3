@@ -262,20 +262,43 @@ List<Long> ids = query().select(Order::getId).list();
 List<Tuple2<Long, OrderStatus>> rows =
         query().select(Path.of(Order::getId), Path.of(Order::getStatus)).list();
 
-// 三列及以上 → Tuple（按列下标取值，列数 size()）
-List<Tuple> rows3 = query().select(
+// 三列 → Tuple3（具名 get0~get2，列序写反是编译错误）
+List<Tuple3<Long, OrderStatus, BigDecimal>> rows3 = query().select(
                 Path.of(Order::getId), Path.of(Order::getStatus), Path.of(Order::getAmount))
         .list();
-Object id0 = rows3.getFirst().get(0);
+BigDecimal amount0 = rows3.getFirst().get2();
 
 // 去重单列
 List<Long> uniq = query().distinct().select(Order::getCustomerId).list();
 ```
 
-投影参数可以是 `Path.of(...)`、聚合/算术结果，也可以是裸方法引用（`PathRef` 本身就是 `Expression`）：`select(Order::getId)` 走 `select(PathRef)` 重载；把 `PathRef` 放进 `List<Expression<T, ?>>`（即 `expressions()` 的声明类型）后同样可用，两种形态由同一个转换点 `core.builder.ValueProjections.of(...)` 处理。`Tuple2` 也是 `Tuple`（`size()` 恒为 2），所以「2 列用 `Tuple2`、3 列起用 `Tuple`」是同一个体系；映射器路径是例外——它无论几列都给按位置取值的 `Tuple`，2 列也不保证是 `Tuple2`（见 §6.1）。
+投影参数可以是 `Path.of(...)`、聚合/算术结果，也可以是裸方法引用（`PathRef` 本身就是 `Expression`）：`select(Order::getId)` 走 `select(PathRef)` 重载；把 `PathRef` 放进 `List<Expression<T, ?>>`（即 `expressions()` 的声明类型）后同样可用，两种形态由同一个转换点 `core.builder.ValueProjections.of(...)` 处理。`Tuple2`/`Tuple3`~`Tuple6` 都是 `Tuple` 的 record 实现（值语义 + 具名访问器 + 按位置 `get(int)`），所以「双列 `Tuple2`、三列 `Tuple3`、四~六列 `ProjectionMappers`」是同一个体系（见 §6.2）；自定义映射器路径是例外——它无论几列都给按位置取值的通用 `Tuple`，不要强转具名元组（见 §6.1）。
 
-`distinct()` 对四种投影形态都适用（单列、`Tuple2`、3 列起 `Tuple`、映射器）。单列时 `count()` / `slice(...)` 可用：`count()` 数的是**不同的投影值**（数据库侧 `count(distinct 列)`），不是实体行数——两者在列有 `null` 或重复时会不同。**多列去重的 `count()` 抛 `UnsupportedOperationException`**：`COUNT(DISTINCT a, b)` 在 MySQL 与 PostgreSQL 形态不同，只数第一列会静默给出错数。
+`distinct()` 对所有投影形态都适用（单列、`Tuple2`、`Tuple3`、`ProjectionMappers` 的元组、自定义映射器）。单列时 `count()` / `slice(...)` 可用：`count()` 数的是**不同的投影值**（数据库侧 `count(distinct 列)`），不是实体行数——两者在列有 `null` 或重复时会不同。**多列去重的 `count()` 抛 `UnsupportedOperationException`**：`COUNT(DISTINCT a, b)` 在 MySQL 与 PostgreSQL 形态不同，只数第一列会静默给出错数。
 
+### 6.2 四列及以上：`ProjectionMappers` 与 `andThen`
+
+四列起没有 `select(...)` 重载（`SelectStep` 的方法数有上限），改用 `ProjectionMappers.select(...)` 产出的映射器；结果仍是**具名且带类型参数**的元组，`get0()` 直接是列的类型，调用方零转型：
+
+```java
+List<Tuple4<Long, String, Integer, ItemStatus>> rows = query().project(ProjectionMappers.select(
+                Path.of(Item::getId), Path.of(Item::getName),
+                Path.of(Item::getScore), Path.of(Item::getStatus)))
+        .list();
+Long id = rows.getFirst().get0();
+```
+
+想去掉元组、直接要自己的类型，接一个 `andThen`——列集不变，只换结果类型：
+
+```java
+List<Row> rows = query().project(ProjectionMappers
+                .select(Path.of(Item::getId), Path.of(Item::getName),
+                        Path.of(Item::getScore), Path.of(Item::getStatus))
+                .andThen(tuple -> new Row(tuple.get0(), tuple.get1())))
+        .list();
+```
+
+**封顶六列是硬约束**：工厂方法的参数个数就是元组宽度，而项目规则 `ExcessiveParameterListSix` 把参数上限定在 6。七列以上只能用自定义 `ProjectionMapper`，在 `map(Tuple)` 里自己转型——那是唯一没有静态检查的路径。
 ### 6.1 显式映射器：列集与结果类型由调用方决定
 
 列在编译期定不下来时（报表字段随需求变、按请求参数组装列），用 `project(ProjectionMapper)`：一个对象同时声明「查哪些列」和「怎么造结果」，列与取值不可能被传错配。下面的例子按店铺汇总已支付订单的金额：
@@ -388,7 +411,7 @@ List<BigDecimal> bigMax = query().select(Path.of(Order::getAmount).max())
 ### 7.2 多列分组
 
 ```java
-List<Tuple> perStatusAndCustomer = query().select(
+List<Tuple3<OrderStatus, Long, Long>> perStatusAndCustomer = query().select(
                 Path.of(Order::getStatus),
                 Path.of(Order::getCustomerId),
                 Path.of(Order::getId).count())
@@ -482,7 +505,7 @@ nextentity:
 |---|---|---|
 | 静态元模型 | `where(Order_.status)` | `where(Order::getStatus)` |
 | 显式 fetch | `.fetch(Order::getCustomer)` | `@EntityGraph` / 原生 API / 投影 |
-| DTO/record 投影 | `select(OrderRow.class)` | `project(mapper)` 手写映射（§6.1）；或双列用 `Tuple2`、三列及以上用 `Tuple` 自己映射（§6） |
+| DTO/record 投影 | `select(OrderRow.class)` | `project(mapper)` 手写映射（§6.1）；或 `Tuple2`/`Tuple3`/`ProjectionMappers` + `andThen`（§6、§6.2） |
 | 按条件更新/删除 | `update().set(..).where(..)` / `delete().where(..)` | `@Modifying @Query` |
 | 子查询 | `toSubQuery()` | `@Query` 原生/JPQL |
 | `*IfPresent` 命名 | `eqIfPresent(..)` | `eqIfNotNull(..)`（语义相同） |
