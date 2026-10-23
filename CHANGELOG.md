@@ -43,6 +43,10 @@
 - `SelectStep` 增抽象方法 `project(ProjectionMapper)`：**接口的外部实现者需要补实现**（仓库内唯一实现是 `core.builder.QueryBuilder`）；调用方不受影响，既有 `select(...)` 重载的签名与语义未变。
 - 删掉 4 处**死类型参数**：`SelectStep.select(3 列及以上)` 的 `<A, B, C>`（返回的是按位置取值的 `Tuple`，三列类型不进返回类型），以及 `Conditions` 两个私有辅助方法 `operands(Collection)` / `checked(Collection)` 的 `<T>`（只在唯一那个参数里出现一次，不约束任何第二个参数）。判断标准：类型参数至少出现两次、或用进返回类型才有意义。它们是已被否决的 `Tuple3<A,B,C>` 方案的残留。擦除后方法描述符不变，**二进制兼容**、调用点零改动。
 
+### Fixed
+
+- `nextentity-spring` 补上 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`：`@AutoConfiguration` 只是标记，Spring Boot 2.7+ 靠该文件发现配置类。此前 jar 里没有这个文件，消费方引入依赖后**拿不到任何 bean**（`docs/USAGE.md` §12 的「引入即自动配置」并不成立）。原用例用 `AutoConfigurations.of(...)` 显式注册，绕过了注册表，所以一直没暴露；新增 `AutoConfigurationImportsTest` 直接读 classpath 上那个固定路径，把「能否被发现」钉住。
+
 ### Removed
 
 - 相对 nextentity 2.x 不再提供：JDBC 第二引擎与方言、自研元模型、实体事件总线、CGLIB 仓储代理、`Tuple5`~`Tuple10`。
