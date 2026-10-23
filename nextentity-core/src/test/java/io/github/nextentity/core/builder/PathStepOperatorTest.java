@@ -36,6 +36,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 /// - `:48` `eqIfNotNull(U value)`：NumberRef 路径（既有用例只走 StringRef）
 /// - `:53` `ne(U value)`：NumberRef 路径（既有用例只走 StringRef）
 /// - `:58` `:68` `:78` `:88` `:98` `ne/ge/gt/le/lt(Expression<T,U>)`：列对列比较
+/// - `:104` `:114` `:119` `geIfNotNull/leIfNotNull/ltIfNotNull(U value)`：`null` 侧的短路
+///   （既有用例只走非 `null` 侧）
 /// - `:123` `:128` `isNull()` / `isNotNull()`：NumberRef 路径
 /// - `:165` `between(Expression<T,U>, Expression<T,U>)`：列对列区间
 @DisplayName("PathStepOperator：列对列与 NumberRef 路径")
@@ -92,6 +94,36 @@ class PathStepOperatorTest {
         assertThat(where()).isEqualTo(new Comparison(path("age"), ComparisonOperator.EQ, Literal.of(3)));
 
         query().where(Order::getAge).eqIfNotNull(null).list();
+        assertThat(where()).isNull();
+    }
+
+    @Test
+    @DisplayName("NumberRef 的 geIfNotNull：有值产生 GE 比较，null 一个节点都不产生")
+    void geIfNotNullSkipsNull() {
+        query().where(Order::getAge).geIfNotNull(18).list();
+        assertThat(where()).isEqualTo(new Comparison(path("age"), ComparisonOperator.GE, Literal.of(18)));
+
+        query().where(Order::getAge).geIfNotNull(null).list();
+        assertThat(where()).isNull();
+    }
+
+    @Test
+    @DisplayName("NumberRef 的 leIfNotNull：有值产生 LE 比较，null 一个节点都不产生")
+    void leIfNotNullSkipsNull() {
+        query().where(Order::getAge).leIfNotNull(60).list();
+        assertThat(where()).isEqualTo(new Comparison(path("age"), ComparisonOperator.LE, Literal.of(60)));
+
+        query().where(Order::getAge).leIfNotNull(null).list();
+        assertThat(where()).isNull();
+    }
+
+    @Test
+    @DisplayName("NumberRef 的 ltIfNotNull：有值产生 LT 比较，null 一个节点都不产生")
+    void ltIfNotNullSkipsNull() {
+        query().where(Order::getAge).ltIfNotNull(60).list();
+        assertThat(where()).isEqualTo(new Comparison(path("age"), ComparisonOperator.LT, Literal.of(60)));
+
+        query().where(Order::getAge).ltIfNotNull(null).list();
         assertThat(where()).isNull();
     }
 

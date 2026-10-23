@@ -489,6 +489,15 @@ class QueryBuilderTest {
         assertThat(backend.last().window()).isEqualTo(new Window(0, 2));
     }
 
+    /// 守护 `QueryBuilder:217` 的 `rows.isEmpty() ? null` 一侧：`Collector.single()` 的 javadoc
+    /// 承诺「无结果时是 `null`，不抛异常」，所以空结果集必须返回 `null`，不是 `NoSuchElementException`。
+    @Test
+    @DisplayName("single()：无命中行时返回 null（已承诺的契约，不是异常）")
+    void singleReturnsNullWithoutRows() {
+        assertThat(query().single()).isNull();
+        assertThat(backend.last().window()).isEqualTo(new Window(0, 2));
+    }
+
     @Test
     @DisplayName("count()/exists()：清排序与窗口、去锁")
     void countAndExistsClearPagination() {
