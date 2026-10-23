@@ -1,6 +1,7 @@
 package io.github.nextentity.api;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -149,7 +150,7 @@ final class PathValues {
 
         @Override
         public Predicate<T> in(U... values) {
-            return membership(Operation.IN, List.of(values));
+            return membership(Operation.IN, Arrays.asList(values));
         }
 
         @Override
@@ -159,7 +160,7 @@ final class PathValues {
 
         @Override
         public Predicate<T> notIn(U... values) {
-            return membership(Operation.NOT_IN, List.of(values));
+            return membership(Operation.NOT_IN, Arrays.asList(values));
         }
 
         @Override

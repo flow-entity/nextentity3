@@ -46,6 +46,7 @@
 ### Fixed
 
 - `nextentity-spring` 补上 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`：`@AutoConfiguration` 只是标记，Spring Boot 2.7+ 靠该文件发现配置类。此前 jar 里没有这个文件，消费方引入依赖后**拿不到任何 bean**（`docs/USAGE.md` §12 的「引入即自动配置」并不成立）。原用例用 `AutoConfigurations.of(...)` 显式注册，绕过了注册表，所以一直没暴露；新增 `AutoConfigurationImportsTest` 直接读 classpath 上那个固定路径，把「能否被发现」钉住。
+- `Path.of(...).in(...)` / `.notIn(...)` 的变长参数改用 `Arrays.asList`：原先用 `List.of(values)`，遇到 `null` 元素抛 `NullPointerException`，与 `Membership` 声明的「元素允许为 `null`」冲突，也与 `where(ref).in(...)`（走 `Arrays.asList`）行为不一致。同一算子两条入口现在一致，`OperatorMappingTest.membershipVarargsAcceptNullElement` 覆盖。
 
 ### Removed
 

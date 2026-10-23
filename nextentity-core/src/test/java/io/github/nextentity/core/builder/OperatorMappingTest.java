@@ -3,6 +3,7 @@ package io.github.nextentity.core.builder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.nextentity.api.EntityQuery;
+import io.github.nextentity.api.Path;
 import io.github.nextentity.core.compile.Compiler;
 import io.github.nextentity.core.exec.Executor;
 import io.github.nextentity.core.meta.EntityAttribute;
@@ -17,6 +18,7 @@ import io.github.nextentity.core.spec.NullCheck;
 import io.github.nextentity.core.spec.QuerySpec;
 import io.github.nextentity.core.spec.Spec;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -154,6 +156,21 @@ class OperatorMappingTest {
 
         query().where(Order::getName).inIfNotNull(List.of("a")).list();
         assertThat(where()).isEqualTo(new In(path("name"), List.of("a"), false));
+    }
+
+    /// 变长参数允许 `null` 元素（`Membership` 契约）：两条入口（`where(ref)` 与 `Path.of(...)`）
+    /// 行为必须一致，不能一条用 `Arrays.asList`、另一条用拒绝 null 的 `List.of`。
+    @Test
+    @DisplayName("集合算子：变长参数里的 null 元素不被拒绝")
+    void membershipVarargsAcceptNullElement() {
+        query().where(Order::getStatus).in("a", null).list();
+        assertThat(where()).isEqualTo(new In(path("status"), Arrays.asList("a", null), false));
+
+        query().where(Path.of(Order::getStatus).in("a", null)).list();
+        assertThat(where()).isEqualTo(new In(path("status"), Arrays.asList("a", null), false));
+
+        query().where(Path.of(Order::getStatus).notIn("a", null)).list();
+        assertThat(where()).isEqualTo(new In(path("status"), Arrays.asList("a", null), true));
     }
 
     // ---------------------------------------------------------------- fixture
