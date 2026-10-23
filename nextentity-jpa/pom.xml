@@ -74,6 +74,25 @@
                     </execution>
                 </executions>
             </plugin>
+
+            <!--
+              变异测试：只跑本模块，不绑生命周期。命令：
+              `mvn -pl nextentity-jpa pitest:mutationCoverage`
+              本模块的测试要起 Hibernate + H2，变异跑得比 core 慢得多，
+              因此默认只变异「渲染与谓词」这两块纯逻辑，执行器与元模型靠集成测试兜底。
+            -->
+            <plugin>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-maven</artifactId>
+                <configuration>
+                    <targetClasses>
+                        <param>io.github.nextentity.jpa.compile.*</param>
+                    </targetClasses>
+                    <targetTests>
+                        <param>io.github.nextentity.jpa.*</param>
+                    </targetTests>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 </project>
