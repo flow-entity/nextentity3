@@ -27,17 +27,25 @@ public abstract class DistinctConsistencyTest<T extends Item> extends Consistenc
     }
 
     /// 多列去重：完全相同的投影行被折成一行（夹具里两行 `(NEW, null)` 只剩一行）。
+    ///
+    /// 断言直接钉住三行的**完整投影值**，不用 `filter(...).count()`：夹具里没有「`status` 为 `NEW` 且
+    /// `note` 非空」的行，`get0() == ItemStatus.NEW && get1() == null` 的第二个操作数永远为真、短路一侧
+    /// 走不到——那种写法会把「只验了一行」伪装成「验了去重」。集合断言同时钉住元素个数：`DISTINCT`
+    /// 失效会多出重复行，断言直接失败。
+    ///
+    /// 顺序无关是查询本身的语义：没有 `orderBy` 时行序由数据库决定（`Collector` 只在 `list(int)` /
+    /// `first()` 上自动按主键排序），因此用 `containsExactlyInAnyOrder` 而不是 `containsExactly`。
     @Test
     void distinctCollapsesDuplicateProjectedRows() {
         List<Tuple2<ItemStatus, String>> rows = query().distinct()
                 .select(Path.of(statusRef()), Path.of(noteRef()))
                 .list();
 
-        assertThat(rows).hasSize(3);
-        assertThat(rows.stream()
-                        .filter(row -> row.get0() == ItemStatus.NEW && row.get1() == null)
-                        .count())
-                .isEqualTo(1L);
+        assertThat(rows)
+                .containsExactlyInAnyOrder(
+                        new Tuple2<>(ItemStatus.NEW, null),
+                        new Tuple2<>(ItemStatus.ACTIVE, NOTE_1),
+                        new Tuple2<>(ItemStatus.DONE, NOTE_2));
     }
 
     /// 三列去重：列数不受 2 限制；夹具四行本就互不相同，因此一行都不折。
