@@ -66,8 +66,7 @@ final class StringStepOperator<T, B> implements StringOperator<T, B> {
     }
 
     @Override
-    @SafeVarargs
-    public final B in(String... values) {
+    public B in(String... values) {
         return next.apply(Specs.membership(path, Arrays.asList(values), false));
     }
 
@@ -77,8 +76,7 @@ final class StringStepOperator<T, B> implements StringOperator<T, B> {
     }
 
     @Override
-    @SafeVarargs
-    public final B notIn(String... values) {
+    public B notIn(String... values) {
         return next.apply(Specs.membership(path, Arrays.asList(values), true));
     }
 
