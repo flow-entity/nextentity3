@@ -29,6 +29,9 @@ import java.util.concurrent.ThreadLocalRandom;
 @AnalyzeClasses(packages = "io.github.nextentity", importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureTest {
 
+    /// `api` 接口的公开方法数上限（AGENTS「接口要窄」）。
+    private static final int API_MAX_PUBLIC_METHODS = 6;
+
     /// 模块之间不得出现循环依赖。
     @ArchTest
     static final ArchRule MODULES_FREE_OF_CYCLES = slices().matching("io.github.nextentity.(*)..")
@@ -102,7 +105,7 @@ class ArchitectureTest {
             .areInterfaces()
             .and()
             .resideInAPackage("io.github.nextentity.api..")
-            .should(haveAtMostPublicMethods(6))
+            .should(haveAtMostPublicMethods())
             .because("接口方法超过 6 个说明边界切错了；应拆成两个窄接口，而不是加第 7 个方法");
 
     /// `api` 是契约层：不得反向依赖任何内部模块。
@@ -219,11 +222,11 @@ class ArchitectureTest {
             .allowEmptyShould(true)
             .because("core/jpa/spring 的产物里出现 api 包 = 构建污染：classpath 顺序会让编译器用上过期的 api 签名");
 
-    /// 公开方法（不含 static）不超过给定数量。
+    /// 公开方法（不含 static）不超过 `API_MAX_PUBLIC_METHODS` 个。
     ///
-    /// @param max 上限
     /// @return 条件
-    private static ArchCondition<JavaClass> haveAtMostPublicMethods(int max) {
+    private static ArchCondition<JavaClass> haveAtMostPublicMethods() {
+        int max = API_MAX_PUBLIC_METHODS;
         return new ArchCondition<>("声明不超过 " + max + " 个公开方法") {
             @Override
             public void check(JavaClass item, ConditionEvents events) {

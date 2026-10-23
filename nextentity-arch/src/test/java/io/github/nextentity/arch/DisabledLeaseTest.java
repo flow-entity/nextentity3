@@ -136,7 +136,7 @@ class DisabledLeaseTest {
         List<String> violations = violationsIn("class A {\n    @Disabled\n    void bare() {}\n}\n", TODAY);
 
         assertThat(violations).hasSize(1);
-        assertThat(violations.get(0)).startsWith(":2 ").contains("裸 @Disabled");
+        assertThat(violations.getFirst()).startsWith(":2 ").contains("裸 @Disabled");
     }
 
     @Test
@@ -288,7 +288,6 @@ class DisabledLeaseTest {
                 }
             } else if (current == '"' || current == '\'') {
                 int start = index;
-                char quote = current;
                 index++;
                 while (index < out.length) {
                     char inner = out[index];
@@ -297,7 +296,7 @@ class DisabledLeaseTest {
                         continue;
                     }
                     index++;
-                    if (inner == quote || inner == '\n') {
+                    if (inner == current || inner == '\n') {
                         break;
                     }
                 }

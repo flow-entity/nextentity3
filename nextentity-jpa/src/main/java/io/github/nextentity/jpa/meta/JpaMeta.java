@@ -4,7 +4,6 @@ import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.metamodel.Attribute;
 import jakarta.persistence.metamodel.Metamodel;
 import jakarta.persistence.metamodel.PluralAttribute;
-import jakarta.persistence.metamodel.SingularAttribute;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -54,6 +53,6 @@ public final class JpaMeta {
         if (resolved instanceof PluralAttribute<?, ?, ?>) {
             return true;
         }
-        return ((SingularAttribute<?, ?>) resolved).isAssociation();
+        return resolved.isAssociation();
     }
 }

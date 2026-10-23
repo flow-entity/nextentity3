@@ -46,6 +46,6 @@ class ImmutableListTest {
 
         assertThatThrownBy(() -> list.add("b")).isInstanceOf(UnsupportedOperationException.class);
         assertThatThrownBy(() -> list.set(0, "b")).isInstanceOf(UnsupportedOperationException.class);
-        assertThatThrownBy(() -> list.remove(0)).isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> list.removeFirst()).isInstanceOf(UnsupportedOperationException.class);
     }
 }

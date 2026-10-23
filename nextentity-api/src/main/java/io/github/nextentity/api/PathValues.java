@@ -210,27 +210,27 @@ final class PathValues {
 
         @Override
         public NumberValue<T, U> add(U addend) {
-            return Conditions.arithmetic(Operation.ADD, refs(), addend, null);
+            return Conditions.arithmetic(Operation.ADD, refs(), addend);
         }
 
         @Override
         public NumberValue<T, U> sub(U subtrahend) {
-            return Conditions.arithmetic(Operation.SUB, refs(), subtrahend, null);
+            return Conditions.arithmetic(Operation.SUB, refs(), subtrahend);
         }
 
         @Override
         public NumberValue<T, U> mul(U multiplier) {
-            return Conditions.arithmetic(Operation.MUL, refs(), multiplier, null);
+            return Conditions.arithmetic(Operation.MUL, refs(), multiplier);
         }
 
         @Override
         public NumberValue<T, U> div(U divisor) {
-            return Conditions.arithmetic(Operation.DIV, refs(), divisor, null);
+            return Conditions.arithmetic(Operation.DIV, refs(), divisor);
         }
 
         @Override
         public NumberValue<T, U> mod(U divisor) {
-            return Conditions.arithmetic(Operation.MOD, refs(), divisor, null);
+            return Conditions.arithmetic(Operation.MOD, refs(), divisor);
         }
     }
 
@@ -302,13 +302,6 @@ final class PathValues {
         @Override
         public Predicate<T> eqIfNotEmpty(String value) {
             return value == null || value.isEmpty() ? Conditions.alwaysTrue() : comparison(Operation.EQ, value);
-        }
-    }
-
-    static final class StringRoot<T> extends StringValue<T> {
-
-        StringRoot(PathRef.StringRef<T> ref) {
-            super(Collections.singletonList(ref));
         }
     }
 

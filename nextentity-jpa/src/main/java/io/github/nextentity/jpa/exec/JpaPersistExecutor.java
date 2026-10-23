@@ -147,16 +147,13 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
     }
 
     private static Object nextVersion(Object versionValue) {
-        if (versionValue == null) {
-            return 0;
-        }
-        if (versionValue instanceof Integer current) {
-            return current + 1;
-        }
-        if (versionValue instanceof Long current) {
-            return current + 1;
-        }
-        throw new UnsupportedOperationException(
-                "@Version 只支持 Integer / Long: " + versionValue.getClass().getName());
+        return switch (versionValue) {
+            case null -> 0;
+            case Integer current -> current + 1;
+            case Long current -> current + 1;
+            default ->
+                throw new UnsupportedOperationException("@Version 只支持 Integer / Long: "
+                        + versionValue.getClass().getName());
+        };
     }
 }

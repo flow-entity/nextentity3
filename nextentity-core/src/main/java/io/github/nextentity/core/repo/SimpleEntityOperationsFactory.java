@@ -57,21 +57,15 @@ public final class SimpleEntityOperationsFactory<S> implements EntityOperationsF
 
     /// 单个实体的操作入口实现：查询交给构建器，写入直接转给后端的写入执行器。
     ///
-    /// @param <T> 实体类型
-    /// @param <S> 后端语句类型
-    private static final class Operations<T, S> implements EntityOperations<T> {
-
-        private final EntityType<T> entityType;
-        private final Compiler<S> compiler;
-        private final Executor<S> executor;
-        private final PersistExecutor<T> persist;
-
-        Operations(EntityType<T> entityType, Compiler<S> compiler, Executor<S> executor, PersistExecutor<T> persist) {
-            this.entityType = entityType;
-            this.compiler = compiler;
-            this.executor = executor;
-            this.persist = persist;
-        }
+    /// @param entityType 实体元数据
+    /// @param compiler   编译器
+    /// @param executor   执行器
+    /// @param persist    写入执行器
+    /// @param <T>        实体类型
+    /// @param <S>        后端语句类型
+    private record Operations<T, S>(
+            EntityType<T> entityType, Compiler<S> compiler, Executor<S> executor, PersistExecutor<T> persist)
+            implements EntityOperations<T> {
 
         @Override
         public EntityQuery<T> query() {

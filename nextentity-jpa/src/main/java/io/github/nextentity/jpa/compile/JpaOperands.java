@@ -14,7 +14,7 @@ import jakarta.persistence.criteria.Expression;
 /// 聚合函数与算术算子的分派也只在这里写一份——`JpaProjections` 委托过来，不在别处重抄。
 ///
 /// `Literal` 正常路径不会走到这里：条件里的字面量必须继续走 JPA 的 `Object` 重载以保留
-/// 参数绑定与 `@Convert`/时区转换行为（见 {@link JpaPredicates#comparison}）。这里的
+/// 参数绑定与 `@Convert`/时区转换行为（见 `JpaPredicates` 的比较分支）。这里的
 /// `Literal` 分支只服务于「字面量真的作为表达式出现」的场合（例如算术右操作数）。
 final class JpaOperands {
 
@@ -54,8 +54,8 @@ final class JpaOperands {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private Expression<?> arithmetic(ArithmeticOperand arithmetic) {
-        Expression left = (Expression) expression(arithmetic.left());
-        Expression right = (Expression) expression(arithmetic.right());
+        Expression left = expression(arithmetic.left());
+        Expression right = expression(arithmetic.right());
         return switch (arithmetic.operator()) {
             case ADD -> builder.sum(left, right);
             case SUB -> builder.diff(left, right);

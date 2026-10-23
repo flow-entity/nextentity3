@@ -90,43 +90,21 @@ final class Conditions {
 
     /// 叶子条件或逻辑组合；`AND`/`OR`/`NOT` 的子条件放在 `arguments()` 里。
     ///
-    /// @param <T> 根实体类型
-    static final class Leaf<T> implements Predicate<T>, Op {
+    /// 组件名与 [Op] 的读取方法一一对应，因此 `operation()` / `refs()` / `arguments()` / `subject()`
+    /// 由 record 直接生成，不需要再手写。
+    ///
+    /// @param operation 运算种类
+    /// @param refs      属性路径链
+    /// @param arguments 运算参数
+    /// @param subject   左侧主体表达式，`null` 表示主语就是 `refs()` 的路径
+    /// @param <T>       根实体类型
+    static record Leaf<T>(Operation operation, List<PathRef<?, ?>> refs, List<Object> arguments, Op subject)
+            implements Predicate<T>, Op {
 
-        private final Operation operation;
-        private final List<PathRef<?, ?>> refs;
-        private final List<Object> arguments;
-        private final Op subject;
-
-        Leaf(Operation operation, List<PathRef<?, ?>> refs, List<Object> arguments) {
-            this(operation, refs, arguments, null);
-        }
-
-        Leaf(Operation operation, List<PathRef<?, ?>> refs, List<Object> arguments, Op subject) {
-            this.operation = operation;
-            this.refs = List.copyOf(refs);
-            this.arguments = List.copyOf(arguments);
-            this.subject = subject;
-        }
-
-        @Override
-        public Operation operation() {
-            return operation;
-        }
-
-        @Override
-        public List<PathRef<?, ?>> refs() {
-            return refs;
-        }
-
-        @Override
-        public List<Object> arguments() {
-            return arguments;
-        }
-
-        @Override
-        public Op subject() {
-            return subject;
+        /// 紧凑构造器：两个列表复制为不可变视图。
+        Leaf {
+            refs = List.copyOf(refs);
+            arguments = List.copyOf(arguments);
         }
 
         @Override
@@ -586,17 +564,19 @@ final class Conditions {
         return new AggregateValueImpl<>(operation, refs);
     }
 
-    /// 构造算术值。
+    /// 构造算术值：左操作数就是 `refs()` 的路径（`subject()` 为 `null`）。
     ///
-    /// @param operation   算术运算
-    /// @param refs        左操作数的路径链
-    /// @param right       右操作数（一个值或另一个表达式）
-    /// @param leftSubject 左操作数表达式；`null` 表示左操作数就是 `refs()` 的路径
-    /// @param <T>         根实体类型
-    /// @param <U>         数值类型
+    /// 左操作数本身是表达式的链式算术由 `ArithmeticValueImpl.add(...)` 等直接构造，
+    /// 不经这个工厂。
+    ///
+    /// @param operation 算术运算
+    /// @param refs      左操作数的路径链
+    /// @param right     右操作数（一个值或另一个表达式）
+    /// @param <T>       根实体类型
+    /// @param <U>       数值类型
     /// @return 算术值
     static <T, U extends Number> NumberValue<T, U> arithmetic(
-            Operation operation, List<PathRef<?, ?>> refs, Object right, Op leftSubject) {
-        return new ArithmeticValueImpl<>(operation, refs, right, leftSubject);
+            Operation operation, List<PathRef<?, ?>> refs, Object right) {
+        return new ArithmeticValueImpl<>(operation, refs, right, null);
     }
 }

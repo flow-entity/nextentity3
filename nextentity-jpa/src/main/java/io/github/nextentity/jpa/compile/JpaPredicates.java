@@ -47,15 +47,15 @@ final class JpaPredicates {
     private Predicate comparison(Comparison comparison) {
         Expression<?> left = operands.expression(comparison.left());
         Operand right = comparison.right();
-        return right instanceof Literal literal
-                ? withValue(comparison.operator(), left, literal.value())
+        return right instanceof Literal(Object value)
+                ? withValue(comparison.operator(), left, value)
                 : withExpression(comparison.operator(), left, operands.expression(right));
     }
 
     /// 右值是字面量：走 JPA 的 `Object` 重载，保留参数绑定与 `@Convert`/时区转换行为。
     @SuppressWarnings({"unchecked", "rawtypes"})
     private Predicate withValue(ComparisonOperator operator, Expression<?> left, Object value) {
-        Expression expression = (Expression) left;
+        Expression expression = left;
         return switch (operator) {
             case EQ -> builder.equal(expression, value);
             case NE -> builder.notEqual(expression, value);
@@ -70,8 +70,8 @@ final class JpaPredicates {
     /// 右值是表达式（列 / 聚合 / 算术）：走 JPA 的 `Expression` 重载。
     @SuppressWarnings({"unchecked", "rawtypes"})
     private Predicate withExpression(ComparisonOperator operator, Expression<?> left, Expression<?> right) {
-        Expression expression = (Expression) left;
-        Expression other = (Expression) right;
+        Expression expression = left;
+        Expression other = right;
         return switch (operator) {
             case EQ -> builder.equal(expression, other);
             case NE -> builder.notEqual(expression, other);
@@ -86,11 +86,11 @@ final class JpaPredicates {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private Predicate between(Between between) {
-        Expression subject = (Expression) operands.expression(between.subject());
+        Expression subject = operands.expression(between.subject());
         Operand lower = between.lower();
         Operand upper = between.upper();
-        if (lower instanceof Literal lowerValue && upper instanceof Literal upperValue) {
-            return builder.between(subject, (Comparable) lowerValue.value(), (Comparable) upperValue.value());
+        if (lower instanceof Literal(Object lowerValue) && upper instanceof Literal(Object upperValue)) {
+            return builder.between(subject, (Comparable) lowerValue, (Comparable) upperValue);
         }
         return builder.between(
                 subject, (Expression) operands.expression(lower), (Expression) operands.expression(upper));

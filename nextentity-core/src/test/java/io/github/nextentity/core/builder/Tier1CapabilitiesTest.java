@@ -265,7 +265,7 @@ class Tier1CapabilitiesTest {
     @DisplayName("三列投影：selection 三项，装配成 Tuple 按位置取值")
     @SuppressWarnings("unchecked") // select 的变长参数在接口上是 abstract，调用点必然产生 unchecked 提示
     void threeColumnProjection() {
-        backend.rows = List.<Object>of((Object) new Object[] {1L, "PAID", BigDecimal.TEN});
+        backend.rows = List.of((Object) new Object[] {1L, "PAID", BigDecimal.TEN});
 
         List<Tuple> rows = query().select(Path.of(Order::getId), Path.of(Order::getStatus), Path.of(Order::getAmount))
                 .list();
@@ -282,7 +282,7 @@ class Tier1CapabilitiesTest {
     @DisplayName("四列投影：Tuple 带 4 列")
     @SuppressWarnings("unchecked") // select 的变长参数在接口上是 abstract，调用点必然产生 unchecked 提示
     void fourColumnProjection() {
-        backend.rows = List.<Object>of((Object) new Object[] {1L, 2L, 3L, 4L});
+        backend.rows = List.of((Object) new Object[] {1L, 2L, 3L, 4L});
 
         List<Tuple> rows = query().select(
                         Path.of(Order::getId),
@@ -298,7 +298,7 @@ class Tier1CapabilitiesTest {
     @Test
     @DisplayName("两列投影仍是 Tuple2，且也是 Tuple（按位置取值一致）")
     void twoColumnProjectionIsTuple2() {
-        backend.rows = List.<Object>of((Object) new Object[] {1L, 2L});
+        backend.rows = List.of((Object) new Object[] {1L, 2L});
 
         List<Tuple2<Long, Long>> rows =
                 query().select(Path.of(Order::getId), Path.of(Order::getOrgId)).list();

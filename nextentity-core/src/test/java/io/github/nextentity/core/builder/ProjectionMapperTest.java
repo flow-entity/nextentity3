@@ -44,7 +44,7 @@ class ProjectionMapperTest {
     @Test
     @DisplayName("单列 mapper：selection 只有一项，单列标量行装配成长度为 1 的 Tuple")
     void singleColumnMapper() {
-        backend.rows = List.of((Object) BigDecimal.TEN);
+        backend.rows = List.of(BigDecimal.TEN);
 
         List<AmountTotal> totals = query().project(new AmountTotalMapper()).list();
 
@@ -69,7 +69,7 @@ class ProjectionMapperTest {
     @Test
     @DisplayName("expressions() 用裸方法引用（PathRef）：与 Path.of(...) 一样落 PathProjection")
     void bareMethodReferenceExpression() {
-        backend.rows = List.of((Object) 42L);
+        backend.rows = List.of(42L);
 
         List<Long> ids = query().project(new BareReferenceMapper()).list();
 
@@ -81,7 +81,7 @@ class ProjectionMapperTest {
     @Test
     @DisplayName("聚合投影 + 无 groupBy：规格带聚合标志、groupBy 为空（SQL 退化成整表一个分组）")
     void aggregateWithoutGroupBy() {
-        backend.rows = List.of((Object) BigDecimal.TEN);
+        backend.rows = List.of(BigDecimal.TEN);
 
         query().project(new AmountTotalMapper()).list();
 
@@ -186,7 +186,7 @@ class ProjectionMapperTest {
     @DisplayName("聚合 mapper 的 slice()：计数与取行两条规格都带聚合标志")
     void aggregateMapperSliceCarriesAggregateFlag() {
         backend.total = 1L;
-        backend.rows = List.of((Object) BigDecimal.TEN);
+        backend.rows = List.of(BigDecimal.TEN);
 
         query().project(new AmountTotalMapper()).slice(0, 10);
 
@@ -214,7 +214,7 @@ class ProjectionMapperTest {
     @Test
     @DisplayName("project 之后再 distinct().select：映射器同样失效，取行是裸值列表且规格带 distinct")
     void distinctSelectAfterProjectDropsMapper() {
-        backend.rows = List.of((Object) "PAID");
+        backend.rows = List.of("PAID");
         QueryBuilder<Order, QuerySpec> builder = query();
         builder.project(new ReportMapper());
 
@@ -361,7 +361,7 @@ class ProjectionMapperTest {
 
         @Override
         public List<Expression<Order, ?>> expressions() {
-            return Arrays.<Expression<Order, ?>>asList(Path.of(Order::getId), null);
+            return Arrays.asList(Path.of(Order::getId), null);
         }
 
         @Override

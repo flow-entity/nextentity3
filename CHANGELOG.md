@@ -47,6 +47,9 @@
 
 - `nextentity-spring` 补上 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`：`@AutoConfiguration` 只是标记，Spring Boot 2.7+ 靠该文件发现配置类。此前 jar 里没有这个文件，消费方引入依赖后**拿不到任何 bean**（`docs/USAGE.md` §12 的「引入即自动配置」并不成立）。原用例用 `AutoConfigurations.of(...)` 显式注册，绕过了注册表，所以一直没暴露；新增 `AutoConfigurationImportsTest` 直接读 classpath 上那个固定路径，把「能否被发现」钉住。
 - `Path.of(...).in(...)` / `.notIn(...)` 的变长参数改用 `Arrays.asList`：原先用 `List.of(values)`，遇到 `null` 元素抛 `NullPointerException`，与 `Membership` 声明的「元素允许为 `null`」冲突，也与 `where(ref).in(...)`（走 `Arrays.asList`）行为不一致。同一算子两条入口现在一致，`OperatorMappingTest.membershipVarargsAcceptNullElement` 覆盖。
+- 修正失效的 Javadoc / `@see` 引用：`api.DistinctStep` 指向 `core.spec.EntitySelection`（`api` 不依赖 `core`，链接永远解析不到，且暴露实现细节）；`jpa.compile.JpaOperands` 指向 private 的 `JpaPredicates#comparison`。
+- 删除死代码：`Conditions.Leaf` 从未被调用的三参构造器、`PathValues.StringRoot`（无静态工厂可达，`StringPath` 没有 `of(...)`）、`Conditions.arithmetic` 恒为 `null` 的 `leftSubject` 形参。`Leaf` 与 `SimpleEntityOperationsFactory.Operations` 改为 record（组件名与 `Op` 的读取方法一一对应，不再手写 getter）。
+- `JpaEntityAttribute` 构造器对 `entityType` 做 `requireNonNull`：错误消息里 `entityType.getName()` 在入参为 `null` 时会先抛 NPE，把「找不到字段」的真实原因盖掉。
 
 ### Removed
 

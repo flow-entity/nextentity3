@@ -15,7 +15,7 @@ final class JpaEntityAttribute implements EntityAttribute {
 
     JpaEntityAttribute(Class<?> entityType, String name) {
         this.name = name;
-        this.field = resolveField(entityType, name);
+        this.field = resolveField(Objects.requireNonNull(entityType, "entityType"), name);
     }
 
     private static Field resolveField(Class<?> entityType, String name) {

@@ -9,7 +9,7 @@ package io.github.nextentity.api;
 /// `list()` / `where(...)`，所以"声明了去重却没投影"在编译期就不可写，不需要运行期再校验一次。
 ///
 /// 这也顺带禁掉了 `SELECT DISTINCT 实体`：`EntityQuery` 能调 [distinct()]，但拿不到终止符，
-/// 而 [io.github.nextentity.core.spec.EntitySelection] 本来就不带 `distinct` 标志。
+/// 而"查实体"这种选择形态本身就不带 `distinct` 标志。
 ///
 /// @param <T> 根实体类型
 public interface DistinctStep<T> {

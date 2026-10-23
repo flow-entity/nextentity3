@@ -92,7 +92,7 @@ class PathRefsTest {
     @Test
     @DisplayName("resolve：空属性路径链被拒绝")
     void resolveRejectsEmptyChain() {
-        assertThatThrownBy(() -> PathRefs.resolve(List.<PathRef<?, ?>>of()))
+        assertThatThrownBy(() -> PathRefs.resolve(List.of()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("属性路径链不能为空");
     }

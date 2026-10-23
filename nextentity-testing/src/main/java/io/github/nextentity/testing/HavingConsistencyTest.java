@@ -6,6 +6,7 @@ import io.github.nextentity.api.Path;
 import io.github.nextentity.api.model.Tuple;
 import io.github.nextentity.api.model.Tuple2;
 import java.util.List;
+import java.util.Objects;
 import org.junit.jupiter.api.Test;
 
 /// 分组后过滤（`having`）与多列分组的一致性。
@@ -59,7 +60,7 @@ public abstract class HavingConsistencyTest<T extends Item> extends ConsistencyT
                 .list();
 
         assertThat(rows).hasSize(3);
-        assertThat(rows.stream().map(Tuple2::get0).filter(note -> note != null).toList())
+        assertThat(rows.stream().map(Tuple2::get0).filter(Objects::nonNull).toList())
                 .containsExactly(NOTE_1, NOTE_2);
     }
 
