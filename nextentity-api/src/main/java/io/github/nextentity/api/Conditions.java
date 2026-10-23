@@ -366,7 +366,11 @@ final class Conditions {
         }
     }
 
-    /// 聚合结果值：`subject = this`，因此后端能区分"左侧是 `MAX(x)`"与"左侧是 `x`"。
+    /// 聚合结果值：自身不带 `subject`，作为比较/区间的左侧主体时由 [Leaf] 携带。
+    ///
+    /// [AggregateValueImpl] 的 `eq` / `between` 等把 `this` 填进 `Leaf` 的 `subject`，后端因此能区分
+    /// 「左侧是 `MAX(x)`」与「左侧是 `x`」；聚合值自身的 [Op#subject()] 恒为 `null`，
+    /// 因为它没有更左侧的操作数，被聚合的列走 `refs()`。
     ///
     /// @param <T> 根实体类型
     /// @param <U> 聚合结果类型
