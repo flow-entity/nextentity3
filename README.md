@@ -44,9 +44,9 @@ public class OrderRepository extends AbstractRepository<Order, Long> {
 
 | 模块 | 职责 | 依赖 |
 |---|---|---|
-| `nextentity-api` | 公开 DSL：`Path`/`PathRef`/`EntityPath`/`Predicate`、步骤接口、算子接口、`Slice`、`Tuple2`、`LockMode`、`Op`/`Operation`（值→AST 的线格式） | 无（唯一例外：`jakarta.persistence-api` provided，供 `lock(LockModeType)` 兼容重载） |
-| `nextentity-core` | `meta`（属性解析接缝）、`spec`（不可变 AST）、`compile.Compiler` / `exec.Executor` / `exec.PersistExecutor`（后端接缝）、`builder`（把 api 值解释成 `Spec`）、`repo.EntityOperations` 与装配、`TransactionOperations`、`TypeCastUtil` | `api` |
-| `nextentity-jpa` | Criteria 渲染（`JpaCompiler`/`JpaQuery`/`JpaPredicates`/`JpaProjections`）、JPA 执行（`JpaExecutor`/`JpaPersistExecutor`）、Hibernate 元模型（`JpaMeta`） | `core` + `jakarta.persistence-api` |
+| `nextentity-api` | 公开 DSL：`Path`/`PathRef`/`EntityPath`/`Predicate`、步骤接口（含 `HavingStep`）、算子接口（`Comparison`/`Range`/`ColumnComparison`/`NumberArithmetic`/`LogicalOps`/`StringOps` 等）、`Slice`/`Tuple2`/`Tuple`、`AggregateValue`（`count`/`countDistinct`/`max`/`min`/`avg`/`sum`）、`NumberValue`、`LockMode`、`Op`/`Operation`（值→AST 的线格式） | 无（零 `dependency`，enforcer 的 `exclude *:*` 兜底） |
+| `nextentity-core` | `meta`（属性解析接缝）、`spec`（不可变 AST）、`compile.Compiler` / `exec.Executor` / `exec.PersistExecutor`（后端接缝）、`builder`（把 api 值解释成 `Spec`）、`repo.EntityOperations` 与装配、`TypeCastUtil` | `api` |
+| `nextentity-jpa` | Criteria 渲染（`JpaCompiler`/`JpaQuery`/`JpaPredicates`/`JpaProjections`/`JpaOperands`——后者是 `Operand → Criteria Expression` 的唯一渲染点）、JPA 执行（`JpaExecutor`/`JpaPersistExecutor`）、Hibernate 元模型（`JpaMeta`） | `core` + `jakarta.persistence-api` |
 | `nextentity-spring` | Spring Boot 自动配置（只注册一个 `EntityOperationsFactory` bean，开关 `nextentity.enabled`）+ `AbstractRepository` 仓储基类 | `core` + `jpa` |
 | `nextentity-testing` | 一致性测试基类（`*ConsistencyTest`）与夹具 | `api` + `core` |
 | `nextentity-tests-jpa` | JPA 集成测试（H2、Testcontainers MySQL） | `jpa` + `testing` |
