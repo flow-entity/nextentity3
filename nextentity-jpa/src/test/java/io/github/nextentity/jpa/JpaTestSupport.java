@@ -1,9 +1,12 @@
 package io.github.nextentity.jpa;
 
 import io.github.nextentity.jpa.entity.Customer;
+import io.github.nextentity.jpa.entity.DerivedRecord;
 import io.github.nextentity.jpa.entity.Note;
 import io.github.nextentity.jpa.entity.OrderStatus;
 import io.github.nextentity.jpa.entity.Organization;
+import io.github.nextentity.jpa.entity.PriceWindow;
+import io.github.nextentity.jpa.entity.Shipment;
 import io.github.nextentity.jpa.entity.ShopOrder;
 import io.github.nextentity.jpa.entity.VersionedEntry;
 import io.github.nextentity.jpa.entity.VersionedLedger;
@@ -54,6 +57,9 @@ abstract class JpaTestSupport {
         configuration.addAnnotatedClass(ShopOrder.class);
         configuration.addAnnotatedClass(VersionedLedger.class);
         configuration.addAnnotatedClass(VersionedEntry.class);
+        configuration.addAnnotatedClass(DerivedRecord.class);
+        configuration.addAnnotatedClass(Shipment.class);
+        configuration.addAnnotatedClass(PriceWindow.class);
         this.sessionFactory = configuration.buildSessionFactory();
         this.meta = new JpaMeta(sessionFactory);
     }

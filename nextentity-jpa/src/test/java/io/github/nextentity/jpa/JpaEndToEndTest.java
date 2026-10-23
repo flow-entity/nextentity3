@@ -28,6 +28,7 @@ import io.github.nextentity.jpa.compile.JpaCompiler;
 import io.github.nextentity.jpa.entity.Customer;
 import io.github.nextentity.jpa.entity.OrderStatus;
 import io.github.nextentity.jpa.entity.ShopOrder;
+import io.github.nextentity.jpa.entity.VersionedEntry;
 import io.github.nextentity.jpa.exec.JpaExecutor;
 import io.github.nextentity.jpa.exec.JpaPersistExecutor;
 import jakarta.persistence.EntityManager;
@@ -112,6 +113,81 @@ class JpaEndToEndTest extends JpaTestSupport {
             assertThat(executor.count(compiler.compile(distinct.forCount()))).isEqualTo(2L);
             return null;
         });
+    }
+
+    /// 不带任何 `where` 的 `exists()`：`exec/JpaExecutor.java:102` 的 `where == null` 一侧。
+    ///
+    /// 此前只用「带条件」的规格测过 exists，因此「无条件时整表有行即真」与「空表为假」都没钉住，
+    /// 把该分支判反（`where != null`）也照样通过。空表侧先断言计数为 0，避免表里其实有行时
+    /// 把用例读成通过。
+    @Test
+    void existsWithoutWhereLooksAtWholeTable() {
+        inTx(entityManager -> {
+            JpaCompiler compiler = compiler(entityManager);
+            JpaExecutor executor = executor(entityManager);
+
+            assertThat(executor.exists(compiler.compile(query(null).forExists())))
+                    .isTrue();
+            // 条件被整段跳过：语句里没有 WHERE，而不是渲染成一个恒真条件
+            assertThat(drainSql()).anySatisfy(sql -> assertThat(sql)
+                    .containsIgnoringCase("from shop_order")
+                    .doesNotContainIgnoringCase(" where "));
+
+            QuerySpec emptyTable = QuerySpec.of(VersionedEntry.class);
+            assertThat(executor.count(compiler.compile(emptyTable.forCount()))).isZero();
+            assertThat(executor.exists(compiler.compile(emptyTable.forExists())))
+                    .isFalse();
+            return null;
+        });
+    }
+
+    /// `count()` 的两条契约拒绝（`exec/JpaExecutor.java:58`、`:69`）。
+    ///
+    /// 两种形状都能从公开 api 写出来（`groupBy(...).count()`、`distinct().select(a, b).count()`），
+    /// 因此拒绝分支必须钉住：静默近似会给出与查询不一致的行数。
+    @Test
+    void countRejectsAggregateAndMultiColumnDistinct() {
+        AttributePath status = AttributePath.of(ShopOrder.class, "status");
+        AttributePath amount = AttributePath.of(ShopOrder.class, "amount");
+        QuerySpec grouped = new QuerySpec(
+                ShopOrder.class,
+                new ValueSelection(List.of(new PathProjection(status)), false),
+                null,
+                List.of(status),
+                null,
+                List.of(),
+                Window.NONE,
+                null);
+        QuerySpec multiColumnDistinct = new QuerySpec(
+                ShopOrder.class,
+                new ValueSelection(List.of(new PathProjection(status), new PathProjection(amount)), true),
+                null,
+                List.of(),
+                null,
+                List.of(),
+                Window.NONE,
+                null);
+
+        inTx(entityManager -> {
+            JpaCompiler compiler = compiler(entityManager);
+            JpaExecutor executor = executor(entityManager);
+            assertThatThrownBy(() -> executor.count(compiler.compile(grouped.forCount())))
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessage("分组/聚合规格的 count 未实现（2.2.3 走子查询计数：" + "io.github.nextentity.jpa.entity.ShopOrder）");
+            assertThatThrownBy(() -> executor.count(compiler.compile(multiColumnDistinct.forCount())))
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessage(
+                            "多列 distinct 规格的 count 未实现（列数 2，方言语义不一致）：" + "io.github.nextentity.jpa.entity.ShopOrder");
+            return null;
+        });
+    }
+
+    /// `NullCheck` 的 `is not null` 一侧（`compile/JpaPredicates.java:109`）；`is null` 一侧由
+    /// `nestedPathUsesLeftJoin` 覆盖（那里用 customer 为空的订单）。
+    @Test
+    void isNotNullMatchesRowsWithNonNullAssociation() {
+        assertThat(ids(query(new NullCheck(AttributePath.of(ShopOrder.class, "customer", "orgId"), true))))
+                .containsExactly(100L);
     }
 
     @Test

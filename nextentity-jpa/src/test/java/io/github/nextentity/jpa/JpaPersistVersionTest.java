@@ -7,6 +7,7 @@ import io.github.nextentity.jpa.entity.Customer;
 import io.github.nextentity.jpa.entity.VersionedLedger;
 import io.github.nextentity.jpa.exec.JpaPersistExecutor;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityNotFoundException;
 import jakarta.persistence.OptimisticLockException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -93,6 +94,34 @@ class JpaPersistVersionTest extends JpaTestSupport {
         inTx(entityManager -> {
             assertThat(entityManager.find(Customer.class, 10L).getName()).isEqualTo("Alice2");
             // 丢掉主键条件的变异体会把 Bob 一起改掉（并且影响行数 2 → EntityNotFoundException）
+            assertThat(entityManager.find(Customer.class, 11L).getName()).isEqualTo("Bob");
+            return null;
+        });
+    }
+
+    /// 无 `@Version` 的实体 update 一个不存在的 id：`verifyAffected` 的 `version == null` 一侧
+    /// （`exec/JpaPersistExecutor.java:108-109`）。与「版本对不上 → `OptimisticLockException`」
+    /// 互补：没有版本列时 0 行只可能意味着行不存在，所以异常类型必须是 `EntityNotFoundException`。
+    @Test
+    @DisplayName("无 @Version 实体 update 不存在的 id：EntityNotFoundException，消息点名主键")
+    void updateMissingRowWithoutVersionThrowsEntityNotFound() {
+        inTx(entityManager -> {
+            Customer ghost = new Customer(999L, 1L, "ghost", null);
+
+            assertThatThrownBy(() -> new JpaPersistExecutor<>(entityManager, meta(), Customer.class).update(ghost))
+                    .isInstanceOf(EntityNotFoundException.class)
+                    .hasMessage("实体 io.github.nextentity.jpa.entity.Customer 不存在: id=999");
+            return null;
+        });
+        inTx(entityManager -> {
+            // 影响行数为 0：没有新行被造出来，既有行也没被写成 ghost。
+            // 断言落在 Bob 与「不存在 ghost 行」上：Alice 的姓名会被同类的另一条用例改掉，
+            // 拿它当 0 行更新的证据会变成用例间耦合。
+            assertThat(entityManager.find(Customer.class, 999L)).isNull();
+            assertThat(entityManager
+                            .createQuery("select count(c) from Customer c where c.name = 'ghost'", Long.class)
+                            .getSingleResult())
+                    .isZero();
             assertThat(entityManager.find(Customer.class, 11L).getName()).isEqualTo("Bob");
             return null;
         });

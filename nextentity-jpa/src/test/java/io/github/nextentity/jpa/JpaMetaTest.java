@@ -1,7 +1,11 @@
 package io.github.nextentity.jpa;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.nextentity.core.meta.EntityAttribute;
+import io.github.nextentity.jpa.entity.BaseRecord;
+import io.github.nextentity.jpa.entity.DerivedRecord;
 import io.github.nextentity.jpa.entity.ShopOrder;
 import io.github.nextentity.jpa.entity.VersionedEntry;
 import io.github.nextentity.jpa.entity.VersionedLedger;
@@ -17,6 +21,9 @@ import org.junit.jupiter.api.Test;
 ///   `@ManyToOne`（走 `SingularAttribute#isAssociation()`），`PluralAttribute` 分支零覆盖，
 ///   所以这里加一个 `@OneToMany` 属性（`VersionedLedger#entries`）。
 /// - `meta/JpaEntityAttribute.java:41`：`type()` 返回 `null`。属性类型此前没有任何调用点。
+/// - `meta/JpaEntityAttribute.java:22`：`resolveField` 的循环只查实体自身、不向父类上溯。
+///   现有实体的字段都声明在自己身上，继承映射这条路径零覆盖，所以这里用 `@MappedSuperclass`
+///   声明字段（`DerivedRecord#code`）。
 class JpaMetaTest extends JpaTestSupport {
 
     @Test
@@ -42,5 +49,25 @@ class JpaMetaTest extends JpaTestSupport {
         assertThat(ledger.version().type()).isEqualTo(Long.class);
         assertThat(ledger.attributes().get("name").type()).isEqualTo(String.class);
         assertThat(ledger.attributes().get("entries").type()).isEqualTo(List.class);
+    }
+
+    @Test
+    @DisplayName("继承属性：字段声明在 @MappedSuperclass 父类上，元数据仍能读写")
+    void inheritedAttributeResolvesToParentField() throws NoSuchFieldException {
+        JpaEntityType<DerivedRecord> entityType = meta().entityType(DerivedRecord.class);
+        EntityAttribute code = entityType.attributes().get("code");
+
+        assertThat(code).isNotNull();
+        assertThat(code.name()).isEqualTo("code");
+        assertThat(code.type()).isEqualTo(String.class);
+        // 前提：子类自己没有声明 code，因此解析必须上溯到父类那一轮循环
+        assertThatThrownBy(() -> DerivedRecord.class.getDeclaredField("code")).isInstanceOf(NoSuchFieldException.class);
+        assertThat(BaseRecord.class.getDeclaredField("code")).isNotNull();
+
+        DerivedRecord record = new DerivedRecord(1L, "R-1");
+        assertThat(code.get(record)).isEqualTo("R-1");
+
+        code.set(record, "R-2");
+        assertThat(record.getCode()).isEqualTo("R-2");
     }
 }
