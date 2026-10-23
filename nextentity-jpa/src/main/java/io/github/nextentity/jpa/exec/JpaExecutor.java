@@ -63,7 +63,14 @@ public final class JpaExecutor implements Executor<JpaQuery> {
         Root<?> root = countQuery.from(spec.entityType());
         JpaCriteria criteria = new JpaCriteria(builder, root, meta);
         if (spec.selection() instanceof ValueSelection values && values.distinct()) {
-            // 去重查询数的是「不同的投影值」；api 的 selectDistinct 只有单列重载，故必为单投影项
+            if (values.items().size() > 1) {
+                // 多列去重计数的 SQL 没有统一形态（MySQL 是 COUNT(DISTINCT a, b)，PostgreSQL 要
+                // COUNT(DISTINCT (a, b))），只数第一列会静默给出错数，所以显式拒绝
+                throw new UnsupportedOperationException(
+                        "多列 distinct 规格的 count 未实现（列数 " + values.items().size() + "，方言语义不一致）："
+                                + spec.entityType().getName());
+            }
+            // 去重查询数的是「不同的投影值」
             countQuery.select(
                     builder.countDistinct(criteria.projection(values.items().getFirst())));
         } else {

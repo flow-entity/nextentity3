@@ -40,6 +40,15 @@ class ItemAggregateTerminalContractTest extends ConsistencyTestBase<ItemEntity> 
         assertThatThrownBy(havingOnly::count).isInstanceOf(UnsupportedOperationException.class);
     }
 
+    /// 多列 `distinct()` 的 `count()` 必须显式拒绝：`COUNT(DISTINCT a, b)` 在 MySQL 与 PostgreSQL
+    /// 形态不同，只数第一列会静默给出错数。
+    @Test
+    void countRejectsMultiColumnDistinct() {
+        var multiColumnDistinct = query().distinct().select(Path.of(statusRef()), Path.of(noteRef()));
+
+        assertThatThrownBy(multiColumnDistinct::count).isInstanceOf(UnsupportedOperationException.class);
+    }
+
     /// 普通条件查询的 `count()` / `exists()` 语义不变（`score >= 20` → 2 行：banana 20、cherry 30）。
     @Test
     void plainConditionCountAndExistsUnchanged() {

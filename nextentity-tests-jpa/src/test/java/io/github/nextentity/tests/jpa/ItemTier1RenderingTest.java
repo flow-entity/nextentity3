@@ -22,6 +22,19 @@ class ItemTier1RenderingTest {
         support.close();
     }
 
+    /// `distinct()` 必须落到 SQL 的 `select distinct`（不是应用侧去重）。
+    @Test
+    void distinctIsRendered() {
+        support.clearSql();
+
+        support.query()
+                .distinct()
+                .select(Path.of(support.statusRef()), Path.of(support.noteRef()))
+                .list();
+
+        assertThat(support.drainSql()).anySatisfy(sql -> assertThat(sql).containsIgnoringCase("select distinct"));
+    }
+
     /// `having` 必须出现在语句里（不是被折进 `where`）。
     @Test
     void havingIsRendered() {

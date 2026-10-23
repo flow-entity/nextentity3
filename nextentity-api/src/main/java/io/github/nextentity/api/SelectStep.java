@@ -7,11 +7,12 @@ import io.github.nextentity.api.model.Tuple2;
 ///
 /// 投影形态：单列、双列 [Tuple2]、**3 列及以上 [Tuple]**、聚合/算术表达式，
 /// 以及列集由 [ProjectionMapper] 声明、不在本接口签名里写死的投影（结果类型由映射器决定）。
+/// 四种形态都能被 [DistinctStep#distinct()] 修饰成 `SELECT DISTINCT`。
 /// 投影成 DTO 靠调用方自己的映射代码（[#project(ProjectionMapper)] 的映射器，或
 /// [io.github.nextentity.api.model.Slice#to] 之类的手写转换）；本接口不提供按类反射/注解自动映射的重载。
 ///
 /// @param <T> 根实体类型
-public interface SelectStep<T> {
+public interface SelectStep<T> extends DistinctStep<T> {
 
     /// 投影单列（方法引用形式）。
     ///
@@ -49,11 +50,12 @@ public interface SelectStep<T> {
     <A, B, C> BaseWhereStep<T, Tuple> select(
             Expression<T, A> first, Expression<T, B> second, Expression<T, C> third, Expression<T, ?>... rest);
 
-    /// 去重投影单列。
+    /// 去重投影单列（`distinct().select(ref)` 的等价简写）。
     ///
     /// 去重发生在数据库侧（`SELECT DISTINCT`），`count()` 相应返回去重后的投影值个数。
+    /// 需要多列去重时用 [DistinctStep#distinct()]：`distinct().select(a, b, c)`。
     ///
-    /// @param ref 属性路径，非 `null`；api 没有多列 distinct 重载
+    /// @param ref 属性路径，非 `null`
     /// @param <R> 投影类型
     /// @return 后续步骤；一次查询只有一份投影，再次 `select`/`selectDistinct` 会替换前一份
     <R> BaseWhereStep<T, R> selectDistinct(PathRef<T, R> ref);

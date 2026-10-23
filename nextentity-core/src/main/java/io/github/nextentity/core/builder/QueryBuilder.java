@@ -11,6 +11,7 @@ import io.github.nextentity.api.Path;
 import io.github.nextentity.api.PathOperator;
 import io.github.nextentity.api.PathRef;
 import io.github.nextentity.api.ProjectionMapper;
+import io.github.nextentity.api.SelectStep;
 import io.github.nextentity.api.StringOperator;
 import io.github.nextentity.api.StringPath;
 import io.github.nextentity.api.model.Slice;
@@ -60,6 +61,7 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     private Spec having;
     private LockMode lock;
     private ProjectionMapper<T, ?> mapper;
+    private boolean pendingDistinct;
 
     /// 创建查询构建器。
     ///
@@ -102,22 +104,31 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
         return new StringStepOperator<>(PathRefs.resolve(path.refs()), this::addConditionStep, this::selfStep);
     }
 
+    // ------------------------------------------------------------- distinct
+
+    @Override
+    public SelectStep<T> distinct() {
+        pendingDistinct = true;
+        return this;
+    }
+
     // --------------------------------------------------------------- select
 
     @Override
     public <R> BaseWhereStep<T, R> select(PathRef<T, R> ref) {
-        return applySelection(new ValueSelection(List.of(ValueProjections.of(ref)), false), null);
+        return applySelection(new ValueSelection(List.of(ValueProjections.of(ref)), takeDistinct()), null);
     }
 
     @Override
     public <R> BaseWhereStep<T, R> select(Expression<T, R> expression) {
-        return applySelection(new ValueSelection(List.of(ValueProjections.of(expression)), false), null);
+        return applySelection(new ValueSelection(List.of(ValueProjections.of(expression)), takeDistinct()), null);
     }
 
     @Override
     public <A, B> BaseWhereStep<T, Tuple2<A, B>> select(Expression<T, A> first, Expression<T, B> second) {
         return applySelection(
-                new ValueSelection(List.of(ValueProjections.of(first), ValueProjections.of(second)), false), null);
+                new ValueSelection(List.of(ValueProjections.of(first), ValueProjections.of(second)), takeDistinct()),
+                null);
     }
 
     @Override
@@ -131,11 +142,12 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
         for (Expression<T, ?> expression : rest) {
             items.add(ValueProjections.of(expression));
         }
-        return applySelection(new ValueSelection(items, false), null);
+        return applySelection(new ValueSelection(items, takeDistinct()), null);
     }
 
     @Override
     public <R> BaseWhereStep<T, R> selectDistinct(PathRef<T, R> ref) {
+        pendingDistinct = false;
         return applySelection(new ValueSelection(List.of(ValueProjections.of(ref)), true), null);
     }
 
@@ -143,7 +155,7 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     public <R> BaseWhereStep<T, R> project(ProjectionMapper<T, R> mapper) {
         Objects.requireNonNull(mapper, "mapper");
         // expressions() 只求值一次：求值两次时「校验用的列集」与「建投影用的列集」会分叉
-        return applySelection(new ValueSelection(ValueProjections.ofAll(mapper.expressions()), false), mapper);
+        return applySelection(new ValueSelection(ValueProjections.ofAll(mapper.expressions()), takeDistinct()), mapper);
     }
 
     // -------------------------------------------------------------- orderBy
@@ -254,6 +266,13 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
 
     private BaseWhereStep<T, T> selfStep() {
         return this;
+    }
+
+    /// 取走「下一次投影是否去重」的旗标：只生效一次，投影之后回到不去重。
+    private boolean takeDistinct() {
+        boolean distinct = pendingDistinct;
+        pendingDistinct = false;
+        return distinct;
     }
 
     private BaseWhereStep<T, T> addConditionStep(Spec spec) {

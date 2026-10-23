@@ -5,11 +5,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.api.EntityPath;
 import io.github.nextentity.api.EntityQuery;
+import io.github.nextentity.api.Expression;
 import io.github.nextentity.api.Path;
 import io.github.nextentity.api.PathRef;
 import io.github.nextentity.api.Predicate;
+import io.github.nextentity.api.ProjectionMapper;
 import io.github.nextentity.api.StringPath;
 import io.github.nextentity.api.model.Slice;
+import io.github.nextentity.api.model.Tuple;
 import io.github.nextentity.api.model.Tuple2;
 import io.github.nextentity.core.compile.Compiler;
 import io.github.nextentity.core.exec.Executor;
@@ -255,6 +258,71 @@ class QueryBuilderTest {
         assertThat(rows.getFirst().get1()).isEqualTo(5);
     }
 
+    @Test
+    @DisplayName("distinct().select(单列)：与 selectDistinct 等价")
+    void distinctBeforeSingleColumnSelect() {
+        query().distinct().select(Order::getName).list();
+
+        ValueSelection selection = (ValueSelection) backend.last().selection();
+        assertThat(selection.distinct()).isTrue();
+        assertThat(selection.items()).containsExactly(new PathProjection(path("name")));
+    }
+
+    @Test
+    @DisplayName("distinct().select(三列)：多列去重，列序保持")
+    void distinctBeforeMultiColumnSelect() {
+        query().distinct()
+                .select(Path.of(Order::getId), Path.of(Order::getOrgId), Path.of(Order::getName))
+                .list();
+
+        ValueSelection selection = (ValueSelection) backend.last().selection();
+        assertThat(selection.distinct()).isTrue();
+        assertThat(selection.items())
+                .containsExactly(
+                        new PathProjection(path("id")),
+                        new PathProjection(path("orgId")),
+                        new PathProjection(path("name")));
+    }
+
+    @Test
+    @DisplayName("distinct().project(映射器)：映射器路径同样去重")
+    void distinctBeforeMapperProjection() {
+        query().distinct()
+                .project(new ProjectionMapper<Order, String>() {
+                    @Override
+                    public List<Expression<Order, ?>> expressions() {
+                        return List.of(Path.of(Order::getName));
+                    }
+
+                    @Override
+                    public String map(Tuple row) {
+                        return (String) row.get(0);
+                    }
+                })
+                .list();
+
+        assertThat(((ValueSelection) backend.last().selection()).distinct()).isTrue();
+    }
+
+    @Test
+    @DisplayName("distinct() 的旗标只被下一次投影消费：再次投影回到不去重")
+    void distinctAppliesToNextProjectionOnly() {
+        EntityQuery<Order> query = query();
+
+        query.distinct().select(Order::getName).list();
+        assertThat(((ValueSelection) backend.last().selection()).distinct()).isTrue();
+
+        query.select(Order::getName).list();
+        assertThat(((ValueSelection) backend.last().selection()).distinct()).isFalse();
+    }
+
+    @Test
+    @DisplayName("未调用 distinct() 时投影不去重")
+    void projectionIsNotDistinctByDefault() {
+        query().select(Order::getName).list();
+
+        assertThat(((ValueSelection) backend.last().selection()).distinct()).isFalse();
+    }
     // ---------------------------------------------------------------- orderBy
 
     @Test
