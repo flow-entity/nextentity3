@@ -10,12 +10,13 @@ import java.util.List;
 /// `arguments()` 的内容随 `operation()` 变化：
 ///
 /// - 比较/区间/包含类：一个比较值（`IN`/`NOT_IN` 为一个集合，`BETWEEN` 为两个值）
-/// - `IS_NULL`/`IS_NOT_NULL`/`COUNT`/`COUNT_DISTINCT`/`MAX`/`SUM`：空
-/// - `AND`/`OR`：子条件（`Expression<T, Boolean>`）
+/// - `IS_NULL`/`IS_NOT_NULL`/`COUNT`/`COUNT_DISTINCT`/`MAX`/`MIN`/`AVG`/`SUM`：空
+/// - `AND`/`OR`：子条件（`Expression<T, Boolean>`）；`NOT`：单个子条件
+/// - `ADD`/`SUB`/`MUL`/`DIV`/`MOD`：右操作数（一个值或另一个表达式）
 ///
 /// 用 `sealed` 封闭实现集合：`Op` 是「值 → AST」的线格式，语义由后端按 `operation()` 穷尽解释，
 /// 不允许外部再实现出后端无法解释的运算。
-public sealed interface Op permits Conditions.Leaf, Conditions.AbstractAggregate {
+public sealed interface Op permits Conditions.Leaf, Conditions.AbstractAggregate, Conditions.AbstractArithmetic {
 
     /// 运算种类。
     ///
@@ -31,4 +32,12 @@ public sealed interface Op permits Conditions.Leaf, Conditions.AbstractAggregate
     ///
     /// @return 不可变参数列表；形态随 `operation()` 变化
     List<Object> arguments();
+
+    /// 左侧主体表达式；`null` 表示主语就是 [refs()] 解析出的属性路径。
+    ///
+    /// `max(id) > 5`、`salary mod 3 = 0`、`a > b` 的左操作数不是属性路径，
+    /// 必须随线格式一起传下去，否则后端会把 `max(id)` 当成 `id`。
+    ///
+    /// @return 左侧表达式，或 `null`
+    Op subject();
 }

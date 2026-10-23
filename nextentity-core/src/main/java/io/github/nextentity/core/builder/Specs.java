@@ -6,7 +6,9 @@ import io.github.nextentity.core.spec.Comparison;
 import io.github.nextentity.core.spec.ComparisonOperator;
 import io.github.nextentity.core.spec.Constant;
 import io.github.nextentity.core.spec.In;
+import io.github.nextentity.core.spec.Literal;
 import io.github.nextentity.core.spec.NullCheck;
+import io.github.nextentity.core.spec.Operand;
 import io.github.nextentity.core.spec.Spec;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -23,40 +25,40 @@ final class Specs {
 
     private Specs() {}
 
-    /// 单值比较。
+    /// 单值比较（两侧都是操作数：字面量、属性路径、聚合、算术结果）。
     ///
-    /// @param path  属性路径，非 `null`
-    /// @param op    单值比较算子
-    /// @param value 比较值，非 `null`（缺值属于构造期错误）
-    /// @return `Comparison` 节点
-    static Spec comparison(AttributePath path, ComparisonOperator op, Object value) {
-        return new Comparison(path, op, value);
+    /// @param left  左操作数
+    /// @param op    比较算子
+    /// @param right 右操作数
+    /// @return 比较节点
+    static Spec comparison(Operand left, ComparisonOperator op, Operand right) {
+        return new Comparison(left, op, right);
     }
 
     /// 模糊匹配（调用方自带通配符）。
     ///
-    /// @param path    属性路径，非 `null`
-    /// @param pattern LIKE 模式，原样进 `LIKE`，本方法不拼 `%`
-    /// @return `Comparison` 节点（算子 `LIKE`）
-    static Spec like(AttributePath path, String pattern) {
-        return new Comparison(path, ComparisonOperator.LIKE, pattern);
+    /// @param subject 主语操作数
+    /// @param pattern LIKE 模式
+    /// @return 比较节点
+    static Spec like(Operand subject, String pattern) {
+        return new Comparison(subject, ComparisonOperator.LIKE, Literal.of(pattern));
     }
 
     /// 包含子串：`%value%`（2.2.3 `ExpressionBuilder:520-522`）。
     ///
-    /// @param path  属性路径，非 `null`
-    /// @param value 子串，非 `null`；两侧各补一个 `%`
-    /// @return `Comparison` 节点（算子 `LIKE`）
-    static Spec contains(AttributePath path, Object value) {
-        return like(path, "%" + value + "%");
+    /// @param subject 主语操作数
+    /// @param value   子串
+    /// @return 比较节点
+    static Spec contains(Operand subject, Object value) {
+        return like(subject, "%" + value + "%");
     }
 
     /// 集合成员：空集合折成恒假/恒真。
     ///
-    /// @param path    属性路径，非 `null`
-    /// @param values  候选值；空集合折成 `Constant`
+    /// @param path    属性路径（`IN` 的主语只能是路径）
+    /// @param values  候选值
     /// @param negated `true` 表示 `NOT IN`
-    /// @return `In` 节点，或空集合时的 `Constant` 单例
+    /// @return 集合节点或恒真/恒假节点
     static Spec membership(AttributePath path, Collection<?> values, boolean negated) {
         if (values.isEmpty()) {
             return Constant.of(negated);
@@ -67,19 +69,19 @@ final class Specs {
 
     /// 闭区间。
     ///
-    /// @param path  属性路径，非 `null`
-    /// @param lower 下界，含端点，非 `null`
-    /// @param upper 上界，含端点，非 `null`
-    /// @return `Between` 节点
-    static Spec between(AttributePath path, Object lower, Object upper) {
-        return new Between(path, lower, upper);
+    /// @param subject 主语操作数
+    /// @param lower   下界操作数
+    /// @param upper   上界操作数
+    /// @return 区间节点
+    static Spec between(Operand subject, Operand lower, Operand upper) {
+        return new Between(subject, lower, upper);
     }
 
     /// 空值判断。
     ///
-    /// @param path    属性路径，非 `null`
+    /// @param path    属性路径（`IS NULL` 的主语只能是路径）
     /// @param negated `true` 表示 `IS NOT NULL`
-    /// @return `NullCheck` 节点
+    /// @return 空值判断节点
     static Spec nullCheck(AttributePath path, boolean negated) {
         return new NullCheck(path, negated);
     }

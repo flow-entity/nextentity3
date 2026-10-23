@@ -75,9 +75,19 @@ public final class JpaExecutor implements Executor<JpaQuery> {
         return entityManager.createQuery(countQuery).getSingleResult();
     }
 
+    /// 过滤后是否存在任何行。
+    ///
+    /// 只渲染 `where` + 取 1 行（2.2.3 `WhereImpl:134-148` 的 `SELECT_ANY` + limit 1）。
+    /// **分组/聚合规格直接抛 `UnsupportedOperationException`**：`groupBy`/`having` 会改变
+    /// "有没有行"的含义（HAVING 可以把所有组都过滤掉），只渲染 where 会给出与查询**相反**的
+    /// 布尔值，因此不做静默近似——与 `count()` 的处理保持一致。
     @Override
     public boolean exists(JpaQuery query) {
         QuerySpec spec = query.spec();
+        if (spec.aggregate()) {
+            throw new UnsupportedOperationException(
+                    "分组/聚合规格的 exists 未实现：" + spec.entityType().getName());
+        }
         CriteriaBuilder builder = entityManager.getCriteriaBuilder();
         CriteriaQuery<Boolean> existsQuery = builder.createQuery(Boolean.class);
         Root<?> root = existsQuery.from(spec.entityType());

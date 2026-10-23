@@ -7,6 +7,7 @@ package io.github.nextentity.api;
 /// @param <B> 继续链式的步骤类型
 public interface PathOperator<T, U, B>
         extends Comparison<T, U, B>,
+                ColumnComparison<T, U, B>,
                 Range<T, U, B>,
                 RangeIfNotNull<T, U, B>,
                 Nullness<B>,

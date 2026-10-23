@@ -6,22 +6,15 @@ package io.github.nextentity.api;
 /// `operation()/refs()/arguments()`；**不实现 `Op` 的谓词**是 `*IfNotNull`/`*IfNotEmpty`
 /// 短路产生的占位（恒真，后端应视为"无附加条件"）。
 ///
+/// 组合算子（`and`/`or`/`not`、含集合形态）在 [LogicalOps] 里，本接口只多一个
+/// `or(PathRef)` 便捷重载。
+///
 /// @param <T> 根实体类型
-public interface Predicate<T> extends Expression<T, Boolean> {
-
-    /// 与另一个布尔表达式做逻辑与。
-    ///
-    /// @param other 另一个布尔表达式，非 `null`
-    /// @return 组合后的谓词；保留分组，不会把嵌套条件拍平
-    Predicate<T> and(Expression<T, Boolean> other);
-
-    /// 与另一个布尔表达式做逻辑或。
-    ///
-    /// @param other 另一个布尔表达式，非 `null`
-    /// @return 组合后的谓词；保留分组，不会把嵌套条件拍平
-    Predicate<T> or(Expression<T, Boolean> other);
+public interface Predicate<T> extends Expression<T, Boolean>, LogicalOps<T, Predicate<T>> {
 
     /// 与一条属性路径上的条件做逻辑或。
+    ///
+    /// 等价于 `or(Path.of(ref).<算子>(...))`，但省掉一次 `Path.of`。
     ///
     /// @param ref 属性路径，非 `null`
     /// @param <N> 属性值类型

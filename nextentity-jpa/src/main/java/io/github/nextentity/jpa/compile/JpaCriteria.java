@@ -14,7 +14,8 @@ import jakarta.persistence.criteria.Root;
 /// 一次编译期的 Criteria 渲染门面：路径（含嵌套 join 缓存）、条件、投影、排序。
 ///
 /// 生命周期 = 一次 `JpaCompiler.compile(...)`；执行器重建计数/存在性查询时也按需新建一份。
-/// 分工：{@link JpaPaths} 解析路径，{@link JpaPredicates} 渲染条件，{@link JpaProjections} 渲染投影。
+/// 分工：{@link JpaPaths} 解析路径，{@link JpaOperands} 渲染操作数（聚合/算术的唯一分派点），
+/// {@link JpaPredicates} 渲染条件，{@link JpaProjections} 渲染投影。
 public final class JpaCriteria {
 
     private final JpaPaths paths;
@@ -24,8 +25,9 @@ public final class JpaCriteria {
     /// 创建渲染器。
     public JpaCriteria(CriteriaBuilder builder, Root<?> root, JpaMeta meta) {
         this.paths = new JpaPaths(builder, root, meta);
-        this.predicates = new JpaPredicates(builder, paths);
-        this.projections = new JpaProjections(builder, paths);
+        JpaOperands operands = new JpaOperands(builder, paths);
+        this.predicates = new JpaPredicates(builder, paths, operands);
+        this.projections = new JpaProjections(paths, operands);
     }
 
     /// 渲染属性路径。

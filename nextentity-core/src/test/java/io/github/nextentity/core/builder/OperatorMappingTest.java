@@ -12,6 +12,7 @@ import io.github.nextentity.core.spec.Between;
 import io.github.nextentity.core.spec.Comparison;
 import io.github.nextentity.core.spec.ComparisonOperator;
 import io.github.nextentity.core.spec.In;
+import io.github.nextentity.core.spec.Literal;
 import io.github.nextentity.core.spec.NullCheck;
 import io.github.nextentity.core.spec.QuerySpec;
 import io.github.nextentity.core.spec.Spec;
@@ -35,19 +36,19 @@ class OperatorMappingTest {
     @DisplayName("通用算子的每个方法都产生对应节点")
     void genericOperators() {
         query().where(Order::getStatus).ne("x").list();
-        assertThat(where()).isEqualTo(new Comparison(path("status"), ComparisonOperator.NE, "x"));
+        assertThat(where()).isEqualTo(new Comparison(path("status"), ComparisonOperator.NE, Literal.of("x")));
 
         query().where(Order::getAge).ge(1).list();
-        assertThat(where()).isEqualTo(new Comparison(path("age"), ComparisonOperator.GE, 1));
+        assertThat(where()).isEqualTo(new Comparison(path("age"), ComparisonOperator.GE, Literal.of(1)));
 
         query().where(Order::getAge).le(9).list();
-        assertThat(where()).isEqualTo(new Comparison(path("age"), ComparisonOperator.LE, 9));
+        assertThat(where()).isEqualTo(new Comparison(path("age"), ComparisonOperator.LE, Literal.of(9)));
 
         query().where(Order::getAge).lt(9).list();
-        assertThat(where()).isEqualTo(new Comparison(path("age"), ComparisonOperator.LT, 9));
+        assertThat(where()).isEqualTo(new Comparison(path("age"), ComparisonOperator.LT, Literal.of(9)));
 
         query().where(Order::getAge).gt(9).list();
-        assertThat(where()).isEqualTo(new Comparison(path("age"), ComparisonOperator.GT, 9));
+        assertThat(where()).isEqualTo(new Comparison(path("age"), ComparisonOperator.GT, Literal.of(9)));
 
         query().where(Order::getStatus).isNull().list();
         assertThat(where()).isEqualTo(new NullCheck(path("status"), false));
@@ -56,7 +57,7 @@ class OperatorMappingTest {
         assertThat(where()).isEqualTo(new NullCheck(path("status"), true));
 
         query().where(Order::getAge).between(1, 9).list();
-        assertThat(where()).isEqualTo(new Between(path("age"), 1, 9));
+        assertThat(where()).isEqualTo(new Between(path("age"), Literal.of(1), Literal.of(9)));
     }
 
     @Test
@@ -82,7 +83,7 @@ class OperatorMappingTest {
     @DisplayName("通用算子的 *IfNotNull：有值时正常产生节点")
     void genericIfNotNullKeeps() {
         query().where(Order::getAge).gtIfNotNull(3).list();
-        assertThat(where()).isEqualTo(new Comparison(path("age"), ComparisonOperator.GT, 3));
+        assertThat(where()).isEqualTo(new Comparison(path("age"), ComparisonOperator.GT, Literal.of(3)));
 
         query().where(Order::getId).inIfNotNull(List.of(1L)).list();
         assertThat(where()).isEqualTo(new In(path("id"), List.of(1L), false));
@@ -109,10 +110,10 @@ class OperatorMappingTest {
     @DisplayName("字符串算子：eq/eqIfNotEmpty/equals 前缀短路与 contains 系列")
     void stringOperators() {
         query().where(Order::getName).eq("a").list();
-        assertThat(where()).isEqualTo(new Comparison(path("name"), ComparisonOperator.EQ, "a"));
+        assertThat(where()).isEqualTo(new Comparison(path("name"), ComparisonOperator.EQ, Literal.of("a")));
 
         query().where(Order::getName).eqIfNotEmpty("a").list();
-        assertThat(where()).isEqualTo(new Comparison(path("name"), ComparisonOperator.EQ, "a"));
+        assertThat(where()).isEqualTo(new Comparison(path("name"), ComparisonOperator.EQ, Literal.of("a")));
 
         query().where(Order::getName).eqIfNotEmpty("").list();
         assertThat(where()).isNull();
@@ -124,10 +125,10 @@ class OperatorMappingTest {
         assertThat(where()).isNull();
 
         query().where(Order::getName).containsIfNotNull("b").list();
-        assertThat(where()).isEqualTo(new Comparison(path("name"), ComparisonOperator.LIKE, "%b%"));
+        assertThat(where()).isEqualTo(new Comparison(path("name"), ComparisonOperator.LIKE, Literal.of("%b%")));
 
         query().where(Order::getName).containsIfNotEmpty("  ").list();
-        assertThat(where()).isEqualTo(new Comparison(path("name"), ComparisonOperator.LIKE, "%  %"));
+        assertThat(where()).isEqualTo(new Comparison(path("name"), ComparisonOperator.LIKE, Literal.of("%  %")));
     }
 
     @Test

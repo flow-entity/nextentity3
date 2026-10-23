@@ -13,6 +13,7 @@ import io.github.nextentity.api.PathRef;
 import io.github.nextentity.api.StringOperator;
 import io.github.nextentity.api.StringPath;
 import io.github.nextentity.api.model.Slice;
+import io.github.nextentity.api.model.Tuple;
 import io.github.nextentity.api.model.Tuple2;
 import io.github.nextentity.core.compile.Compiler;
 import io.github.nextentity.core.exec.Executor;
@@ -54,13 +55,14 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     private final List<Ordering> orderBy = new ArrayList<>();
     private Selection selection = new EntitySelection();
     private Spec where;
+    private Spec having;
     private LockMode lock;
 
     /// 创建查询构建器。
     ///
     /// @param entityType 实体元数据（主键用于分页自动排序）
-    /// @param compiler   编译器，非 `null`
-    /// @param executor   执行器，非 `null`
+    /// @param compiler   编译器
+    /// @param executor   执行器
     public QueryBuilder(EntityType<T> entityType, Compiler<S> compiler, Executor<S> executor) {
         this.entityType = entityType;
         this.compiler = compiler;
@@ -118,6 +120,21 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     }
 
     @Override
+    @SafeVarargs
+    public final <A, B, C> BaseWhereStep<T, Tuple> select(
+            Expression<T, A> first, Expression<T, B> second, Expression<T, C> third, Expression<T, ?>... rest) {
+        List<Projection> items = new ArrayList<>(3 + rest.length);
+        items.add(projection(first));
+        items.add(projection(second));
+        items.add(projection(third));
+        for (Expression<T, ?> expression : rest) {
+            items.add(projection(expression));
+        }
+        selection = new ValueSelection(items, false);
+        return step();
+    }
+
+    @Override
     public <R> BaseWhereStep<T, R> selectDistinct(PathRef<T, R> ref) {
         selection = new ValueSelection(List.of(new PathProjection(PathRefs.resolve(ref))), true);
         return step();
@@ -135,23 +152,28 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
         return orderBy(PathRefs.resolve(path.refs()));
     }
 
-    private OrderOperator<T, T> orderBy(AttributePath path) {
-        return new OrderOperator<>() {
-            @Override
-            public BaseWhereStep<T, T> asc() {
-                return ordered(path, Ordering.Direction.ASC);
-            }
-
-            @Override
-            public BaseWhereStep<T, T> desc() {
-                return ordered(path, Ordering.Direction.DESC);
-            }
-        };
-    }
+    // ----------------------------------------------------- groupBy / having
 
     @Override
     public BaseWhereStep<T, T> groupBy(PathRef<T, ?> ref) {
         groupBy.add(PathRefs.resolve(ref));
+        return this;
+    }
+
+    @Override
+    @SafeVarargs
+    public final BaseWhereStep<T, T> groupBy(PathRef<T, ?>... refs) {
+        for (PathRef<T, ?> ref : refs) {
+            groupBy.add(PathRefs.resolve(ref));
+        }
+        return this;
+    }
+
+    @Override
+    public BaseWhereStep<T, T> having(Expression<T, Boolean> expression) {
+        if (expression instanceof Op op) {
+            having = mergeCondition(having, OpInterpreter.toSpec(op));
+        }
         return this;
     }
 
@@ -228,20 +250,43 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
         return this;
     }
 
-    /// 追加一个条件：`Constant.TRUE`（`*IfNotNull` 短路产生）不进入 WHERE，
+    private OrderOperator<T, T> orderBy(AttributePath path) {
+        return new OrderOperator<>() {
+            @Override
+            public BaseWhereStep<T, T> asc() {
+                return ordered(path, Ordering.Direction.ASC);
+            }
+
+            @Override
+            public BaseWhereStep<T, T> desc() {
+                return ordered(path, Ordering.Direction.DESC);
+            }
+        };
+    }
+
+    /// 追加一个 WHERE 条件：`Constant.TRUE`（`*IfNotNull` 短路产生）不进入 WHERE，
     /// 其余条件与已有条件做 `AND`（2.2.3 `WhereImpl.andWhere`）。
     private void addCondition(Spec spec) {
+        where = mergeCondition(where, spec);
+    }
+
+    /// 与已有条件做 `AND`；`Constant.TRUE` 视为"没有条件"。
+    private static Spec mergeCondition(Spec current, Spec spec) {
         if (spec == Constant.TRUE) {
-            return;
+            return current;
         }
-        where = where == null ? spec : Logical.and(where, spec);
+        return current == null ? spec : Logical.and(current, spec);
     }
 
     private Projection projection(Expression<?, ?> expression) {
         if (expression instanceof Path<?, ?> path) {
             return new PathProjection(PathRefs.resolve(path.refs()));
         }
-        return OpInterpreter.toProjection((Op) expression);
+        if (expression instanceof Op op) {
+            return OpInterpreter.toProjection(op);
+        }
+        throw new IllegalArgumentException(
+                "不支持的表达式类型: " + expression.getClass().getName() + "（只接受 Path 或 api 的聚合/算术值）");
     }
 
     @SuppressWarnings("unchecked")
@@ -250,10 +295,11 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
         if (!(selection instanceof ValueSelection values) || values.items().size() == 1) {
             return (List<T>) rows;
         }
+        boolean pair = values.items().size() == 2;
         List<T> assembled = new ArrayList<>(rows.size());
         for (Object row : rows) {
             Object[] columns = (Object[]) row;
-            assembled.add((T) new Tuple2Value<>(columns[0], columns[1]));
+            assembled.add((T) (pair ? new Tuple2Value<>(columns[0], columns[1]) : new TupleValue(columns)));
         }
         return assembled;
     }
@@ -264,13 +310,13 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     /// 2.2.3 `autoAddIdOrder` 默认 true 且 point-mall 未覆盖，去掉它会改变 `first()`/`slice()`
     /// 取到哪一行。
     private QuerySpec spec(Window window) {
-        QuerySpec spec = new QuerySpec(entityType.type(), selection, where, groupBy, orderBy, window, lock);
+        QuerySpec spec = new QuerySpec(entityType.type(), selection, where, groupBy, having, orderBy, window, lock);
         if (!window.limited() || !orderBy.isEmpty() || spec.aggregate()) {
             return spec;
         }
         List<Ordering> orders = new ArrayList<>(orderBy);
         orders.add(
                 new Ordering(AttributePath.of(entityType.type(), entityType.id().name()), Ordering.Direction.ASC));
-        return new QuerySpec(entityType.type(), selection, where, groupBy, orders, window, lock);
+        return new QuerySpec(entityType.type(), selection, where, groupBy, having, orders, window, lock);
     }
 }

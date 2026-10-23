@@ -20,6 +20,18 @@ class SpecStructureTest {
     private static final AttributePath CREATED_AT = AttributePath.of(String.class, "createdAt");
     private static final AttributePath ID = AttributePath.of(String.class, "id");
 
+    /// 无 HAVING 的规格：多数用例只关心 where/groupBy/orderBy/window，HAVING 由专门用例覆盖。
+    private static QuerySpec spec(
+            Class<?> entityType,
+            Selection selection,
+            Spec where,
+            List<AttributePath> groupBy,
+            List<Ordering> orderBy,
+            Window window,
+            LockMode lock) {
+        return new QuerySpec(entityType, selection, where, groupBy, null, orderBy, window, lock);
+    }
+
     @Test
     @DisplayName("单段路径为直接字段，多段路径为嵌套字段")
     void pathDepth() {
@@ -49,27 +61,27 @@ class SpecStructureTest {
     @Test
     @DisplayName("等值比较携带值")
     void comparisonCarriesValue() {
-        Comparison comparison = new Comparison(STATUS, ComparisonOperator.EQ, "CREATED");
+        Comparison comparison = new Comparison(STATUS, ComparisonOperator.EQ, Literal.of("CREATED"));
 
         assertThat(comparison.operator()).isEqualTo(ComparisonOperator.EQ);
-        assertThat(comparison.value()).isEqualTo("CREATED");
-        assertThat(comparison.path()).isEqualTo(STATUS);
+        assertThat(comparison.right()).isEqualTo(Literal.of("CREATED"));
+        assertThat(comparison.left()).isEqualTo(STATUS);
     }
 
     @Test
     @DisplayName("比较缺值时报错：有值/无值由节点类型区分，不靠运行期约定")
     void comparisonRequiresValue() {
-        assertThatThrownBy(() -> new Comparison(STATUS, ComparisonOperator.GT, null))
+        assertThatThrownBy(() -> new Comparison(STATUS, ComparisonOperator.GT, Literal.of(null)))
                 .isInstanceOf(NullPointerException.class);
     }
 
     @Test
     @DisplayName("闭区间携带上下界")
     void betweenCarriesBothBounds() {
-        Between between = new Between(CREATED_AT, "2026-01-01", "2026-02-01");
+        Between between = new Between(CREATED_AT, Literal.of("2026-01-01"), Literal.of("2026-02-01"));
 
-        assertThat(between.lower()).isEqualTo("2026-01-01");
-        assertThat(between.upper()).isEqualTo("2026-02-01");
+        assertThat(between.lower()).isEqualTo(Literal.of("2026-01-01"));
+        assertThat(between.upper()).isEqualTo(Literal.of("2026-02-01"));
     }
 
     @Test
@@ -109,7 +121,7 @@ class SpecStructureTest {
     @Test
     @DisplayName("AND/OR 组合保留子节点顺序")
     void logicalCombination() {
-        Spec left = new Comparison(STATUS, ComparisonOperator.EQ, "A");
+        Spec left = new Comparison(STATUS, ComparisonOperator.EQ, Literal.of("A"));
         Spec right = new NullCheck(STATUS, true);
 
         assertThat(Logical.and(left, right).operands()).containsExactly(left, right);
@@ -121,7 +133,7 @@ class SpecStructureTest {
     @DisplayName("`isNull().or(路径).le(v)` 解析成 OR(IS NULL, <= v) 的扁平形态")
     void disjunctionOfNullCheckAndComparison() {
         Spec left = new NullCheck(CREATED_AT, false);
-        Spec right = new Comparison(CREATED_AT, ComparisonOperator.LE, "2026-01-01");
+        Spec right = new Comparison(CREATED_AT, ComparisonOperator.LE, Literal.of("2026-01-01"));
 
         Logical disjunction = Logical.or(left, right);
 
@@ -141,8 +153,8 @@ class SpecStructureTest {
     @Test
     @DisplayName("NOT 只接受一个操作数")
     void notAcceptsSingleOperand() {
-        Spec left = new Comparison(STATUS, ComparisonOperator.EQ, "A");
-        Spec right = new Comparison(STATUS, ComparisonOperator.EQ, "B");
+        Spec left = new Comparison(STATUS, ComparisonOperator.EQ, Literal.of("A"));
+        Spec right = new Comparison(STATUS, ComparisonOperator.EQ, Literal.of("B"));
 
         assertThatThrownBy(() -> new Logical(LogicalOperator.NOT, List.of(left, right)))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -152,9 +164,9 @@ class SpecStructureTest {
     @Test
     @DisplayName("结构相同的 Spec 相等")
     void structuralEquality() {
-        assertThat(new Comparison(STATUS, ComparisonOperator.EQ, "A"))
-                .isEqualTo(new Comparison(STATUS, ComparisonOperator.EQ, "A"))
-                .isNotEqualTo(new Comparison(STATUS, ComparisonOperator.EQ, "B"));
+        assertThat(new Comparison(STATUS, ComparisonOperator.EQ, Literal.of("A")))
+                .isEqualTo(new Comparison(STATUS, ComparisonOperator.EQ, Literal.of("A")))
+                .isNotEqualTo(new Comparison(STATUS, ComparisonOperator.EQ, Literal.of("B")));
     }
 
     @Test
@@ -172,7 +184,7 @@ class SpecStructureTest {
     void aggregationWithGrouping() {
         ValueSelection selection = new ValueSelection(
                 List.of(new PathProjection(STATUS), new AggregateProjection(AggregateFunction.COUNT, ID)), false);
-        QuerySpec spec = new QuerySpec(String.class, selection, null, List.of(STATUS), List.of(), Window.NONE, null);
+        QuerySpec spec = spec(String.class, selection, null, List.of(STATUS), List.of(), Window.NONE, null);
 
         assertThat(spec.selection()).isInstanceOf(ValueSelection.class);
         assertThat(((ValueSelection) spec.selection()).items()).hasSize(2);
@@ -233,8 +245,8 @@ class SpecStructureTest {
     @DisplayName("分组或聚合查询被识别为聚合查询（决定分页是否自动加主键排序）")
     void aggregateDetection() {
         QuerySpec grouped =
-                new QuerySpec(String.class, new EntitySelection(), null, List.of(STATUS), List.of(), Window.NONE, null);
-        QuerySpec aggregated = new QuerySpec(
+                spec(String.class, new EntitySelection(), null, List.of(STATUS), List.of(), Window.NONE, null);
+        QuerySpec aggregated = spec(
                 String.class,
                 new ValueSelection(List.of(new AggregateProjection(AggregateFunction.SUM, CREATED_AT)), false),
                 null,
@@ -248,10 +260,20 @@ class SpecStructureTest {
     }
 
     @Test
+    @DisplayName("只有 HAVING 的规格也算聚合查询（否则 count 会丢掉 HAVING 静默给出错数）")
+    void havingOnlyCountsAsAggregate() {
+        Spec having = new Comparison(Literal.of(1), ComparisonOperator.EQ, Literal.of(1));
+        QuerySpec spec = new QuerySpec(
+                String.class, new EntitySelection(), null, List.of(), having, List.of(), Window.NONE, null);
+
+        assertThat(spec.aggregate()).isTrue();
+    }
+
+    @Test
     @DisplayName("计数规格清排序/窗口/锁，保留条件与分组")
     void countSpecClearsPagination() {
-        Spec where = new Comparison(STATUS, ComparisonOperator.EQ, "A");
-        QuerySpec spec = new QuerySpec(
+        Spec where = new Comparison(STATUS, ComparisonOperator.EQ, Literal.of("A"));
+        QuerySpec spec = spec(
                 String.class,
                 new EntitySelection(),
                 where,
@@ -274,7 +296,7 @@ class SpecStructureTest {
     @Test
     @DisplayName("存在性规格清排序、只取 1 行、去锁")
     void existsSpecLimitsToOne() {
-        QuerySpec spec = new QuerySpec(
+        QuerySpec spec = spec(
                 String.class,
                 new EntitySelection(),
                 null,
@@ -294,8 +316,7 @@ class SpecStructureTest {
     @DisplayName("规格字段不可变")
     void specIsImmutable() {
         List<Ordering> orderBy = new ArrayList<>(List.of(new Ordering(STATUS, Ordering.Direction.ASC)));
-        QuerySpec spec =
-                new QuerySpec(String.class, new EntitySelection(), null, List.of(), orderBy, Window.NONE, null);
+        QuerySpec spec = spec(String.class, new EntitySelection(), null, List.of(), orderBy, Window.NONE, null);
         orderBy.add(new Ordering(CREATED_AT, Ordering.Direction.DESC));
 
         assertThat(spec.orderBy()).hasSize(1);

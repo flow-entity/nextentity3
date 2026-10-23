@@ -13,6 +13,7 @@ import java.util.List;
 public interface Path<T, U>
         extends Expression<T, U>,
                 Comparison<T, U, Predicate<T>>,
+                ColumnComparison<T, U, Predicate<T>>,
                 Range<T, U, Predicate<T>>,
                 RangeIfNotNull<T, U, Predicate<T>>,
                 Nullness<Predicate<T>>,
@@ -30,12 +31,12 @@ public interface Path<T, U>
         return new PathValues.Root<>(ref);
     }
 
-    /// 由数值方法引用得到数值属性路径（可求和）。
+    /// 由数值方法引用得到数值属性路径（可求和、可算术）。
     ///
     /// @param ref 方法引用形式的数值属性，非 `null`
     /// @param <T> 根实体类型
     /// @param <U> 数值类型
-    /// @return 链长为 1 的数值路径（比通用路径多 `sum()`）
+    /// @return 链长为 1 的数值路径（比通用路径多 `sum()` 与算术算子）
     static <T, U extends Number> NumberPath<T, U> of(PathRef.NumberRef<T, U> ref) {
         return new PathValues.NumberRoot<>(ref);
     }

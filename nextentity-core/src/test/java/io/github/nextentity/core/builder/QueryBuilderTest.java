@@ -24,6 +24,7 @@ import io.github.nextentity.core.spec.ComparisonOperator;
 import io.github.nextentity.core.spec.Constant;
 import io.github.nextentity.core.spec.EntitySelection;
 import io.github.nextentity.core.spec.In;
+import io.github.nextentity.core.spec.Literal;
 import io.github.nextentity.core.spec.Logical;
 import io.github.nextentity.core.spec.LogicalOperator;
 import io.github.nextentity.core.spec.NullCheck;
@@ -57,7 +58,8 @@ class QueryBuilderTest {
     void eqBuildsComparison() {
         query().where(Order::getStatus).eq("CREATED").list();
 
-        assertThat(backend.last().where()).isEqualTo(new Comparison(path("status"), ComparisonOperator.EQ, "CREATED"));
+        assertThat(backend.last().where())
+                .isEqualTo(new Comparison(path("status"), ComparisonOperator.EQ, Literal.of("CREATED")));
         assertThat(backend.last().selection()).isEqualTo(new EntitySelection());
     }
 
@@ -74,7 +76,8 @@ class QueryBuilderTest {
     void eqIfNotNullKeepsValue() {
         query().where(Order::getStatus).eqIfNotNull("PAID").list();
 
-        assertThat(backend.last().where()).isEqualTo(new Comparison(path("status"), ComparisonOperator.EQ, "PAID"));
+        assertThat(backend.last().where())
+                .isEqualTo(new Comparison(path("status"), ComparisonOperator.EQ, Literal.of("PAID")));
     }
 
     @Test
@@ -86,8 +89,8 @@ class QueryBuilderTest {
         assertThat(where.operator()).isEqualTo(LogicalOperator.AND);
         assertThat(where.operands())
                 .containsExactly(
-                        new Comparison(path("status"), ComparisonOperator.EQ, "A"),
-                        new Comparison(path("orgId"), ComparisonOperator.GT, 1L));
+                        new Comparison(path("status"), ComparisonOperator.EQ, Literal.of("A")),
+                        new Comparison(path("orgId"), ComparisonOperator.GT, Literal.of(1L)));
     }
 
     @Test
@@ -103,7 +106,8 @@ class QueryBuilderTest {
     void containsWrapsWildcards() {
         query().where(Order::getName).contains("abc").list();
 
-        assertThat(backend.last().where()).isEqualTo(new Comparison(path("name"), ComparisonOperator.LIKE, "%abc%"));
+        assertThat(backend.last().where())
+                .isEqualTo(new Comparison(path("name"), ComparisonOperator.LIKE, Literal.of("%abc%")));
     }
 
     @Test
@@ -111,7 +115,8 @@ class QueryBuilderTest {
     void likeKeepsPattern() {
         query().where(Order::getName).likeIfNotNull("a%").list();
 
-        assertThat(backend.last().where()).isEqualTo(new Comparison(path("name"), ComparisonOperator.LIKE, "a%"));
+        assertThat(backend.last().where())
+                .isEqualTo(new Comparison(path("name"), ComparisonOperator.LIKE, Literal.of("a%")));
     }
 
     @Test
@@ -139,7 +144,7 @@ class QueryBuilderTest {
         assertThat(backend.last().where()).isEqualTo(new NullCheck(path("name"), true));
 
         query().where(Order::getAge).between(1, 9).list();
-        assertThat(backend.last().where()).isEqualTo(new Between(path("age"), 1, 9));
+        assertThat(backend.last().where()).isEqualTo(new Between(path("age"), Literal.of(1), Literal.of(9)));
     }
 
     @Test
@@ -194,7 +199,8 @@ class QueryBuilderTest {
         Logical and = (Logical) backend.last().where();
         assertThat(and.operator()).isEqualTo(LogicalOperator.AND);
         assertThat(and.operands()).hasSize(2);
-        assertThat(and.operands().getFirst()).isEqualTo(new Comparison(path("orgId"), ComparisonOperator.EQ, 7L));
+        assertThat(and.operands().getFirst())
+                .isEqualTo(new Comparison(path("orgId"), ComparisonOperator.EQ, Literal.of(7L)));
         assertThat(and.operands().get(1)).isInstanceOf(Logical.class);
         assertThat(((Logical) and.operands().get(1)).operator()).isEqualTo(LogicalOperator.OR);
     }
@@ -391,8 +397,8 @@ class QueryBuilderTest {
         query().where(customer.get(Order.Customer::getOrgId)).eq(9L).list();
 
         assertThat(backend.last().where())
-                .isEqualTo(
-                        new Comparison(AttributePath.of(Order.class, "customer", "orgId"), ComparisonOperator.EQ, 9L));
+                .isEqualTo(new Comparison(
+                        AttributePath.of(Order.class, "customer", "orgId"), ComparisonOperator.EQ, Literal.of(9L)));
     }
 
     @Test
@@ -407,7 +413,9 @@ class QueryBuilderTest {
 
         assertThat(backend.last().where())
                 .isEqualTo(new Comparison(
-                        AttributePath.of(Order.class, "customer", "org", "name"), ComparisonOperator.LIKE, "%abc%"));
+                        AttributePath.of(Order.class, "customer", "org", "name"),
+                        ComparisonOperator.LIKE,
+                        Literal.of("%abc%")));
     }
 
     @Test

@@ -9,6 +9,16 @@ import io.github.nextentity.api.model.Tuple2;
 ///
 /// @param <A> 第一列类型
 /// @param <B> 第二列类型
-/// @param get0 第一列的值：`select(first, second)` 里 `first` 的结果
-/// @param get1 第二列的值：`select(first, second)` 里 `second` 的结果
-record Tuple2Value<A, B>(A get0, B get1) implements Tuple2<A, B> {}
+/// @param get0 第一列的值
+/// @param get1 第二列的值
+record Tuple2Value<A, B>(A get0, B get1) implements Tuple2<A, B> {
+
+    @Override
+    public Object get(int index) {
+        return switch (index) {
+            case 0 -> get0;
+            case 1 -> get1;
+            default -> throw new IndexOutOfBoundsException("两列元组没有下标 " + index);
+        };
+    }
+}

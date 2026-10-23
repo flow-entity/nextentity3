@@ -1,8 +1,11 @@
 package io.github.nextentity.core.builder;
 
+import io.github.nextentity.api.Expression;
 import io.github.nextentity.api.PathOperator;
 import io.github.nextentity.core.spec.AttributePath;
 import io.github.nextentity.core.spec.ComparisonOperator;
+import io.github.nextentity.core.spec.Literal;
+import io.github.nextentity.core.spec.Logical;
 import io.github.nextentity.core.spec.Spec;
 import java.util.Arrays;
 import java.util.Collection;
@@ -33,7 +36,12 @@ final class PathStepOperator<T, U, B> implements PathOperator<T, U, B> {
 
     @Override
     public B eq(U value) {
-        return next.apply(Specs.comparison(path, ComparisonOperator.EQ, value));
+        return next.apply(Specs.comparison(path, ComparisonOperator.EQ, Literal.of(value)));
+    }
+
+    @Override
+    public B eq(Expression<T, U> other) {
+        return next.apply(Specs.comparison(path, ComparisonOperator.EQ, OpInterpreter.operand(other)));
     }
 
     @Override
@@ -43,27 +51,52 @@ final class PathStepOperator<T, U, B> implements PathOperator<T, U, B> {
 
     @Override
     public B ne(U value) {
-        return next.apply(Specs.comparison(path, ComparisonOperator.NE, value));
+        return next.apply(Specs.comparison(path, ComparisonOperator.NE, Literal.of(value)));
+    }
+
+    @Override
+    public B ne(Expression<T, U> other) {
+        return next.apply(Specs.comparison(path, ComparisonOperator.NE, OpInterpreter.operand(other)));
     }
 
     @Override
     public B ge(U value) {
-        return next.apply(Specs.comparison(path, ComparisonOperator.GE, value));
+        return next.apply(Specs.comparison(path, ComparisonOperator.GE, Literal.of(value)));
+    }
+
+    @Override
+    public B ge(Expression<T, U> other) {
+        return next.apply(Specs.comparison(path, ComparisonOperator.GE, OpInterpreter.operand(other)));
     }
 
     @Override
     public B gt(U value) {
-        return next.apply(Specs.comparison(path, ComparisonOperator.GT, value));
+        return next.apply(Specs.comparison(path, ComparisonOperator.GT, Literal.of(value)));
+    }
+
+    @Override
+    public B gt(Expression<T, U> other) {
+        return next.apply(Specs.comparison(path, ComparisonOperator.GT, OpInterpreter.operand(other)));
     }
 
     @Override
     public B le(U value) {
-        return next.apply(Specs.comparison(path, ComparisonOperator.LE, value));
+        return next.apply(Specs.comparison(path, ComparisonOperator.LE, Literal.of(value)));
+    }
+
+    @Override
+    public B le(Expression<T, U> other) {
+        return next.apply(Specs.comparison(path, ComparisonOperator.LE, OpInterpreter.operand(other)));
     }
 
     @Override
     public B lt(U value) {
-        return next.apply(Specs.comparison(path, ComparisonOperator.LT, value));
+        return next.apply(Specs.comparison(path, ComparisonOperator.LT, Literal.of(value)));
+    }
+
+    @Override
+    public B lt(Expression<T, U> other) {
+        return next.apply(Specs.comparison(path, ComparisonOperator.LT, OpInterpreter.operand(other)));
     }
 
     @Override
@@ -125,6 +158,16 @@ final class PathStepOperator<T, U, B> implements PathOperator<T, U, B> {
 
     @Override
     public B between(U from, U to) {
-        return next.apply(Specs.between(path, from, to));
+        return next.apply(Specs.between(path, Literal.of(from), Literal.of(to)));
+    }
+
+    @Override
+    public B between(Expression<T, U> from, Expression<T, U> to) {
+        return next.apply(Specs.between(path, OpInterpreter.operand(from), OpInterpreter.operand(to)));
+    }
+
+    @Override
+    public B notBetween(U from, U to) {
+        return next.apply(Logical.not(Specs.between(path, Literal.of(from), Literal.of(to))));
     }
 }

@@ -2,8 +2,8 @@ package io.github.nextentity.api;
 
 /// 表达式值上可能出现的运算。
 ///
-/// 只收录有真实调用点的算子：`notLike`/`notContains`/`notStartsWith`/`notEndsWith`/`avg`/`min`
-/// 没有调用点，因此没有对应常量；需要时按「新能力只落一处」补——常量 + 后端分支 + 一条一致性用例。
+/// 收录原则是「有真实调用点或已冻结的设计」：`notLike` / `notContains` / `notStartsWith` /
+/// `notEndsWith` 依旧没有对位（`not()` + 正向算子即可表达）。
 /// 布尔常量（`TRUE`/`FALSE`）也不在此列："恒真"由「不实现 `Op` 的 `Predicate`」表达，
 /// "恒假"由后端从 `IN` + 空参推导。
 ///
@@ -59,6 +59,9 @@ public enum Operation {
     /// 逻辑或；`arguments()` 为子条件。
     OR,
 
+    /// 逻辑非；`arguments()` 为单个子条件。
+    NOT,
+
     /// 计数。
     COUNT,
 
@@ -68,6 +71,27 @@ public enum Operation {
     /// 最大值。
     MAX,
 
+    /// 最小值。
+    MIN,
+
+    /// 平均值；结果为 `Double`，与各方言 `AVG` 的返回类型一致。
+    AVG,
+
     /// 求和。
-    SUM
+    SUM,
+
+    /// 加法；`subject()` 是左操作数，`arguments()` 里是右操作数的值或表达式。
+    ADD,
+
+    /// 减法。
+    SUB,
+
+    /// 乘法。
+    MUL,
+
+    /// 除法。
+    DIV,
+
+    /// 取模。
+    MOD
 }

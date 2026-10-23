@@ -9,6 +9,7 @@ import java.util.List;
 ///
 /// 放在 `api` 的理由：静态工厂必须能返回**可用**对象，而 `api` 不允许依赖 `core`；
 /// 这些类不依赖任何三方类型，也不做求值。
+@SuppressWarnings("PMD.CouplingBetweenObjects") // 同一个文件承载 Path 家族的全部值实现（Root/Nested/字符串/数值），拆开反而多出跨文件可见性
 final class PathValues {
 
     private PathValues() {}
@@ -27,23 +28,33 @@ final class PathValues {
         }
 
         @Override
-        public Expression<T, Long> count() {
-            return Conditions.countLike(Operation.COUNT, refs());
+        public AggregateValue<T, Long> count() {
+            return Conditions.aggregate(Operation.COUNT, refs());
         }
 
         @Override
-        public Expression<T, Long> countDistinct() {
-            return Conditions.countLike(Operation.COUNT_DISTINCT, refs());
+        public AggregateValue<T, Long> countDistinct() {
+            return Conditions.aggregate(Operation.COUNT_DISTINCT, refs());
         }
 
         @Override
-        public Expression<T, U> max() {
+        public AggregateValue<T, U> max() {
             return Conditions.aggregate(Operation.MAX, refs());
+        }
+
+        @Override
+        public AggregateValue<T, U> min() {
+            return Conditions.aggregate(Operation.MIN, refs());
         }
 
         @Override
         public Predicate<T> eq(U value) {
             return comparison(Operation.EQ, value);
+        }
+
+        @Override
+        public Predicate<T> eq(Expression<T, U> other) {
+            return comparison(Operation.EQ, other);
         }
 
         @Override
@@ -57,8 +68,18 @@ final class PathValues {
         }
 
         @Override
+        public Predicate<T> ne(Expression<T, U> other) {
+            return comparison(Operation.NE, other);
+        }
+
+        @Override
         public Predicate<T> ge(U value) {
             return comparison(Operation.GE, value);
+        }
+
+        @Override
+        public Predicate<T> ge(Expression<T, U> other) {
+            return comparison(Operation.GE, other);
         }
 
         @Override
@@ -67,13 +88,28 @@ final class PathValues {
         }
 
         @Override
+        public Predicate<T> gt(Expression<T, U> other) {
+            return comparison(Operation.GT, other);
+        }
+
+        @Override
         public Predicate<T> le(U value) {
             return comparison(Operation.LE, value);
         }
 
         @Override
+        public Predicate<T> le(Expression<T, U> other) {
+            return comparison(Operation.LE, other);
+        }
+
+        @Override
         public Predicate<T> lt(U value) {
             return comparison(Operation.LT, value);
+        }
+
+        @Override
+        public Predicate<T> lt(Expression<T, U> other) {
+            return comparison(Operation.LT, other);
         }
 
         @Override
@@ -135,6 +171,16 @@ final class PathValues {
         public Predicate<T> between(U from, U to) {
             return range(Operation.BETWEEN, from, to);
         }
+
+        @Override
+        public Predicate<T> between(Expression<T, U> from, Expression<T, U> to) {
+            return range(Operation.BETWEEN, from, to);
+        }
+
+        @Override
+        public Predicate<T> notBetween(U from, U to) {
+            return between(from, to).not();
+        }
     }
 
     static final class Root<T, U> extends Value<T, U> {
@@ -144,6 +190,7 @@ final class PathValues {
         }
     }
 
+    @SuppressWarnings("PMD.TooManyMethods") // 方法数由 NumberPath 接口面决定，不是上帝类
     static final class NumberRoot<T, U extends Number> extends Value<T, U> implements NumberPath<T, U> {
 
         NumberRoot(PathRef.NumberRef<T, U> ref) {
@@ -151,8 +198,38 @@ final class PathValues {
         }
 
         @Override
-        public Expression<T, U> sum() {
-            return Conditions.numericAggregate(Operation.SUM, refs());
+        public AggregateValue<T, U> sum() {
+            return Conditions.aggregate(Operation.SUM, refs());
+        }
+
+        @Override
+        public AggregateValue<T, Double> avg() {
+            return Conditions.aggregate(Operation.AVG, refs());
+        }
+
+        @Override
+        public NumberValue<T, U> add(U addend) {
+            return Conditions.arithmetic(Operation.ADD, refs(), addend, null);
+        }
+
+        @Override
+        public NumberValue<T, U> sub(U subtrahend) {
+            return Conditions.arithmetic(Operation.SUB, refs(), subtrahend, null);
+        }
+
+        @Override
+        public NumberValue<T, U> mul(U multiplier) {
+            return Conditions.arithmetic(Operation.MUL, refs(), multiplier, null);
+        }
+
+        @Override
+        public NumberValue<T, U> div(U divisor) {
+            return Conditions.arithmetic(Operation.DIV, refs(), divisor, null);
+        }
+
+        @Override
+        public NumberValue<T, U> mod(U divisor) {
+            return Conditions.arithmetic(Operation.MOD, refs(), divisor, null);
         }
     }
 
@@ -187,7 +264,54 @@ final class PathValues {
         }
     }
 
-    static final class NestedString<T> extends Value<T, String> implements StringPath<T> {
+    /// 字符串路径的公共实现：`Path<T,String>` + 一组字符串算子。
+    ///
+    /// @param <T> 根实体类型
+    abstract static class StringValue<T> extends Value<T, String> implements StringPath<T> {
+
+        StringValue(List<PathRef<?, ?>> refs) {
+            super(refs);
+        }
+
+        @Override
+        public Predicate<T> contains(String value) {
+            return stringOp(Operation.CONTAINS, value);
+        }
+
+        @Override
+        public Predicate<T> containsIfNotEmpty(String value) {
+            return value == null || value.isEmpty() ? Conditions.alwaysTrue() : stringOp(Operation.CONTAINS, value);
+        }
+
+        @Override
+        public Predicate<T> containsIfNotNull(String value) {
+            return value == null ? Conditions.alwaysTrue() : stringOp(Operation.CONTAINS, value);
+        }
+
+        @Override
+        public Predicate<T> like(String pattern) {
+            return stringOp(Operation.LIKE, pattern);
+        }
+
+        @Override
+        public Predicate<T> likeIfNotNull(String pattern) {
+            return pattern == null ? Conditions.alwaysTrue() : stringOp(Operation.LIKE, pattern);
+        }
+
+        @Override
+        public Predicate<T> eqIfNotEmpty(String value) {
+            return value == null || value.isEmpty() ? Conditions.alwaysTrue() : comparison(Operation.EQ, value);
+        }
+    }
+
+    static final class StringRoot<T> extends StringValue<T> {
+
+        StringRoot(PathRef.StringRef<T> ref) {
+            super(Collections.singletonList(ref));
+        }
+    }
+
+    static final class NestedString<T> extends StringValue<T> {
 
         NestedString(List<PathRef<?, ?>> refs) {
             super(refs);

@@ -9,6 +9,9 @@ import io.github.nextentity.jpa.meta.JpaMeta;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityTransaction;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.function.Function;
 import org.hibernate.SessionFactory;
 import org.hibernate.cfg.Configuration;
@@ -19,18 +22,20 @@ import org.junit.jupiter.api.TestInstance;
 
 /// 模块内测试的公共底座：H2 + 真实 Hibernate（版本对齐 point-mall 的 Boot 4.0.0）。
 ///
-/// 只管「起库 / 灌固定数据 / 事务」，不抓 SQL：SQL 快照归 `nextentity-tests-jpa`
-/// （spring-harness 拥有），这里不建第二套快照工具。
+/// 只管「起库 / 灌固定数据 / 事务 / 抓 SQL」，不是第二套快照框架：整条 SQL 的快照归
+/// `nextentity-tests-jpa`（spring-harness 拥有），这里只用 {@link #drainSql()} 做
+/// 「渲染形态」断言（`containsIgnoringCase` 级别，不写死整条 SQL）。
 ///
 /// `PER_CLASS` + 实例字段是刻意的：每个测试类拿**自己的 SessionFactory 和自己的内存库**
 /// （库名取自类名）。共用 `static` 字段时两个子类的 `@BeforeAll` 会互相覆盖
 /// `sessionFactory`/`meta`，而 `hbm2ddl.auto=create-drop` 会在后起的那个 EMF 里重建 schema，
-/// 把先跑那个类已写入的数据清掉——测试类执行顺序不固定，于是失败是随机的。
+/// 把先跑那个类已写入的数据清掉——那是上一轮抓到过的随机失败根因。
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 abstract class JpaTestSupport {
 
     private final SessionFactory sessionFactory;
     private final JpaMeta meta;
+    private final List<String> sql = Collections.synchronizedList(new ArrayList<>());
 
     JpaTestSupport() {
         Configuration configuration = new Configuration();
@@ -41,6 +46,7 @@ abstract class JpaTestSupport {
         configuration.setProperty("hibernate.connection.password", "");
         configuration.setProperty("hibernate.hbm2ddl.auto", "create-drop");
         configuration.setProperty("hibernate.show_sql", false);
+        configuration.setStatementInspector(this::recordSql);
         configuration.addAnnotatedClass(Organization.class);
         configuration.addAnnotatedClass(Customer.class);
         configuration.addAnnotatedClass(ShopOrder.class);
@@ -75,6 +81,7 @@ abstract class JpaTestSupport {
             entityManager.persist(new ShopOrder(101L, null, OrderStatus.CREATED, new BigDecimal("5.00"), null));
             return null;
         });
+        drainSql();
     }
 
     @AfterAll
@@ -87,6 +94,17 @@ abstract class JpaTestSupport {
     /// @return JPA 元模型
     JpaMeta meta() {
         return meta;
+    }
+
+    /// 取出并清空已记录的 SQL，用于渲染形态断言。
+    ///
+    /// @return 自上次清空以来 Hibernate 实际下发的 SQL
+    List<String> drainSql() {
+        synchronized (sql) {
+            List<String> drained = List.copyOf(sql);
+            sql.clear();
+            return drained;
+        }
     }
 
     /// 在事务里执行并提交，返回结果。
@@ -107,5 +125,10 @@ abstract class JpaTestSupport {
         } finally {
             entityManager.close();
         }
+    }
+
+    private String recordSql(String statement) {
+        sql.add(statement);
+        return statement;
     }
 }

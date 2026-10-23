@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.api.LockMode;
 import io.github.nextentity.core.spec.AggregateFunction;
+import io.github.nextentity.core.spec.AggregateOperand;
 import io.github.nextentity.core.spec.AggregateProjection;
 import io.github.nextentity.core.spec.AttributePath;
 import io.github.nextentity.core.spec.Between;
@@ -13,6 +14,7 @@ import io.github.nextentity.core.spec.ComparisonOperator;
 import io.github.nextentity.core.spec.Constant;
 import io.github.nextentity.core.spec.EntitySelection;
 import io.github.nextentity.core.spec.In;
+import io.github.nextentity.core.spec.Literal;
 import io.github.nextentity.core.spec.Logical;
 import io.github.nextentity.core.spec.LogicalOperator;
 import io.github.nextentity.core.spec.NullCheck;
@@ -38,12 +40,13 @@ import org.junit.jupiter.api.Test;
 ///
 /// SQL 文本快照归 `nextentity-tests-jpa`（spring-harness 拥有），这里只验证行为与语义：
 /// 等值查询、嵌套路径的 LEFT JOIN、count / exists、单列投影、`@Version` 更新与冲突。
+/// 渲染形态（列对列、算术、`min`/`avg`、`having`、`not`、多列分组）见 {@link JpaRenderingTest}。
 class JpaEndToEndTest extends JpaTestSupport {
 
     @Test
     void entityListWithEquality() {
-        QuerySpec spec = query(
-                new Comparison(AttributePath.of(ShopOrder.class, "status"), ComparisonOperator.EQ, OrderStatus.PAID));
+        QuerySpec spec = query(new Comparison(
+                AttributePath.of(ShopOrder.class, "status"), ComparisonOperator.EQ, Literal.of(OrderStatus.PAID)));
         List<ShopOrder> orders = inTx(entityManager ->
                 executor(entityManager).list(compiler(entityManager).compile(spec)));
         assertThat(orders).extracting(ShopOrder::getId).containsExactly(100L);
@@ -51,15 +54,17 @@ class JpaEndToEndTest extends JpaTestSupport {
 
     @Test
     void nestedPathUsesLeftJoin() {
-        QuerySpec byOrg = query(
-                new Comparison(AttributePath.of(ShopOrder.class, "customer", "orgId"), ComparisonOperator.EQ, 1L));
+        QuerySpec byOrg = query(new Comparison(
+                AttributePath.of(ShopOrder.class, "customer", "orgId"), ComparisonOperator.EQ, Literal.of(1L)));
         List<ShopOrder> matched = inTx(entityManager ->
                 executor(entityManager).list(compiler(entityManager).compile(byOrg)));
         assertThat(matched).extracting(ShopOrder::getId).containsExactly(100L);
 
         // 两级嵌套（point-mall OrderRepository:87 的形态）：customer.org.name
         QuerySpec twoLevels = query(new Comparison(
-                AttributePath.of(ShopOrder.class, "customer", "org", "name"), ComparisonOperator.EQ, "Acme"));
+                AttributePath.of(ShopOrder.class, "customer", "org", "name"),
+                ComparisonOperator.EQ,
+                Literal.of("Acme")));
         List<ShopOrder> byOrganization = inTx(entityManager ->
                 executor(entityManager).list(compiler(entityManager).compile(twoLevels)));
         assertThat(byOrganization).extracting(ShopOrder::getId).containsExactly(100L);
@@ -85,8 +90,8 @@ class JpaEndToEndTest extends JpaTestSupport {
 
     @Test
     void countAndExists() {
-        QuerySpec paid = query(
-                new Comparison(AttributePath.of(ShopOrder.class, "status"), ComparisonOperator.EQ, OrderStatus.PAID));
+        QuerySpec paid = query(new Comparison(
+                AttributePath.of(ShopOrder.class, "status"), ComparisonOperator.EQ, Literal.of(OrderStatus.PAID)));
         inTx(entityManager -> {
             JpaCompiler compiler = compiler(entityManager);
             JpaExecutor executor = executor(entityManager);
@@ -100,10 +105,60 @@ class JpaEndToEndTest extends JpaTestSupport {
                     new ValueSelection(List.of(new PathProjection(AttributePath.of(ShopOrder.class, "status"))), true),
                     null,
                     List.of(),
+                    null,
                     List.of(),
                     Window.NONE,
                     null);
             assertThat(executor.count(compiler.compile(distinct.forCount()))).isEqualTo(2L);
+            return null;
+        });
+    }
+
+    @Test
+    void existsRejectsGroupedAndHavingSpecs() {
+        AttributePath status = AttributePath.of(ShopOrder.class, "status");
+        // groupBy：exists 只渲染 where，会把"有没有组"当成"有没有行"——直接拒绝，不给错答案
+        QuerySpec grouped = new QuerySpec(
+                ShopOrder.class,
+                new ValueSelection(List.of(new PathProjection(status)), false),
+                null,
+                List.of(status),
+                null,
+                List.of(),
+                Window.NONE,
+                null);
+        // having：把全部组都过滤掉时，只渲染 where 的 exists 会返回 true（与查询相反）
+        QuerySpec havingOnly = new QuerySpec(
+                ShopOrder.class,
+                new EntitySelection(),
+                null,
+                List.of(),
+                new Comparison(
+                        new AggregateOperand(AggregateFunction.COUNT, AttributePath.of(ShopOrder.class, "id")),
+                        ComparisonOperator.GE,
+                        Literal.of(999L)),
+                List.of(),
+                Window.NONE,
+                null);
+
+        inTx(entityManager -> {
+            JpaCompiler compiler = compiler(entityManager);
+            JpaExecutor executor = executor(entityManager);
+            assertThatThrownBy(() -> executor.exists(compiler.compile(grouped.forExists())))
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessageContaining("exists");
+            assertThatThrownBy(() -> executor.exists(compiler.compile(havingOnly.forExists())))
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessageContaining("exists");
+
+            // 普通条件查询的 exists 行为不变
+            assertThat(executor.exists(
+                            compiler.compile(query(comparison("status", ComparisonOperator.EQ, OrderStatus.PAID))
+                                    .forExists())))
+                    .isTrue();
+            assertThat(executor.exists(compiler.compile(query(comparison("id", ComparisonOperator.EQ, 99999L))
+                            .forExists())))
+                    .isFalse();
             return null;
         });
     }
@@ -115,6 +170,7 @@ class JpaEndToEndTest extends JpaTestSupport {
                 new ValueSelection(List.of(new PathProjection(AttributePath.of(ShopOrder.class, "id"))), false),
                 null,
                 List.of(),
+                null,
                 List.of(),
                 new Window(0, 10),
                 null);
@@ -171,7 +227,9 @@ class JpaEndToEndTest extends JpaTestSupport {
         assertThat(ids(query(new In(status, List.of(OrderStatus.CREATED), true))))
                 .containsExactly(100L);
         assertThat(ids(query(new Between(
-                        AttributePath.of(ShopOrder.class, "amount"), new BigDecimal("5"), new BigDecimal("13")))))
+                        AttributePath.of(ShopOrder.class, "amount"),
+                        Literal.of(new BigDecimal("5")),
+                        Literal.of(new BigDecimal("13"))))))
                 .containsExactly(100L, 101L);
         assertThat(ids(query(Constant.TRUE))).containsExactly(100L, 101L);
         assertThat(ids(query(Constant.FALSE))).isEmpty();
@@ -192,6 +250,7 @@ class JpaEndToEndTest extends JpaTestSupport {
                 new EntitySelection(),
                 null,
                 List.of(),
+                null,
                 List.of(new Ordering(AttributePath.of(ShopOrder.class, "id"), Ordering.Direction.DESC)),
                 Window.NONE,
                 null);
@@ -202,6 +261,7 @@ class JpaEndToEndTest extends JpaTestSupport {
                 new EntitySelection(),
                 null,
                 List.of(),
+                null,
                 List.of(new Ordering(AttributePath.of(ShopOrder.class, "id"), Ordering.Direction.ASC)),
                 new Window(1, 1),
                 null);
@@ -222,6 +282,7 @@ class JpaEndToEndTest extends JpaTestSupport {
                         false),
                 null,
                 List.of(status),
+                null,
                 List.of(),
                 Window.NONE,
                 null);
@@ -235,6 +296,7 @@ class JpaEndToEndTest extends JpaTestSupport {
                 new ValueSelection(List.of(new AggregateProjection(AggregateFunction.MAX, amount)), false),
                 null,
                 List.of(),
+                null,
                 List.of(),
                 Window.NONE,
                 null);
@@ -248,6 +310,7 @@ class JpaEndToEndTest extends JpaTestSupport {
                 new ValueSelection(List.of(new AggregateProjection(AggregateFunction.COUNT_DISTINCT, status)), false),
                 null,
                 List.of(),
+                null,
                 List.of(),
                 Window.NONE,
                 null);
@@ -263,6 +326,7 @@ class JpaEndToEndTest extends JpaTestSupport {
                 new EntitySelection(),
                 comparison("id", ComparisonOperator.EQ, 100L),
                 List.of(),
+                null,
                 List.of(),
                 Window.NONE,
                 LockMode.PESSIMISTIC_WRITE);
@@ -272,7 +336,7 @@ class JpaEndToEndTest extends JpaTestSupport {
     }
 
     private static Comparison comparison(String attribute, ComparisonOperator operator, Object value) {
-        return new Comparison(AttributePath.of(ShopOrder.class, attribute), operator, value);
+        return new Comparison(AttributePath.of(ShopOrder.class, attribute), operator, Literal.of(value));
     }
 
     private List<Long> ids(QuerySpec spec) {
@@ -283,7 +347,8 @@ class JpaEndToEndTest extends JpaTestSupport {
     }
 
     private static QuerySpec query(Spec where) {
-        return new QuerySpec(ShopOrder.class, new EntitySelection(), where, List.of(), List.of(), Window.NONE, null);
+        return new QuerySpec(
+                ShopOrder.class, new EntitySelection(), where, List.of(), null, List.of(), Window.NONE, null);
     }
 
     private JpaCompiler compiler(EntityManager entityManager) {

@@ -64,6 +64,9 @@ final class JpaQueryBuilder {
             }
             query.groupBy(grouping);
         }
+        if (spec.having() != null) {
+            query.having(criteria.predicate(spec.having()));
+        }
         if (!spec.orderBy().isEmpty()) {
             query.orderBy(orders(criteria, spec.orderBy()));
         }

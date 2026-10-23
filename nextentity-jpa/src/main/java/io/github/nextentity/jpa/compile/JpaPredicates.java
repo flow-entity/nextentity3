@@ -2,11 +2,14 @@ package io.github.nextentity.jpa.compile;
 
 import io.github.nextentity.core.spec.Between;
 import io.github.nextentity.core.spec.Comparison;
+import io.github.nextentity.core.spec.ComparisonOperator;
 import io.github.nextentity.core.spec.Constant;
 import io.github.nextentity.core.spec.In;
+import io.github.nextentity.core.spec.Literal;
 import io.github.nextentity.core.spec.Logical;
 import io.github.nextentity.core.spec.LogicalOperator;
 import io.github.nextentity.core.spec.NullCheck;
+import io.github.nextentity.core.spec.Operand;
 import io.github.nextentity.core.spec.Spec;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.Expression;
@@ -14,14 +17,20 @@ import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Predicate;
 
 /// 条件节点 → Criteria 条件。`Spec` 是 sealed，新增节点会让这里的 switch 编译失败。
+///
+/// 右值是 {@link Literal} 时必须走 JPA 的 `Object` 重载（`builder.equal(left, value)` 等）：
+/// 那条路径保留参数绑定与 `@Convert`/时区转换行为；只有右值真的是表达式（列、聚合、算术）时
+/// 才渲染成 `Expression` 走表达式重载。
 final class JpaPredicates {
 
     private final CriteriaBuilder builder;
     private final JpaPaths paths;
+    private final JpaOperands operands;
 
-    JpaPredicates(CriteriaBuilder builder, JpaPaths paths) {
+    JpaPredicates(CriteriaBuilder builder, JpaPaths paths, JpaOperands operands) {
         this.builder = builder;
         this.paths = paths;
+        this.operands = operands;
     }
 
     Predicate predicate(Spec spec) {
@@ -35,25 +44,56 @@ final class JpaPredicates {
         };
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
     private Predicate comparison(Comparison comparison) {
-        Path<?> path = paths.path(comparison.path());
-        Object value = comparison.value();
-        return switch (comparison.operator()) {
-            case EQ -> builder.equal(path, value);
-            case NE -> builder.notEqual(path, value);
-            case GT -> builder.greaterThan((Expression) path, (Comparable) value);
-            case GE -> builder.greaterThanOrEqualTo((Expression) path, (Comparable) value);
-            case LT -> builder.lessThan((Expression) path, (Comparable) value);
-            case LE -> builder.lessThanOrEqualTo((Expression) path, (Comparable) value);
-            case LIKE -> builder.like((Expression) path, (String) value);
+        Expression<?> left = operands.expression(comparison.left());
+        Operand right = comparison.right();
+        return right instanceof Literal literal
+                ? withValue(comparison.operator(), left, literal.value())
+                : withExpression(comparison.operator(), left, operands.expression(right));
+    }
+
+    /// 右值是字面量：走 JPA 的 `Object` 重载，保留参数绑定与 `@Convert`/时区转换行为。
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private Predicate withValue(ComparisonOperator operator, Expression<?> left, Object value) {
+        Expression expression = (Expression) left;
+        return switch (operator) {
+            case EQ -> builder.equal(expression, value);
+            case NE -> builder.notEqual(expression, value);
+            case GT -> builder.greaterThan(expression, (Comparable) value);
+            case GE -> builder.greaterThanOrEqualTo(expression, (Comparable) value);
+            case LT -> builder.lessThan(expression, (Comparable) value);
+            case LE -> builder.lessThanOrEqualTo(expression, (Comparable) value);
+            case LIKE -> builder.like(expression, (String) value);
+        };
+    }
+
+    /// 右值是表达式（列 / 聚合 / 算术）：走 JPA 的 `Expression` 重载。
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private Predicate withExpression(ComparisonOperator operator, Expression<?> left, Expression<?> right) {
+        Expression expression = (Expression) left;
+        Expression other = (Expression) right;
+        return switch (operator) {
+            case EQ -> builder.equal(expression, other);
+            case NE -> builder.notEqual(expression, other);
+            case GT -> builder.greaterThan(expression, other);
+            case GE -> builder.greaterThanOrEqualTo(expression, other);
+            case LT -> builder.lessThan(expression, other);
+            case LE -> builder.lessThanOrEqualTo(expression, other);
+            // LIKE 的模式串只能是字面量（builder 侧 CONTAINS 会先拼成 %v%），表达式形态没有渲染语义
+            case LIKE -> throw new IllegalArgumentException("LIKE 的右侧必须是字面量，不能是表达式");
         };
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private Predicate between(Between between) {
+        Expression subject = (Expression) operands.expression(between.subject());
+        Operand lower = between.lower();
+        Operand upper = between.upper();
+        if (lower instanceof Literal lowerValue && upper instanceof Literal upperValue) {
+            return builder.between(subject, (Comparable) lowerValue.value(), (Comparable) upperValue.value());
+        }
         return builder.between(
-                (Expression) paths.path(between.path()), (Comparable) between.lower(), (Comparable) between.upper());
+                subject, (Expression) operands.expression(lower), (Expression) operands.expression(upper));
     }
 
     private Predicate in(In in) {
