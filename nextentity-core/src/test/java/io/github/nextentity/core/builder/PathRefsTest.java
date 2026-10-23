@@ -30,9 +30,6 @@ import org.junit.jupiter.params.provider.CsvSource;
 class PathRefsTest {
 
     /// 裸前缀不能被当成前缀剥掉；去前缀后只剩一个字符时直接小写。
-    ///
-    /// @param methodName 入参方法名
-    /// @param expected   期望的属性名
     @ParameterizedTest(name = "fieldName(\"{0}\") → \"{1}\"")
     @CsvSource({
         "get, get", // 长度恰好 3：`length() > 3` 为假，原样返回（PathRefs.java:61）

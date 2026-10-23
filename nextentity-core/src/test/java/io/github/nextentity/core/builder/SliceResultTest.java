@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Test;
 @DisplayName("SliceResult")
 class SliceResultTest {
 
-    /// `to()` 把自身原样交给映射函数，`data` 与 `total` 都不丢。
     @Test
     @DisplayName("to()：入参就是自身，data 与 total 保持一致")
     void toPassesItselfWithDataAndTotal() {
@@ -29,7 +28,6 @@ class SliceResultTest {
         assertThat(seen.total()).isEqualTo(42L);
     }
 
-    /// `to()` 的返回值就是映射函数的返回值，不是固定值也不是 `null`。
     @Test
     @DisplayName("to()：映射函数的返回值原样透传")
     void toReturnsMapperResult() {
@@ -40,7 +38,6 @@ class SliceResultTest {
         assertThat(rendered).isEqualTo("1:3");
     }
 
-    /// 构造时对入参列表做快照：外部后续改动不会渗透进 `data()`。
     @Test
     @DisplayName("构造：data 是入参的快照")
     void constructorSnapshotsData() {

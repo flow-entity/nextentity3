@@ -37,15 +37,16 @@ import org.junit.jupiter.api.Test;
 ///
 /// 门禁自己也要有测试：租约判定抽成纯函数 [#leaseViolation(String, LocalDate)]（入参是注解括号里的
 /// 原文，外加「今天」），扫描+抽取抽成 [#violationsIn(String, LocalDate)]（入参是源码文本，不碰文件系统）。
-/// 正则写错、`@DisabledOnOs` 被误排除、`expires` 静默解析失败——这些都不会让今天 0 个 `@Disabled`
-/// 的仓库变红，只能靠下方自测钉住；其中「合规必须返回 `null`」的反向用例保证门禁不是「永远违规」。
+/// 正则写错、`@DisabledOnOs` 被误排除、`expires` 静默解析失败——这些都不会让一个没有违规
+/// `@Disabled` 的仓库变红，只能靠下方自测钉住；其中「合规必须返回 `null`」的反向用例保证门禁
+/// 不是「永远违规」。
 @DisplayName("禁用租约门禁")
 class DisabledLeaseTest {
 
     /// 只认 `@Disabled` 本身：`@DisabledOnOs` / `@DisabledIf` 这类兄弟注解靠标识符边界排除。
     private static final String DISABLED = "@Disabled";
 
-    /// 扫描下限：今天 6 个模块共 130+ 个测试源文件；低于这个数说明路径解析坏了，门禁必须红。
+    /// 扫描下限：远低于实际测试源文件数，既能挡住路径解析失败，又不会因增删测试文件误红。
     private static final int MIN_SOURCES = 40;
 
     /// 自测专用「今天」：钉死日历，过期判定不随真实日期漂移。

@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 /// 本类把 `offset` 与 `limit` 拆开测：
 /// - `limit = 0` 按 `Window#limited()` 的语义是「不截断行数」，变异成 `>= 0` 会 `setMaxResults(0)` 返回 0 行；
 /// - `offset = 0` 时必须仍然应用 `limit`（变异体把 `> 0` 判反后整个 `setMaxResults` 被跳过）；
-/// - `offset = 0` 时不下发 `offset` 子句（`> 0` → `>= 0` 的唯一可观测差异，实测见该类用例注释）。
+/// - `offset = 0` 时不下发 `offset` 子句（`> 0` → `>= 0` 的唯一可观测差异）。
 class JpaExecutorWindowTest extends JpaTestSupport {
 
     @Test
@@ -37,7 +37,7 @@ class JpaExecutorWindowTest extends JpaTestSupport {
     void limitAppliedWhenOffsetIsZero() {
         assertThat(ids(new Window(0, 1))).containsExactly(100L);
         // `offset = 0` 时结果集与「下发 offset 0」相同，但 `> 0` 这道守卫的意义正是不发无谓子句：
-        // 实测 `setFirstResult(0)` 会让 H2 方言多渲染一个 `offset ? rows`（记录见提交说明）
+        // Hibernate 7.x + H2Dialect 下 `setFirstResult(0)` 会多渲染一个 `offset ? rows`
         assertThat(drainSql()).noneMatch(sql -> sql.toLowerCase(Locale.ROOT).contains("offset"));
     }
 

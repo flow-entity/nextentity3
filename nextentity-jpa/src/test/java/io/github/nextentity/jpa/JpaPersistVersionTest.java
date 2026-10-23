@@ -124,7 +124,7 @@ class JpaPersistVersionTest extends JpaTestSupport {
     /// 这条用例**杀不掉** `:89`（条件取反）与 `:90`（删除 `detach` 调用）两条变异体：
     /// 走到 `:89` 时 `entityManager.contains(entity)` 刚在 `:76` 判过为 `false`，而 JPA 规定
     /// 「对未与持久化上下文关联的实体调用 `detach` 会被忽略」，因此该调用与它的条件都不改变
-    /// 任何可观测状态。这里只把「更新完仍然是 detached」这个契约钉住，等价性论证见提交说明。
+    /// 任何可观测状态。这里只把「更新完仍然是 detached」这个契约钉住，不假装覆盖了那两条变异体。
     @Test
     @DisplayName("update 之后入参对象仍然是 detached")
     void updateLeavesEntityDetached() {

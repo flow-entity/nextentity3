@@ -64,7 +64,7 @@ class JpaPredicatesBetweenTest extends JpaTestSupport {
         QuerySpec spec = query(new Between(id, id, Literal.of(100L)));
 
         assertThat(ids(spec)).containsExactly(100L);
-        // 表达式路径：上界是字面量但整条语句里不该出现参数占位符（实测渲染为 `between so1_0.id and 100`）
+        // 表达式路径：只要有一侧不是 Literal 就走 Expression 重载，两侧都内联，语句里不出现参数占位符
         assertThat(drainSql())
                 .anySatisfy(
                         sql -> assertThat(sql).containsIgnoringCase("between").doesNotContain("?"));
