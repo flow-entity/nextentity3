@@ -26,6 +26,7 @@
 | `nextentity-testing`（一致性基类、夹具、`ConsistencySupport`） | `mvn -q spotless:apply` → `mvn -pl nextentity-tests-jpa -am verify`（无容器；容器用例待加，见 DESIGN §5） |
 | `nextentity-tests-legacy` | `mvn -pl nextentity-tests-legacy test`（默认 H2，无容器）；动到方言相关再跑 `-Ddbc=h2,mysql` |
 | `core` / `jpa` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-<模块> pitest:mutationCoverage`，变异分数不得低于模块 pom 的阈值 |
+| `api` 新增或修改**生产代码** | 同样要跑 `core` 的 PIT（`api` 的语义由 `core` 的用例执行）；**跑之前必须先 `mvn -pl nextentity-api install -DskipTests`**——`pitest:mutationCoverage` 不带 `-am`，它从 `~/.m2` 解析 `nextentity-api`，陈旧快照会让依赖新语义的用例集体报「未变异就不通过」，看着像测试坏了，其实是产物旧了 |
 | 公开签名变更 | 额外 `mvn -Papi-compat -Djapicmp.oldVersion=<上一发布版> -pl nextentity-api verify` |
 | 发版前 | `mvn clean verify`（格式 + 静态检查 + 单测 + 覆盖率门槛），更新 CHANGELOG |
 | 文档里的代码示例（`*.md` 的代码块） | 先把示例**原样**抄进 `tmp/scripts/probe/DocExamples.java`，`javac` 对相关模块真实 `target/classes` 编译通过后才写进文档；文档声称的能力必须能在源码里指到 `文件:行`，指不到就删掉或移入「不提供的能力」表 |

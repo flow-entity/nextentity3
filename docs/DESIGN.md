@@ -107,14 +107,16 @@ S  （后端语句）
 | 层 | 测什么 | 判定标准 | 依赖 | 位置 |
 |---|---|---|---|---|
 | 0. 架构门禁 | 模块循环、`core` 包边界、`spec` 纯净与不可变、时间/随机注入 | 编译期或测试期变红；同类问题不允许留到运行期 | 无 | `nextentity-arch` |
-| 1. Spec 单测 | builder 调用 → AST 结构（对象断言） | 结构等价：断言节点类型与字段值，不看 SQL | 无 | `core` 的 `src/test`（`api` 无测试源码：零依赖口径不引入 test-scope 依赖，值层断言放 `nextentity-testing`） |
+| 1. Spec 单测 | builder 调用 → AST 结构（对象断言） | 结构等价：断言节点类型与字段值，不看 SQL | 无 | `core` 的 `src/test`（含 `api` 的组装层断言，落点理由见下「api 值层断言的落点」） |
 | 2. 编译快照 | Spec → SQL（H2 + `StatementInspector` 抓取） | 语句文本的确定性片段必须出现；期望值不得写进方言的引号、别名、大小写 | H2 | `nextentity-tests-jpa` |
 | 3. 一致性 | 能力而非 SQL 文本：条件/分页/聚合/投影/写入/乐观锁 | 真库执行结果 vs 独立算出的期望；用例不引用任何后端类型 | 仅 `api`+`core` 接口 | `nextentity-testing` 抽象基类，由 jpa 子类继承 |
 | 4. 集成 | 真实方言、`@Convert`、并发乐观锁 | 同一用例在各方言下结果集完全相同（**当前无载体**，见下「待整改」） | Docker | `nextentity-tests-jpa` |
 
 L2 只证明「语句下发正确」，不证明「参数绑定正确」：`SqlRecorder` 只记语句文本，绑定顺序与取值抓不到。这一半证据属于待补项，补上之前由 L3（真库执行结果）兜底。
 
-L4 同样只有口径没有载体：`nextentity-tests-jpa` 里目前**没有任何容器用例**（模块 pom 声明了 `testcontainers:mysql`，但全模块无一处引用），125 条用例全部跑 H2。真 MySQL 只出现在 `nextentity-tests-legacy`，且需手动开 `-Ddbc=mysql`。所以「跨方言结果集相同」现在是方向，不是现状。
+L4 同样只有口径没有载体：`nextentity-tests-jpa` 里目前**没有任何容器用例**（模块 pom 声明了 `testcontainers:mysql`，但全模块无一处引用），该模块用例全部跑 H2。真 MySQL 只出现在 `nextentity-tests-legacy`，且需手动开 `-Ddbc=h2,mysql`。所以「跨方言结果集相同」现在是方向，不是现状。
+
+**api 值层断言的落点**：`nextentity-api` 不能有自己的 `src/test`。该模块的 enforcer 规则 `enforce-api-is-dependency-free` 用 `<exclude>*:*</exclude>` 禁掉**一切**依赖，test 作用域也在内（加 `junit-jupiter` 会让 `validate` 直接失败），这不是疏漏而是「api 零三方依赖」这条红线的直接后果。而 api 的实现类全是包私有的值对象，可观察入口只有 `Path#refs()` / `Op#operation()` 这组线格式。因此 api 的组装层断言住在**第一个消费者** `nextentity-core` 的测试树：用 api 的公开入口构造，用同包可见的 `OpInterpreter` 读成 `core.spec` 节点。oracle 是**节点结构整体相等**（record 相等），因为 api 的职责就是「只拼值不求值」，结构即契约。代价是 api 的覆盖率由 `core` 的执行数据贡献，单模块 `jacoco:report` 看不到——统计口径见下「覆盖率口径」。
 
 编写约定：
 
@@ -140,9 +142,38 @@ L4 同样只有口径没有载体：`nextentity-tests-jpa` 里目前**没有任�
 | 语义等价律条数 | 辅助 | 每条律至少 1 条差分用例，条数只增不减 |
 | 方言矩阵通过率 | 辅助 | 100% 通过；skip 数单独报表，只许降不许升（矩阵与报表均待建，见上「待整改」） |
 | 缺陷逃逸率 | 辅助 | 发版后发现的语义缺陷数 / 版本，趋势必须向下 |
-| 行覆盖率 | **不作门禁**，仅诊断报表 | 无门槛 |
+| 行/分支覆盖率（聚合口径） | **不作门禁**，仅诊断报表 | 不设百分比门槛；判据是「新增的未覆盖行必须落在下文『已判定不可达与度量限制』清单里」，落在清单外就按缺口处理 |
 
-行覆盖率不作门禁的理由：覆盖率只说明「执行到了」，不说明「断言到了」——空断言、只断言非空、只断言 `size()` 都能拿到接近 100%。把它设成门禁，只会奖励「多写方法少写断言」。
+行覆盖率不作门禁的理由：覆盖率只说明「执行到了」，不说明「断言到了」——空断言、只断言非空、只断言 `size()` 都能拿到接近 100%。把它设成门禁，只会奖励「多写方法少写断言」。换成上面那条「未覆盖行必须进清单」的判据就不一样：清单本身就要求写清不可达的论证，凑数进不了清单。
+
+**覆盖率口径**（数字必须能复算，否则不许引用）：
+
+- 官方数字 = **除 `nextentity-tests-legacy` 之外**全部模块的 `jacoco.exec` 合并后按模块出报表。legacy 只作 2.2.3 语义回归证据，**不进分子也不进分母**——它覆盖的是旧语义，并进来会让新能力的缺口被旧用例填平。
+- 单模块 `jacoco:report` 只反映本模块用例的贡献，不能当官方数字（`api` 尤其如此，见上「api 值层断言的落点」）。
+- 复算（仓库根目录，先跑 `mvn verify` 产出各模块 `target/jacoco.exec`）：
+
+```bash
+java -jar <本地仓库>/org/jacoco/org.jacoco.cli/<版本>/org.jacoco.cli-<版本>-nodeps.jar \
+    merge nextentity-core/target/jacoco.exec nextentity-jpa/target/jacoco.exec \
+          nextentity-spring/target/jacoco.exec nextentity-tests-jpa/target/jacoco.exec \
+          nextentity-arch/target/jacoco.exec --destfile tmp/cov/merged.exec
+java -jar <同上> report tmp/cov/merged.exec \
+    --classfiles nextentity-<模块>/target/classes \
+    --sourcefiles nextentity-<模块>/src/main/java --xml tmp/cov/<模块>.xml
+```
+
+**本轮覆盖率快照**（第 3 轮整改结束时，聚合口径）：`api` 行 285/286（99.7%）、分支 80/81（98.8%）；`core` 447/450（99.3%）、分支 196/196；`jpa` 360/364（98.9%）、分支 163/166（98.2%）；`spring` 10/10；`testing` 538/538。合计行 1640/1648（99.5%）、分支 443/447（99.1%）。剩下的 8 行 / 4 分支就是下表全部内容。
+
+**已判定不可达与度量限制**（这些未覆盖行**已论证**，不再按缺口追；新增未覆盖行要么补用例，要么先在这里写下论证）：
+
+| 位置 | 为什么不可达 |
+|---|---|
+| `api/Conditions.java:104` 的 `parent == null` 子分支 | `PathOperatorValue` 只在 `AlwaysTrue.or(ref)` 时 `parent` 为 `null`，而那条路径 `suppressed == true`，在 `:102` 就返回了 |
+| `api/Conditions.java:398` `AbstractAggregate.subject()` 的 `return null` | 为满足 `Op` 接口而存在，无调用点：聚合值当主语时 `subject` 挂在 `Leaf` 上 |
+| `core/builder/PathRefs.java:90-92` | `writeReplace.invoke(ref)` 在合法方法引用上不会抛 `ReflectiveOperationException` |
+| `jpa/meta/JpaEntityAttribute.java:48-49`、`:58-59` | `resolveField` 已 `setAccessible(true)`，之后的 `IllegalAccessException` 在正常 JVM 上不会发生 |
+| `jpa/exec/JpaExecutor.java:122`、`:124` | `shapeRow` 的两侧取决于 Hibernate 返回形状，公开查询造不出「单列却返回长度≠1 的 `Object[]`」 |
+| `testing/TerminalConsistencyTest.java:57`、`ProjectionMapperConsistencyTest.java:103` | **不是未执行，是 JaCoCo 归因限制**：这两个 lambda 体唯一的退出路径是被调方抛异常，探针插在被调方调用之后、`return` 之前，永远到不了。用例本身是通过的，断言也确实生效（已用 `javap` 看探针位置 + `-Xlog:exceptions` 观测到异常进 `catchThrowable` 双向确认）。修不掉，除非给 lambda 套一层只骗探针的空包装——那会把证据写糊 |
 
 **运行预算**（四档，按「多久能拿到结论」切分）：
 
@@ -157,13 +188,14 @@ L4 同样只有口径没有载体：`nextentity-tests-jpa` 里目前**没有任�
 
 **变异测试（PIT，已接入）**：`mvn -pl nextentity-core pitest:mutationCoverage`、`mvn -pl nextentity-jpa pitest:mutationCoverage`。它只出分数、不新增用例形态，所以是**度量层**而不是五层防线之一。阈值（95% / 90%）写在各模块 pom，低于阈值构建失败。
 
-当前状态：`core` 的 226 个变异全部杀死；`jpa` 全模块 130 个变异杀死 127，余下 3 条是**已论证的等价变异**（`nextVersion(null)` 返回 null、`detach` 分支的条件取反与调用删除）。等价变异不算待补的债，但每新增一条都必须在对应测试的 javadoc 里留下论证，没有论证的存活一律按缺口处理。
+当前状态：`core` 的 221 个变异全部杀死。`jpa` 的 pom 里 `targetClasses` 只覆盖 `jpa.compile.*`，该范围 49 个变异全部杀死；**全模块口径不是当前门禁**——把 `meta`/`exec` 一起跑会多出到 130 个变异，其中杀伤 127，余下 3 条是已论证的等价变异（`nextVersion(null)` 返回 null、`detach` 分支的条件取反与调用删除）。要把全模块接进门禁，先得决定这 3 条怎么在配置层面表达（排除还是留作已知存活），否则阈值会被等价变异拉到 98% 以下。等价变异不算待补的债，但每新增一条都必须在对应测试的 javadoc 里留下论证，没有论证的存活一律按缺口处理。
 
 **尚未实施**（方向，不是已有能力——写进这里的东西不得当成现状引用）：
 
 - 属性测试：Spec 生成器 + 差分 oracle，用生成替代手写组合。
 - H2 兼容模式矩阵：以 `MODE=MySQL` / `PostgreSQL` / `Oracle` 跑同一套一致性用例。
 - 故障注入：连接中断、锁超时、方言不支持路径。
+- `api` 的变异测试：`api` 的行覆盖已接近满值，但**没有 PIT 配置**，`Conditions` 的组装语义目前只靠用例数量兜底。它的变异只能由 `core` 的用例执行（`api` 自己没有测试源码，见上「api 值层断言的落点」），所以接的时候要想清 `targetClasses` 跨模块怎么配，不能照抄 `core` 的写法。
 
 **与 §6 的关系**：L3 是第二后端的验收口——新后端必须原样通过同一套一致性用例，不得为它新增特例分支（见 §6 第 8 条）。
 
