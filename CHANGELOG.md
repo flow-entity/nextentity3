@@ -47,6 +47,7 @@
 
 ### Fixed
 
+- `Path.of(...).<条件>.or(PathRef)` 之后的 `*IfNotNull(null)` 会把已挂上的前半条条件一起丢掉：`Conditions.PathOperatorValue` 的 `eqIfNotNull` / `geIfNotNull` / `gtIfNotNull` / `leIfNotNull` / `ltIfNotNull` / `inIfNotNull` 在参数为 `null` 时直接返回恒真占位，而**不是**只丢本次条件。于是 `where(x.eq(3).or(A::getScore).eqIfNotNull(null))` 退化成「无条件」，静默返回**全表**，正确结果应是 `x = 3`——`or(PathRef)` 的用途正是可选条件拼接，参数为 `null` 只表示「这条不加」。同一个算子名在 `core.builder.PathStepOperator` 里走 `skip.get()`，语义是「只丢本次条件」，两条入口此前相反。现在 `Conditions.AbstractOperators.skip()` 把三种情形分开（整条链已恒真 → 恒真；本次是唯一条件 → 恒真；有 `parent` → 原样交还），6 处短路改走它，两个入口语义一致。`ApiOperatorAssemblyTest` 的 6 条用例逐条钉住「`null` 侧结果与 `parent` 同一实例且 Spec 等于前半条、非 `null` 侧仍包成 `Leaf(OR, [parent, next])`、已恒真的链短路后仍恒真」。
 - `nextentity-spring` 补上 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`：`@AutoConfiguration` 只是标记，Spring Boot 2.7+ 靠该文件发现配置类。此前 jar 里没有这个文件，消费方引入依赖后**拿不到任何 bean**（`docs/USAGE.md` §12 的「引入即自动配置」并不成立）。原用例用 `AutoConfigurations.of(...)` 显式注册，绕过了注册表，所以一直没暴露；新增 `AutoConfigurationImportsTest` 直接读 classpath 上那个固定路径，把「能否被发现」钉住。
 - `Path.of(...).in(...)` / `.notIn(...)` 的变长参数改用 `Arrays.asList`：原先用 `List.of(values)`，遇到 `null` 元素抛 `NullPointerException`，与 `Membership` 声明的「元素允许为 `null`」冲突，也与 `where(ref).in(...)`（走 `Arrays.asList`）行为不一致。同一算子两条入口现在一致，`OperatorMappingTest.membershipVarargsAcceptNullElement` 覆盖。
 - 修正失效的 Javadoc / `@see` 引用：`api.DistinctStep` 指向 `core.spec.EntitySelection`（`api` 不依赖 `core`，链接永远解析不到，且暴露实现细节）；`jpa.compile.JpaOperands` 指向 private 的 `JpaPredicates#comparison`。
