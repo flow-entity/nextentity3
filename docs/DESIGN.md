@@ -155,7 +155,9 @@ L4 同样只有口径没有载体：`nextentity-tests-jpa` 里目前**没有任�
 
 待整改：`nextentity-tests-jpa` 目前把 H2 场景与容器场景混在 surefire 一个通道里。failsafe 已在模块 pom 声明，但其默认 includes 是 `**/IT*`、`**/*IT`、`**/*ITCase`，与 `*IntegrationTest` 命名不匹配——容器用例一旦加入，会被 surefire 跑掉、failsafe 一条也不收。目标是拆成 surefire（H2，无容器）+ failsafe（`*IntegrationTest`，需 Docker，含显式 includes 配置）。本轮未执行。
 
-**变异测试（PIT，已接入）**：`mvn -pl nextentity-core pitest:mutationCoverage`、`mvn -pl nextentity-jpa pitest:mutationCoverage`。它只出分数、不新增用例形态，所以是**度量层**而不是五层防线之一。基线：`core` 226/226、`jpa` 的 `compile` 包 49/49，均 100%；阈值（95% / 90%）写在各模块 pom，低于阈值构建失败。`jpa` 的 `exec` / `meta` 未纳入变异范围——它们的测试要起 Hibernate，逐变异重跑代价过高，正确性由 `nextentity-tests-jpa` 的落库用例兜底。
+**变异测试（PIT，已接入）**：`mvn -pl nextentity-core pitest:mutationCoverage`、`mvn -pl nextentity-jpa pitest:mutationCoverage`。它只出分数、不新增用例形态，所以是**度量层**而不是五层防线之一。阈值（95% / 90%）写在各模块 pom，低于阈值构建失败。
+
+当前状态：`core` 的 226 个变异全部杀死；`jpa` 全模块 130 个变异杀死 127，余下 3 条是**已论证的等价变异**（`nextVersion(null)` 返回 null、`detach` 分支的条件取反与调用删除）。等价变异不算待补的债，但每新增一条都必须在对应测试的 javadoc 里留下论证，没有论证的存活一律按缺口处理。
 
 **尚未实施**（方向，不是已有能力——写进这里的东西不得当成现状引用）：
 
