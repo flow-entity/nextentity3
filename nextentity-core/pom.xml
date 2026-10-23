@@ -103,6 +103,24 @@
                     </execution>
                 </executions>
             </plugin>
+
+            <!--
+              变异测试：只跑本模块，不绑生命周期。命令：
+              `mvn -pl nextentity-core pitest:mutationCoverage`
+              基线阶段不设阈值——先拿到「哪些变异存活」再决定补用例还是删代码。
+            -->
+            <plugin>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-maven</artifactId>
+                <configuration>
+                    <targetClasses>
+                        <param>io.github.nextentity.core.*</param>
+                    </targetClasses>
+                    <targetTests>
+                        <param>io.github.nextentity.core.*</param>
+                    </targetTests>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 </project>
