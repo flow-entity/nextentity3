@@ -291,6 +291,118 @@ class ApiOperatorAssemblyTest {
                         new Between(path("score"), Literal.of(5), Literal.of(6)))));
     }
 
+    // ------------------------- PathOperatorValue 的可选条件拼接：*IfNotNull(null) 只丢本次条件
+
+    /// 语义来源：`predicate.or(PathRef)` 是**可选条件拼接**——参数为 `null` 时表示"这条条件不加"，
+    /// 因此 `*IfNotNull(null)` 只该丢掉**本次**条件，已挂上的 `parent` 必须原样保留。
+    ///
+    /// 短路时若返回恒真占位，`where(x.eq(3).or(A::getScore).eqIfNotNull(null))` 会退化成
+    /// 「无条件」（返回全表）；正确结果是「`x = 3`」。core 侧 `PathStepOperator.geIfNotNull(null)`
+    /// 走的正是"只丢本次条件、保留链上其余部分"，两个入口对同名算子必须给出同一语义。
+    ///
+    /// 三段断言：`null` 侧只丢本次条件、非 `null` 侧仍包成 `Leaf(OR, 空 refs, [parent, next])`、
+    /// 已恒真的链（`TRUE ∨ x`）短路后仍恒真。
+    @Test
+    @DisplayName("PathOperatorValue.eqIfNotNull(null)：只丢本次条件，parent 原样保留")
+    void pathOperatorEqIfNotNullSkipsOnlyItself() {
+        Predicate<Order> parent = parentCondition();
+
+        Predicate<Order> shortCircuited = parent.or(Order::getScore).eqIfNotNull(null);
+        assertThat(shortCircuited).isSameAs(parent);
+        assertThat(spec(shortCircuited)).isEqualTo(parentSpec());
+
+        assertThat(spec(parent.or(Order::getScore).eqIfNotNull(5)))
+                .isEqualTo(orWithParent(new Comparison(path("score"), ComparisonOperator.EQ, Literal.of(5))));
+
+        assertSuppressedStaysAlwaysTrue(
+                Path.of(Order::getAge).eqIfNotNull(null).or(Order::getScore).eqIfNotNull(null));
+    }
+
+    /// 语义同 `eqIfNotNull`：可选条件拼接下 `null` 只丢本次条件，`parent` 原样保留。
+    @Test
+    @DisplayName("PathOperatorValue.geIfNotNull(null)：只丢本次条件，parent 原样保留")
+    void pathOperatorGeIfNotNullSkipsOnlyItself() {
+        Predicate<Order> parent = parentCondition();
+
+        Predicate<Order> shortCircuited = parent.or(Order::getScore).geIfNotNull(null);
+        assertThat(shortCircuited).isSameAs(parent);
+        assertThat(spec(shortCircuited)).isEqualTo(parentSpec());
+
+        assertThat(spec(parent.or(Order::getScore).geIfNotNull(5)))
+                .isEqualTo(orWithParent(new Comparison(path("score"), ComparisonOperator.GE, Literal.of(5))));
+
+        assertSuppressedStaysAlwaysTrue(
+                Path.of(Order::getAge).eqIfNotNull(null).or(Order::getScore).geIfNotNull(null));
+    }
+
+    /// 语义同 `eqIfNotNull`：可选条件拼接下 `null` 只丢本次条件，`parent` 原样保留。
+    @Test
+    @DisplayName("PathOperatorValue.gtIfNotNull(null)：只丢本次条件，parent 原样保留")
+    void pathOperatorGtIfNotNullSkipsOnlyItself() {
+        Predicate<Order> parent = parentCondition();
+
+        Predicate<Order> shortCircuited = parent.or(Order::getScore).gtIfNotNull(null);
+        assertThat(shortCircuited).isSameAs(parent);
+        assertThat(spec(shortCircuited)).isEqualTo(parentSpec());
+
+        assertThat(spec(parent.or(Order::getScore).gtIfNotNull(5)))
+                .isEqualTo(orWithParent(new Comparison(path("score"), ComparisonOperator.GT, Literal.of(5))));
+
+        assertSuppressedStaysAlwaysTrue(
+                Path.of(Order::getAge).eqIfNotNull(null).or(Order::getScore).gtIfNotNull(null));
+    }
+
+    /// 语义同 `eqIfNotNull`：可选条件拼接下 `null` 只丢本次条件，`parent` 原样保留。
+    @Test
+    @DisplayName("PathOperatorValue.leIfNotNull(null)：只丢本次条件，parent 原样保留")
+    void pathOperatorLeIfNotNullSkipsOnlyItself() {
+        Predicate<Order> parent = parentCondition();
+
+        Predicate<Order> shortCircuited = parent.or(Order::getScore).leIfNotNull(null);
+        assertThat(shortCircuited).isSameAs(parent);
+        assertThat(spec(shortCircuited)).isEqualTo(parentSpec());
+
+        assertThat(spec(parent.or(Order::getScore).leIfNotNull(5)))
+                .isEqualTo(orWithParent(new Comparison(path("score"), ComparisonOperator.LE, Literal.of(5))));
+
+        assertSuppressedStaysAlwaysTrue(
+                Path.of(Order::getAge).eqIfNotNull(null).or(Order::getScore).leIfNotNull(null));
+    }
+
+    /// 语义同 `eqIfNotNull`：可选条件拼接下 `null` 只丢本次条件，`parent` 原样保留。
+    @Test
+    @DisplayName("PathOperatorValue.ltIfNotNull(null)：只丢本次条件，parent 原样保留")
+    void pathOperatorLtIfNotNullSkipsOnlyItself() {
+        Predicate<Order> parent = parentCondition();
+
+        Predicate<Order> shortCircuited = parent.or(Order::getScore).ltIfNotNull(null);
+        assertThat(shortCircuited).isSameAs(parent);
+        assertThat(spec(shortCircuited)).isEqualTo(parentSpec());
+
+        assertThat(spec(parent.or(Order::getScore).ltIfNotNull(5)))
+                .isEqualTo(orWithParent(new Comparison(path("score"), ComparisonOperator.LT, Literal.of(5))));
+
+        assertSuppressedStaysAlwaysTrue(
+                Path.of(Order::getAge).eqIfNotNull(null).or(Order::getScore).ltIfNotNull(null));
+    }
+
+    /// 语义同 `eqIfNotNull`：集合参数为 `null` 时也只丢本次条件，`parent` 原样保留。
+    @Test
+    @DisplayName("PathOperatorValue.inIfNotNull(null)：只丢本次条件，parent 原样保留")
+    void pathOperatorInIfNotNullSkipsOnlyItself() {
+        Predicate<Order> parent = parentCondition();
+
+        Predicate<Order> shortCircuited = parent.or(Order::getScore).inIfNotNull(null);
+        assertThat(shortCircuited).isSameAs(parent);
+        assertThat(spec(shortCircuited)).isEqualTo(parentSpec());
+
+        assertThat(spec(parent.or(Order::getScore).inIfNotNull(List.of(5, 6))))
+                .isEqualTo(orWithParent(new In(path("score"), List.of(5, 6), false)));
+
+        assertSuppressedStaysAlwaysTrue(
+                Path.of(Order::getAge).eqIfNotNull(null).or(Order::getScore).inIfNotNull(null));
+    }
+
     // ------------------------------------------------------- Conditions.AggregateValueImpl
 
     @Test
@@ -656,6 +768,25 @@ class ApiOperatorAssemblyTest {
     /// 解释条件值：`api` 的 `Predicate` 实现同时也是 `Op`，只有短路产生的恒真占位不是。
     private static Spec spec(Expression<Order, Boolean> predicate) {
         return OpInterpreter.toSpec((Op) predicate);
+    }
+
+    /// 可选条件链的 `parent`：`x = 3`。短路后它必须原样回来。
+    private static Predicate<Order> parentCondition() {
+        return Path.of(Order::getAge).eq(3);
+    }
+
+    private static Spec parentSpec() {
+        return new Comparison(path("age"), ComparisonOperator.EQ, Literal.of(3));
+    }
+
+    private static Spec orWithParent(Spec next) {
+        return new Logical(LogicalOperator.OR, List.of(parentSpec(), next));
+    }
+
+    /// 已恒真的链（`TRUE ∨ x`）短路后仍恒真：结果是那个共享的恒真占位，不实现 `Op`，与新建的短路结果同一实例。
+    private static void assertSuppressedStaysAlwaysTrue(Predicate<Order> shortCircuited) {
+        assertThat(shortCircuited).isNotInstanceOf(Op.class);
+        assertThat(shortCircuited).isSameAs(Path.of(Order::getAge).eqIfNotNull(null));
     }
 
     private static Projection projection(Expression<Order, ?> expression) {

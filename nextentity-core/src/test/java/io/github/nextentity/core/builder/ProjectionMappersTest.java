@@ -121,6 +121,23 @@ class ProjectionMappersTest {
     }
 
     @Test
+    @DisplayName("ProjectionMappers：五列工厂的列序与末列对位（四列与六列之间不留缝）")
+    void fiveColumnFactoryKeepsColumnOrder() {
+        ProjectionMapper<Order, Tuple5<Long, String, Integer, Double, Long>> mapper = ProjectionMappers.select(
+                Path.of(Order::getId),
+                Path.of(Order::getStatus),
+                Path.of(Order::getAge),
+                Path.of(Order::getScore),
+                Path.of(Order::getOrgId));
+
+        Tuple5<Long, String, Integer, Double, Long> row =
+                mapper.map(new TupleValue(new Object[] {1L, "PAID", 7, 9.5d, 2L}));
+
+        assertThat(mapper.expressions()).hasSize(5);
+        assertThat(row).isEqualTo(new Tuple5<>(1L, "PAID", 7, 9.5d, 2L));
+    }
+
+    @Test
     @DisplayName("andThen：只换结果类型，列集原样保留（仍 4 列）")
     void andThenKeepsExpressionsAndTransformsResult() {
         ProjectionMapper<Order, Tuple3<Long, String, Integer>> narrowed = ProjectionMappers.select(
