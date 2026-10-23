@@ -42,14 +42,14 @@ final class Conditions {
         private final boolean suppressed;
 
         AbstractOperators(List<PathRef<?, ?>> refs, Predicate<T> parent, Operation combine, boolean suppressed) {
-            this.refs = new ArrayList<>(refs);
+            this.refs = List.copyOf(refs);
             this.parent = parent;
             this.combine = combine;
             this.suppressed = suppressed;
         }
 
         public final List<PathRef<?, ?>> refs() {
-            return Collections.unmodifiableList(refs);
+            return refs;
         }
 
         final Predicate<T> comparison(Operation operation, Object value) {
@@ -65,7 +65,7 @@ final class Conditions {
         }
 
         final Predicate<T> range(Operation operation, Object from, Object to, Op subject) {
-            return merge(new Leaf<>(operation, refs, Arrays.asList(from, to), subject));
+            return merge(new Leaf<>(operation, refs, List.of(from, to), subject));
         }
 
         final Predicate<T> membership(Operation operation, List<?> values) {
@@ -104,8 +104,8 @@ final class Conditions {
 
         Leaf(Operation operation, List<PathRef<?, ?>> refs, List<Object> arguments, Op subject) {
             this.operation = operation;
-            this.refs = Collections.unmodifiableList(new ArrayList<>(refs));
-            this.arguments = Collections.unmodifiableList(new ArrayList<>(arguments));
+            this.refs = List.copyOf(refs);
+            this.arguments = List.copyOf(arguments);
             this.subject = subject;
         }
 
@@ -131,12 +131,12 @@ final class Conditions {
 
         @Override
         public Predicate<T> and(Expression<T, Boolean> other) {
-            return new Leaf<>(Operation.AND, List.of(), Arrays.asList(this, other), null);
+            return new Leaf<>(Operation.AND, List.of(), List.of(this, other), null);
         }
 
         @Override
         public Predicate<T> or(Expression<T, Boolean> other) {
-            return new Leaf<>(Operation.OR, List.of(), Arrays.asList(this, other), null);
+            return new Leaf<>(Operation.OR, List.of(), List.of(this, other), null);
         }
 
         @Override
@@ -169,7 +169,7 @@ final class Conditions {
 
         @Override
         public Predicate<T> and(Expression<T, Boolean> other) {
-            return new Leaf<>(Operation.AND, List.of(), Arrays.asList(this, other), null);
+            return new Leaf<>(Operation.AND, List.of(), List.of(this, other), null);
         }
 
         @Override
