@@ -21,6 +21,10 @@
 - `nextentity-tests-legacy`：把 2.2.3 的 `integration` 用例移植过来做语义回归，1,063 条注解 → 保留 603 条（单环境执行 593 条），H2 与真 MySQL 8.0 各全绿。装置用真实 Hibernate 而非 Spring，建表用 2.2.3 自带 DDL + 驼峰转下划线命名策略，交付上下文前复位以保证用例隔离。460 条按能力缺口删除，逐条依据（含 api 源码 `文件:行`）与 4 项裁决见模块 `porting/REPORT.md`。
 - **第一梯队能力（10 项）**，`api` 侧：列对列比较 `ColumnComparison`（`eq`/`ne`/`ge`/`gt`/`le`/`lt` 接 `Expression`）、表达式算术 `NumberArithmetic` + `NumberValue`（`add`/`sub`/`mul`/`div`/`mod`，可链式）、逻辑组合 `LogicalOps`（`not()` + n 元 `and`/`or(Collection)`）、聚合结果 `AggregateValue`（可比较/可区间、**不接聚合**）、`HavingStep`（`having(Expression)`）、`model.Tuple`（3 列及以上投影，`get(int)`/`size()`；`Tuple2` 也实现它）、`Between` 增 `between(Expression,Expression)` 与 `notBetween(U,U)`、`StringOps.like(String)`（模式自带 `%`）、`SelectStep` 增 3 列及以上投影重载、`GroupByStep` 增多列 `groupBy(PathRef...)`、`Aggregates` 增 `min()`/`avg()`（`avg` 返回 `Double`）、`NumberPath.sum()` 与全部聚合方法改为返回 `AggregateValue`、`Operation` 由 19 个常量扩到 27 个（新增 `NOT`/`MIN`/`AVG`/`ADD`/`SUB`/`MUL`/`DIV`/`MOD`）、`Op` 增 `subject()`（左侧表达式，`null` 表示主语就是 `refs()` 的路径）。
 - **第一梯队能力（10 项）**，`core` / `jpa` 侧：`core.spec` 新增值表达式层 `Operand`（`Literal` / `AttributePath` / `AggregateOperand` / `ArithmeticOperand` + `BinaryOperator`）与 `ComputedProjection`，`Comparison`/`Between` 的字段升级为 `Operand`，`AggregateFunction` 增 `MIN`/`AVG`，`QuerySpec` 增 `having`（`forCount`/`forExists` 保留它）；`core.builder` 的 `OpInterpreter` 负责 `NOT`/`AND`/`OR` 的语义（`and(空)`/`or(空)` 都保留接收者（`a ∧ 空 = a`、`a ∨ 空 = a`）、`or` 混入短路条件=恒真）与 3 列以上 `TupleValue`；`jpa.compile.JpaOperands` 是 `Operand → Criteria Expression` 的**唯一**渲染点（聚合与算术的 `switch` 各只有一份），`JpaPredicates` 支持表达式右值，`JpaQueryBuilder` 渲染 `HAVING`。
+- **显式投影映射器**，`api` 侧：新增 `ProjectionMapper<T, R>`（`expressions()` 声明列集、`map(Tuple)` 造结果）与 `SelectStep.project(ProjectionMapper)`。列集由映射器对象声明，结果直接是调用方类型 `R`，可在运行期组装列集合；**映射**零反射零注解（属性名解析仍靠方法引用的 `SerializedLambda`，与既有 `select(...)` 一致）。单列也以长度为 1 的 `Tuple` 交给 `map`（`Tuple#size()` 下限放宽到 1）。
+- **显式投影映射器**，`core` 侧：新增 `builder.ValueProjections`（api 表达式 → `core.spec.Projection` 的唯一转换点，`select(...)` / `selectDistinct(...)` / `project(...)` 都经过它；映射器列集的整批校验也在这里，违规在 `project()` 阶段抛 `IllegalArgumentException` 且消息带列下标）与 `builder.RowAssembler`（后端原始行 → 结果对象：`Tuple` 装配与映射器映射），`QueryBuilder` 不再自己装配行。
+- `model.Tuple#size()` 契约从「恒大于等于 2」放宽到「恒大于等于 1」：映射器路径单列也产出 `Tuple`，`Tuple` 类注释同步去掉「3 列及以上」的限定。
+- `select(Expression)` / 2 列 / 3 列以上重载现在也接受 `PathRef`（裸方法引用）：它们与 `select(PathRef)` / `selectDistinct(...)` / `project(...)` 共用 `builder.ValueProjections.of(...)` 这条「api 表达式 → 投影项」转换，因此在静态类型被拓宽为 `Expression` 的 `PathRef` 上也能投影，不再抛 `IllegalArgumentException`（原先只有 `select(PathRef)` 重载能接，是既有的洞）。
 
 ### Changed
 
@@ -35,6 +39,7 @@
 - `selectDistinct(...).count()` / `.slice(...)` 现在真正可用：`JpaExecutor.count` 走 `count(distinct 投影列)`，不再显式拒绝（原先抛 `UnsupportedOperationException`）。
 - `Op` 改为 `sealed`：`Op` 是「值 → AST」的线格式，语义由后端按 `operation()` 穷尽解释，不允许外部再实现出后端无法解释的运算。
 - `Path` / `NumberPath` / `StringPath` 不再继承 `PathRef`：`PathRef` 只表示用户写的方法引用，路径值由新增的 `where(Path)` / `where(StringPath)` / `orderBy(Path)` 承载。**为什么必须破**：继承会让后端的 `where(PathRef)` 把 api 值对象当 lambda 解析（`writeReplace()` 抛 `NoSuchMethodException`）。
+- `SelectStep` 增第 6 个抽象方法 `project(ProjectionMapper)`：**接口的外部实现者需要补实现**（仓库内唯一实现是 `core.builder.QueryBuilder`）；调用方不受影响，既有 `select(...)` / `selectDistinct(...)` 重载的签名与语义未变。
 
 ### Removed
 

@@ -10,6 +10,7 @@ import io.github.nextentity.api.OrderOperator;
 import io.github.nextentity.api.Path;
 import io.github.nextentity.api.PathOperator;
 import io.github.nextentity.api.PathRef;
+import io.github.nextentity.api.ProjectionMapper;
 import io.github.nextentity.api.StringOperator;
 import io.github.nextentity.api.StringPath;
 import io.github.nextentity.api.model.Slice;
@@ -23,7 +24,6 @@ import io.github.nextentity.core.spec.Constant;
 import io.github.nextentity.core.spec.EntitySelection;
 import io.github.nextentity.core.spec.Logical;
 import io.github.nextentity.core.spec.Ordering;
-import io.github.nextentity.core.spec.PathProjection;
 import io.github.nextentity.core.spec.Projection;
 import io.github.nextentity.core.spec.QuerySpec;
 import io.github.nextentity.core.spec.Selection;
@@ -32,11 +32,13 @@ import io.github.nextentity.core.spec.ValueSelection;
 import io.github.nextentity.core.spec.Window;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /// 查询构建器：把 api 的步骤接口翻译成不可变 `QuerySpec`，再把执行交给后端。
 ///
 /// 分层（DESIGN §3）：本类只做"步骤 → 节点"，不拼 SQL/Criteria；编译与执行分别由
 /// {@link Compiler} 与 {@link Executor} 负责，因此同一个构建器可以驱动任意后端。
+/// 表达式 → 投影节点在 [ValueProjections]，原始行 → 结果对象在 [RowAssembler]。
 ///
 /// 两条终止符语义在 core 落地而不是后端（2.2.3 `Collector` 的 default 方法即如此）：
 /// - `first()/single()/slice()` 用 `list` + `count` 组合；
@@ -57,6 +59,7 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     private Spec where;
     private Spec having;
     private LockMode lock;
+    private ProjectionMapper<T, ?> mapper;
 
     /// 创建查询构建器。
     ///
@@ -103,20 +106,18 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
 
     @Override
     public <R> BaseWhereStep<T, R> select(PathRef<T, R> ref) {
-        selection = new ValueSelection(List.of(new PathProjection(PathRefs.resolve(ref))), false);
-        return step();
+        return applySelection(new ValueSelection(List.of(ValueProjections.of(ref)), false), null);
     }
 
     @Override
     public <R> BaseWhereStep<T, R> select(Expression<T, R> expression) {
-        selection = new ValueSelection(List.of(projection(expression)), false);
-        return step();
+        return applySelection(new ValueSelection(List.of(ValueProjections.of(expression)), false), null);
     }
 
     @Override
     public <A, B> BaseWhereStep<T, Tuple2<A, B>> select(Expression<T, A> first, Expression<T, B> second) {
-        selection = new ValueSelection(List.of(projection(first), projection(second)), false);
-        return step();
+        return applySelection(
+                new ValueSelection(List.of(ValueProjections.of(first), ValueProjections.of(second)), false), null);
     }
 
     @Override
@@ -124,20 +125,25 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     public final <A, B, C> BaseWhereStep<T, Tuple> select(
             Expression<T, A> first, Expression<T, B> second, Expression<T, C> third, Expression<T, ?>... rest) {
         List<Projection> items = new ArrayList<>(3 + rest.length);
-        items.add(projection(first));
-        items.add(projection(second));
-        items.add(projection(third));
+        items.add(ValueProjections.of(first));
+        items.add(ValueProjections.of(second));
+        items.add(ValueProjections.of(third));
         for (Expression<T, ?> expression : rest) {
-            items.add(projection(expression));
+            items.add(ValueProjections.of(expression));
         }
-        selection = new ValueSelection(items, false);
-        return step();
+        return applySelection(new ValueSelection(items, false), null);
     }
 
     @Override
     public <R> BaseWhereStep<T, R> selectDistinct(PathRef<T, R> ref) {
-        selection = new ValueSelection(List.of(new PathProjection(PathRefs.resolve(ref))), true);
-        return step();
+        return applySelection(new ValueSelection(List.of(ValueProjections.of(ref)), true), null);
+    }
+
+    @Override
+    public <R> BaseWhereStep<T, R> project(ProjectionMapper<T, R> mapper) {
+        Objects.requireNonNull(mapper, "mapper");
+        // expressions() 只求值一次：求值两次时「校验用的列集」与「建投影用的列集」会分叉
+        return applySelection(new ValueSelection(ValueProjections.ofAll(mapper.expressions()), false), mapper);
     }
 
     // -------------------------------------------------------------- orderBy
@@ -231,6 +237,16 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
 
     // -------------------------------------------------------------- internal
 
+    /// 换投影：`selection` 与 `mapper` 必须同时换。
+    ///
+    /// 映射器路径的结果行按 `mapper` 装配，`select(...)` 路径按 `selection` 装配；两者一旦不同步，
+    /// `map()` 收到的 `Tuple` 列数就与它自己的 `expressions()` 不符。
+    private <U> BaseWhereStep<T, U> applySelection(Selection selection, ProjectionMapper<T, ?> mapper) {
+        this.selection = selection;
+        this.mapper = mapper;
+        return step();
+    }
+
     @SuppressWarnings("unchecked")
     private <U> BaseWhereStep<T, U> step() {
         return (BaseWhereStep<T, U>) this;
@@ -278,30 +294,10 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
         return current == null ? spec : Logical.and(current, spec);
     }
 
-    private Projection projection(Expression<?, ?> expression) {
-        if (expression instanceof Path<?, ?> path) {
-            return new PathProjection(PathRefs.resolve(path.refs()));
-        }
-        if (expression instanceof Op op) {
-            return OpInterpreter.toProjection(op);
-        }
-        throw new IllegalArgumentException(
-                "不支持的表达式类型: " + expression.getClass().getName() + "（只接受 Path 或 api 的聚合/算术值）");
-    }
-
     @SuppressWarnings("unchecked")
     private List<T> fetch(Window window) {
         List<Object> rows = executor.list(compiler.compile(spec(window)));
-        if (!(selection instanceof ValueSelection values) || values.items().size() == 1) {
-            return (List<T>) rows;
-        }
-        boolean pair = values.items().size() == 2;
-        List<T> assembled = new ArrayList<>(rows.size());
-        for (Object row : rows) {
-            Object[] columns = (Object[]) row;
-            assembled.add((T) (pair ? new Tuple2Value<>(columns[0], columns[1]) : new TupleValue(columns)));
-        }
-        return assembled;
+        return (List<T>) RowAssembler.assemble(rows, selection, mapper);
     }
 
     /// 组装当前状态下的查询规格。

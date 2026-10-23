@@ -272,9 +272,74 @@ Object id0 = rows3.getFirst().get(0);
 List<Long> uniq = query().selectDistinct(Order::getCustomerId).list();
 ```
 
-除单列 `select(PathRef)` 外，投影参数都必须是 `Expression`（`Path.of(...)`、聚合结果或算术结果）；裸方法引用不在契约内。`Tuple2` 也是 `Tuple`（`size()` 恒为 2），所以「2 列用 `Tuple2`、3 列起用 `Tuple`」是同一个体系。
+投影参数可以是 `Path.of(...)`、聚合/算术结果，也可以是裸方法引用（`PathRef` 本身就是 `Expression`）：`select(Order::getId)` 走 `select(PathRef)` 重载；把 `PathRef` 放进 `List<Expression<T, ?>>`（即 `expressions()` 的声明类型）后同样可用，两种形态由同一个转换点 `core.builder.ValueProjections.of(...)` 处理。`Tuple2` 也是 `Tuple`（`size()` 恒为 2），所以「2 列用 `Tuple2`、3 列起用 `Tuple`」是同一个体系；映射器路径是例外——它无论几列都给按位置取值的 `Tuple`，2 列也不保证是 `Tuple2`（见 §6.1）。
 
 `selectDistinct` 只有单列重载，但 `count()` / `slice(...)` 可用：`count()` 数的是**不同的投影值**（数据库侧 `count(distinct 列)`），不是实体行数——两者在列有 `null` 或重复时会不同。
+
+### 6.1 显式映射器：列集与结果类型由调用方决定
+
+列在编译期定不下来时（报表字段随需求变、按请求参数组装列），用 `project(ProjectionMapper)`：一个对象同时声明「查哪些列」和「怎么造结果」，列与取值不可能被传错配。下面的例子按店铺汇总已支付订单的金额：
+
+```java
+final class ShopTotalMapper implements ProjectionMapper<Order, ShopTotal> {
+
+    // 下标常量紧邻 expressions()：列序一改，这里就看得见
+    private static final int IDX_SHOP_ID = 0;
+    private static final int IDX_TOTAL = 1;
+
+    @Override
+    public List<Expression<Order, ?>> expressions() {
+        return List.of(
+                Path.of(Order::getShopId),              // 分组列
+                Path.of(Order::getAmount).sum());       // 聚合列
+    }
+
+    @Override
+    public ShopTotal map(Tuple row) {
+        return new ShopTotal((Long) row.get(IDX_SHOP_ID), (BigDecimal) row.get(IDX_TOTAL));
+    }
+}
+
+record ShopTotal(Long shopId, BigDecimal total) {}
+
+List<ShopTotal> totals = query().project(new ShopTotalMapper())
+        .where(Order::getStatus)
+        .eq("PAID")
+        .groupBy(Order::getShopId)
+        .orderBy(Order::getShopId)
+        .asc()
+        .list();
+```
+
+投影列与 `groupBy` 必须自洽：非聚合列要么出现在 `GROUP BY` 里（如上例的 `shopId`），要么在不分组时只投影聚合；否则数据库会按 `ONLY_FULL_GROUP_BY` 一类规则拒绝——`javac` 看不出这类错误。
+
+三条契约：
+
+1. **单列也是 `Tuple`**：`map(Tuple)` 收到的行永远按位置装配，列数等于 `expressions().size()`；单列时是长度为 1 的 `Tuple`（`Tuple#size()` 的下限是 1，不是 2），不会直接给裸值。
+2. **映射器必须无状态**：可以做成单例（如 Spring bean）跨查询复用，`map` 不得依赖上一次调用留下的状态。
+3. **一次查询只有一份投影**：`expressions()` 每次 `project(...)` 求值一次；在同一个查询入口上再调 `select(...)` / `selectDistinct(...)` 会整体替换掉映射器（反之亦然）——互相覆盖，不报错。
+
+⚠️ 聚合表达式没配 `groupBy` 时，SQL 把整表当一个分组：**恒返回 1 行**（空表也一样：`count` 给 `0`、其余给 `null`）。漏写 `groupBy` 不会报错，只会拿到一行总数：
+
+```java
+final class OrderTotalMapper implements ProjectionMapper<Order, BigDecimal> {
+
+    @Override
+    public List<Expression<Order, ?>> expressions() {
+        return List.of(Path.of(Order::getAmount).sum());
+    }
+
+    @Override
+    public BigDecimal map(Tuple row) {
+        return (BigDecimal) row.get(0);
+    }
+}
+
+// 整表合计：1 行，而不是「每个分组一行」
+BigDecimal total = query().project(new OrderTotalMapper()).single();
+```
+
+本库不做反射/注解自动映射（`select(OrderRow.class)` 那类，见 §14）：映射代码由调用方手写，编译期可查、IDE 可跳转。
 
 ## 7. 聚合与分组
 
@@ -417,7 +482,7 @@ nextentity:
 |---|---|---|
 | 静态元模型 | `where(Order_.status)` | `where(Order::getStatus)` |
 | 显式 fetch | `.fetch(Order::getCustomer)` | `@EntityGraph` / 原生 API / 投影 |
-| DTO/record 投影 | `select(OrderRow.class)` | 双列用 `Tuple2`，三列及以上用 `Tuple` 自己映射（§6） |
+| DTO/record 投影 | `select(OrderRow.class)` | `project(mapper)` 手写映射（§6.1）；或双列用 `Tuple2`、三列及以上用 `Tuple` 自己映射（§6） |
 | 按条件更新/删除 | `update().set(..).where(..)` / `delete().where(..)` | `@Modifying @Query` |
 | 子查询 | `toSubQuery()` | `@Query` 原生/JPQL |
 | `*IfPresent` 命名 | `eqIfPresent(..)` | `eqIfNotNull(..)`（语义相同） |
