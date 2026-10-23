@@ -25,7 +25,7 @@ jpa (Criteria 实现)   (将来) jdbc (SQL 实现)
  ↑
 spring (自动配置、事务桥接)
 
-testing / tests-jpa / arch / benchmarks 仅被测试与 CI 使用
+testing / tests-jpa / tests-legacy / arch 仅被测试与 CI 使用（bom 只做版本对齐）
 ```
 
 | 模块 | 放什么 | 不放什么 |
@@ -34,9 +34,9 @@ testing / tests-jpa / arch / benchmarks 仅被测试与 CI 使用
 | `core` | `Meta`（属性解析）、`Spec`（AST）、`Compiler<S>`/`Executor<S>`（接缝）、`PersistExecutor`、`EntityOperationsFactory`/`EntityOperations` | JPA/Criteria 类型、Spring 类型、SQL 字符串 |
 | `jpa` | `JpaMeta`、`JpaCompiler`、`JpaExecutor`、`JpaPersistExecutor`、`JpaEntityOperationsFactory` | Spring 类型（由 `spring` 模块桥接） |
 | `spring` | `NextEntityAutoConfiguration`、属性绑定、`@Bean` 装配、`AbstractRepository`（构造器注入 `EntityOperationsFactory` + `query()` + `insert(T)`） | 查询逻辑 |
+| `arch` | ArchUnit 规则：模块循环、core 包边界、`spec` 纯净与不可变、时间/随机注入、接口宽度 | 任何业务逻辑；只有测试代码 |
 
 > `AbstractRepository` 放在 `spring` 而不是 `core`：它是 Spring 侧给消费方的仓储基类，且存量调用方（point-mall `AppVersionRepository`）直接 `import io.github.nextentity.spring.AbstractRepository`；放进 `core` 会迫使消费方改文件。
-| `arch` | ArchUnit 规则：模块循环、core 包边界、`spec` 纯净与不可变、时间/随机注入、接口宽度 | 任何业务逻辑；只有测试代码 |
 
 依赖方向与零依赖要求是硬约束，见 [AGENTS.md](../AGENTS.md)「依赖方向单向」；由各模块 `maven-enforcer-plugin` 的 `bannedDependencies`（编译期）与 `nextentity-arch` 的 ArchUnit 规则双重校验。
 
@@ -102,21 +102,67 @@ S  （后端语句）
 
 ## 5. 测试策略
 
-四层，越往上越便宜，数量应呈金字塔：
+五层防线，越往下越便宜、数量越多（金字塔底在 L0）。便宜层能挡住的问题，不允许流到贵的层。下文用 L0–L4 指代。
 
-| 层 | 测什么 | 依赖 | 位置 |
-|---|---|---|---|
-| 0. 架构门禁 | 模块循环、`core` 包边界、`spec` 纯净与不可变、时间/随机注入 | 无 | `nextentity-arch` |
-| 1. Spec 单测 | builder 调用 → AST 结构（对象断言） | 无 | `core` 的 `src/test`（`api` 无测试源码：零依赖口径不引入 test-scope 依赖，值层断言放 `nextentity-testing`） |
-| 2. 编译快照 | Spec → SQL（H2 + `StatementInspector` 抓取，逐字断言） | H2 | `nextentity-tests-jpa` |
-| 3. 一致性 | 能力而非 SQL 文本：条件/分页/聚合/投影/写入/乐观锁 | 仅 `api`+`core` 接口 | `nextentity-testing` 抽象基类，由 jpa 子类继承 |
-| 4. 集成 | 真实方言、`@Convert`、并发乐观锁 | Docker | `nextentity-tests-jpa` |
+| 层 | 测什么 | 判定标准 | 依赖 | 位置 |
+|---|---|---|---|---|
+| 0. 架构门禁 | 模块循环、`core` 包边界、`spec` 纯净与不可变、时间/随机注入 | 编译期或测试期变红；同类问题不允许留到运行期 | 无 | `nextentity-arch` |
+| 1. Spec 单测 | builder 调用 → AST 结构（对象断言） | 结构等价：断言节点类型与字段值，不看 SQL | 无 | `core` 的 `src/test`（`api` 无测试源码：零依赖口径不引入 test-scope 依赖，值层断言放 `nextentity-testing`） |
+| 2. 编译快照 | Spec → SQL（H2 + `StatementInspector` 抓取） | 语句文本的确定性片段必须出现；期望值不得写进方言的引号、别名、大小写 | H2 | `nextentity-tests-jpa` |
+| 3. 一致性 | 能力而非 SQL 文本：条件/分页/聚合/投影/写入/乐观锁 | 真库执行结果 vs 独立算出的期望；用例不引用任何后端类型 | 仅 `api`+`core` 接口 | `nextentity-testing` 抽象基类，由 jpa 子类继承 |
+| 4. 集成 | 真实方言、`@Convert`、并发乐观锁 | 同一用例在各方言下结果集完全相同（**当前无载体**，见下「待整改」） | Docker | `nextentity-tests-jpa` |
+
+L2 只证明「语句下发正确」，不证明「参数绑定正确」：`SqlRecorder` 只记语句文本，绑定顺序与取值抓不到。这一半证据属于待补项，补上之前由 L3（真库执行结果）兜底。
+
+L4 同样只有口径没有载体：`nextentity-tests-jpa` 里目前**没有任何容器用例**（模块 pom 声明了 `testcontainers:mysql`，但全模块无一处引用），125 条用例全部跑 H2。真 MySQL 只出现在 `nextentity-tests-legacy`，且需手动开 `-Ddbc=mysql`。所以「跨方言结果集相同」现在是方向，不是现状。
 
 编写约定：
 
 - 新增能力 = 1 条快照 + 1 条一致性用例，缺一不算完成（见 [AGENTS.md](../AGENTS.md)）。
 - 一致性基类内不得出现 `EntityManager`、`Criteria`、SQL 字样，防止被某一后端绑架。
 - 命名与运行方式见 [AGENTS.md](../AGENTS.md)「验证规范」。
+
+**oracle 分层**（决定「期望值从哪来」，是这一节最容易被做错的地方）：
+
+| oracle 形态 | 能证明什么 | 用在哪 |
+|---|---|---|
+| 手算常量（固定夹具 + `containsExactlyInAnyOrder(APPLE_ID, CHERRY_ID)`） | 只钉**已知语义**：`between` 是闭区间、`notBetween` 与 `between` 互补且两侧都不含 NULL 行、`a = b` 与 `a <> b` 都不命中 NULL 行 | 语义细节、边界、容易被「优化」掉的坑 |
+| 差分（真库执行 vs 内存独立计算） | 组合正确性：同一份 Spec 在两条独立实现路径上算出的行集必须一致 | 条件/排序/分页/聚合的组合面积 |
+| 跨方言对拍 | 方言无关性：同一用例在 H2 与真实 MySQL 上结果集逐行相同 | L4（待容器用例，当前无载体） |
+
+为什么手算不能当主力：4 行固定夹具下手算可行，组合面积一扩大就不可维护——每个新能力只能挑一个最顺的例子手算一条，边界组合没人算，最终结果是测试只覆盖 happy path，而 oracle 本身成了又一份需要维护的「实现」。所以手算常量只用来钉已知语义，正确性证据必须来自差分或跨方言对拍。
+
+**度量体系**：
+
+| 指标 | 角色 | 目标 |
+|---|---|---|
+| 变异分数（PIT） | 主指标 | `core` ≥ 80%、`jpa` ≥ 70%（尚未接入，见下「尚未实施」） |
+| 语义等价律条数 | 辅助 | 每条律至少 1 条差分用例，条数只增不减 |
+| 方言矩阵通过率 | 辅助 | 100% 通过；skip 数单独报表，只许降不许升（矩阵与报表均待建，见上「待整改」） |
+| 缺陷逃逸率 | 辅助 | 发版后发现的语义缺陷数 / 版本，趋势必须向下 |
+| 行覆盖率 | **不作门禁**，仅诊断报表 | 无门槛 |
+
+行覆盖率不作门禁的理由：覆盖率只说明「执行到了」，不说明「断言到了」——空断言、只断言非空、只断言 `size()` 都能拿到接近 100%。把它设成门禁，只会奖励「多写方法少写断言」。
+
+**运行预算**（四档，按「多久能拿到结论」切分）：
+
+| 档 | 何时跑 | 跑哪些层 | 预算 |
+|---|---|---|---|
+| 快 | 保存 / 提交 | L0 + L1 | < 60s |
+| PR | push / PR | L0–L2 | < 10min |
+| 夜间 | 每晚 | L0–L3（MySQL 方言矩阵待容器用例加入后才成立） | 不限 |
+| 发版前 | 发版 | L0–L3 + 全量门禁（L4 待容器用例） | 不限 |
+
+待整改：`nextentity-tests-jpa` 目前把 H2 场景与容器场景混在 surefire 一个通道里。failsafe 已在模块 pom 声明，但其默认 includes 是 `**/IT*`、`**/*IT`、`**/*ITCase`，与 `*IntegrationTest` 命名不匹配——容器用例一旦加入，会被 surefire 跑掉、failsafe 一条也不收。目标是拆成 surefire（H2，无容器）+ failsafe（`*IntegrationTest`，需 Docker，含显式 includes 配置）。本轮未执行。
+
+**尚未实施**（方向，不是已有能力——写进这里的东西不得当成现状引用）：
+
+- 变异测试（PIT）：接上后作为**度量层 L5**，只出分数、不新增用例形态，故不列入上面五层防线。
+- 属性测试：Spec 生成器 + 差分 oracle，用生成替代手写组合。
+- H2 兼容模式矩阵：以 `MODE=MySQL` / `PostgreSQL` / `Oracle` 跑同一套一致性用例。
+- 故障注入：连接中断、锁超时、方言不支持路径。
+
+**与 §6 的关系**：L3 是第二后端的验收口——新后端必须原样通过同一套一致性用例，不得为它新增特例分支（见 §6 第 8 条）。
 
 ---
 

@@ -10,7 +10,7 @@
 - **新能力只落一处**：新谓词 = `spec` 加节点 + 编译器加分支；新终止符 = `exec` 加方法；不得在 builder 里拼 SQL 或拼 Criteria。新增节点必须让编译期穷尽性检查报错，以此逼出全部分支。
 - **接口要窄**：新增公开接口的方法数 ≤ 6；超过说明边界切错了。执法者：`nextentity-arch` 的 `API_INTERFACES_STAY_NARROW`。
 - **可测试性**：时间/随机必须经 `Clock` / `IdGenerator` 注入，禁止直调 `System.currentTimeMillis()` / `Instant.now()` / `new Random()`；禁止静态可变字段；禁止 catch 后返回默认值。执法者：`nextentity-arch` 的 `NO_AMBIENT_CLOCK_OR_RANDOM` / `NO_MUTABLE_STATIC_STATE`，以及 `rules/checkstyle.xml` 的 catch 规则。
-- **能力必须有测试**：每个能力至少 1 条 SQL 快照（`nextentity-testing`）+ 1 条一致性用例；只加功能不加测试不得合入。
+- **能力必须有测试**：每个能力至少 1 条 SQL 快照（`nextentity-tests-jpa`）+ 1 条一致性用例（`nextentity-testing`）；只加功能不加测试不得合入。
 - **一个 MR 一件事**：破坏性 API 变更不得夹带功能变更。
 - **临时脚本放 `tmp/scripts/`**，用完即删；不得读取 `tmp/` 下非本次会话生成的文件。
 - **移植语料是范围例外**：`nextentity-tests-legacy` 是 2.2.3 用例的移植载体，源文件刻意与上游同排版以便逐文件 diff，故该模块跳过 spotless/checkstyle/PMD。它是**回归证据**，不是风格样板，也不得把它的写法抄进其它模块；改这个模块只许改调用形态，不许弱化断言（细则见模块 `README.md` 与 `porting/REPORT.md`）。
@@ -22,7 +22,8 @@
 |---|---|
 | 仅文档/注释（`*.md`、Javadoc） | 跳过构建 |
 | `api` / `core` / `spec` / `compile` / `exec` | `mvn -q spotless:apply` → `mvn -pl nextentity-core,nextentity-arch -am test` |
-| `jpa` / `spring` | `mvn -q spotless:apply` → `mvn -pl nextentity-arch -am test` → `mvn -pl nextentity-tests-jpa verify`（需 Docker） |
+| `jpa` / `spring` | `mvn -q spotless:apply` → `mvn -pl nextentity-arch -am test` → `mvn -pl nextentity-tests-jpa -am verify`（无容器；容器用例待加，见 DESIGN §5） |
+| `nextentity-testing`（一致性基类、夹具、`ConsistencySupport`） | `mvn -q spotless:apply` → `mvn -pl nextentity-tests-jpa -am verify`（无容器；容器用例待加，见 DESIGN §5） |
 | `nextentity-tests-legacy` | `mvn -pl nextentity-tests-legacy test`（默认 H2，无容器）；动到方言相关再跑 `-Ddbc=h2,mysql` |
 | 公开签名变更 | 额外 `mvn -Papi-compat -Djapicmp.oldVersion=<上一发布版> -pl nextentity-api verify` |
 | 发版前 | `mvn clean verify`（格式 + 静态检查 + 单测 + 覆盖率门槛），更新 CHANGELOG |
@@ -30,10 +31,22 @@
 
 - **报「绿」三件套**：commit hash + `git status --short` 为空 + 落盘日志路径；跨模块存在未提交改动期间的口头/单点「绿」一律无效（本轮迁移里它抓出 3 次假绿：陈旧 `.m2` 产物、api 中间态编译错误、flaky 集成用例）。
 - **不读陈旧产物**：跨模块验证前先 `mvn install`（或一律 `-am` 反应堆构建）；`~/.m2` 里的 `-SNAPSHOT` 可能落后于当前 HEAD，用它跑出的结论只能证明"旧产物能跑"。
+- **构建要独占工作树**：并行跑多个 `mvn` 会共用同一个 `target/`，造出「jar/classes 里缺刚写好的类」这类假红，也会让下一次构建静默复用被写坏的产物（`-am` 与 `-Dmaven.repo.local` 都挡不住，冲突在 `target/` 不在本地仓库）。要并行就各开一个 `git worktree`，或串行排队；看到「明明存在的类找不到」先怀疑产物被覆盖，**不要改代码去凑绿**；日志里出现 `Nothing to compile - all classes are up to date` 时，要意识到本次复用的是前序产物。
 - **测试只跑一遍**：一律 `mvn ... > tmp/test-output/<场景>.log 2>&1`，从落盘日志（及 surefire-reports）看全结论；结论得出后删除日志，**禁止为补看日志重跑**。
-- **分层跑测试**：`api`/`core` 单测无需容器；`nextentity-arch` 只跑架构规则（无容器，改任何模块都要跑）；`nextentity-tests-jpa` 是集成测试（H2 + Testcontainers MySQL），需 Docker，只在改动 `jpa`/`spring` 或发版前跑。
+- **分层跑测试**：`api`/`core` 单测无需容器；`nextentity-arch` 只跑架构规则（无容器，改任何模块都要跑）；`nextentity-tests-jpa` 是落库测试，**当前全部跑 H2**（`testcontainers:mysql` 已声明但尚无容器用例，见 [docs/DESIGN.md](docs/DESIGN.md) §5「待整改」），只在改动 `jpa`/`spring`/`nextentity-testing` 或发版前跑。
 - **测试命名**：快测试 `*Test`，落库场景 `*IntegrationTest`；集成测试启动容器后须在 `@AfterEach` 复位被改状态。
 - **提交信息**：Conventional Commits（`feat:` / `fix:` / `refactor:` / `test:` / `docs:`），一行一件事；PR 说明受影响模块 + 本地实际跑过的命令。
+
+## 测试编写红线
+
+违反任一条的用例按**无效证据**处理，不计入「能力必须有测试」。
+
+- **oracle 要分层**：手算常量只许钉已知语义（闭区间、NULL 行归属、算子互补这类细节）；正确性证据必须来自差分（真库执行 vs 独立内存计算）或跨方言对拍。只有手算常量的新用例，按「未提供正确性证据」退回。口径见 [docs/DESIGN.md](docs/DESIGN.md) §5「oracle 分层」。
+- **mock 只许证形状**：mock `EntityManager` / `TypedQuery` / `CriteriaBuilder` 最多证明「调用形状对」；不得作为某能力的唯一正确性证据。
+- **禁用要有租约**：`@Disabled("issue=<链接或编号> expires=<yyyy-MM-dd>")`，两个字段缺一即违规；过了 `expires` 仍在禁用，按违规处理。
+- **一致性基类保持后端中立**：该守哪几条在 [docs/DESIGN.md](docs/DESIGN.md) §5「编写约定」里，此处不再重述；评审逐条对照，命中即违规。
+- **契约拒绝必须钉住**：任何抛 `UnsupportedOperationException` 的分支必须有 `assertThatThrownBy` 用例；缺用例的拒绝分支视为能力缺口被掩盖，不得合入。
+- **方言跳过必须可数**：按方言跳过的用例一律用显式标记（注解或 `@Tag`），不得只在注释或日志里交代。当前**没有** skip 报表机制，因此在报表建成之前，PR 说明里必须点名本次新增/删除了哪些跳过项、并给出与上次的数量差；说不清来由的跳过不许合入。
 
 # 命令速查
 
@@ -41,7 +54,7 @@
 ./mvnw clean verify                      # 全量门禁：Spotless + Checkstyle + PMD + SpotBugs + 单测 + 覆盖率
 ./mvnw -q spotless:apply                 # 一键格式化（提交前必跑）
 ./mvnw -pl nextentity-core,nextentity-arch -am test   # 快速回归 + 架构门禁，无需容器
-./mvnw -pl nextentity-tests-jpa verify   # 集成测试：H2 + Testcontainers MySQL（需 Docker）
+./mvnw -pl nextentity-tests-jpa verify   # 落库测试：当前全部跑 H2，无容器（容器用例待加，见 DESIGN §5）
 ./mvnw -pl nextentity-tests-legacy test  # 2.2.3 遗留语义回归：H2，无容器
 ./mvnw -pl nextentity-tests-legacy test -Ddbc=h2,mysql   # 同上，加真 MySQL（需 Docker 或外部实例，见模块 README）
 ./mvnw -Papi-compat -Djapicmp.oldVersion=3.0.0 -pl nextentity-api verify   # API 兼容检查
