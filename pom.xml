@@ -254,7 +254,8 @@
                 <!--
                   变异测试（PIT）：刻意不绑生命周期，只在显式 `mvn pitest:mutationCoverage` 时执行。
                   它是「测得够不够」的度量尺，不是每次提交都要跑的关卡——绑进 verify 会让门禁多花几分钟，
-                  而结论一周看一次就够。阈值等基线稳定后再单独加，见 docs/DESIGN.md §5「度量体系」。
+                  而结论一周看一次就够。阈值不在这里设：它随各模块的实测基线定在模块 pom 里，
+                  见 docs/DESIGN.md §5「度量体系」。
                 -->
                 <plugin>
                     <groupId>org.pitest</groupId>

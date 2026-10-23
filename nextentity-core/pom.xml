@@ -107,7 +107,7 @@
             <!--
               变异测试：只跑本模块，不绑生命周期。命令：
               `mvn -pl nextentity-core pitest:mutationCoverage`
-              基线阶段不设阈值——先拿到「哪些变异存活」再决定补用例还是删代码。
+              阈值 95 的理由见下面内联注释；它不绑生命周期，只在显式执行时才校验。
             -->
             <plugin>
                 <groupId>org.pitest</groupId>
@@ -119,7 +119,7 @@
                     <targetTests>
                         <param>io.github.nextentity.core.*</param>
                     </targetTests>
-                    <!-- 基线 226/226 = 100%；留 5 点余量给等价变异与新代码的磨合期 -->
+                    <!-- 不设 100：等价变异杀不死，且新代码磨合期会短暂掉分；阈值只用来挡住真回退 -->
                     <mutationThreshold>95</mutationThreshold>
                 </configuration>
             </plugin>
