@@ -182,7 +182,8 @@ class OpInterpreterTest {
     /// 正常路径一律从 `Path.of(...)` 走公开入口。
     private static Op leaf(Operation operation, List<PathRef<?, ?>> refs, List<Object> arguments, Op subject) {
         try {
-            Constructor<?> canonical = Arrays.stream(Class.forName("io.github.nextentity.api.Conditions$Leaf")
+            // 类名由 api 的公开包名拼出：Conditions 本身不可见，写不成 Class 字面量
+            Constructor<?> canonical = Arrays.stream(Class.forName(Path.class.getPackageName() + ".Conditions$Leaf")
                             .getDeclaredConstructors())
                     .filter(candidate -> candidate.getParameterCount() == 4)
                     .findFirst()
