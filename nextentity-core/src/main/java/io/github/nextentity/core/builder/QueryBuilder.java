@@ -133,8 +133,8 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
 
     @Override
     @SafeVarargs
-    public final <A, B, C> BaseWhereStep<T, Tuple> select(
-            Expression<T, A> first, Expression<T, B> second, Expression<T, C> third, Expression<T, ?>... rest) {
+    public final BaseWhereStep<T, Tuple> select(
+            Expression<T, ?> first, Expression<T, ?> second, Expression<T, ?> third, Expression<T, ?>... rest) {
         List<Projection> items = new ArrayList<>(3 + rest.length);
         items.add(ValueProjections.of(first));
         items.add(ValueProjections.of(second));

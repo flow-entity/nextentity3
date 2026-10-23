@@ -43,12 +43,11 @@ public interface SelectStep<T> extends DistinctStep<T> {
     /// @param second 第二列，非 `null`
     /// @param third  第三列，非 `null`
     /// @param rest   第四列起的其余列，可省略；元素非 `null`
-    /// @param <A> 第一列类型
-    /// @param <B> 第二列类型
-    /// @param <C> 第三列类型
     /// @return 后续步骤；一次查询只有一份投影，再次 `select` 会替换前一份
-    <A, B, C> BaseWhereStep<T, Tuple> select(
-            Expression<T, A> first, Expression<T, B> second, Expression<T, C> third, Expression<T, ?>... rest);
+    ///
+    /// 三列的类型不进返回类型（结果是按位置取值的 [Tuple]），所以不声明逐列类型参数。
+    BaseWhereStep<T, Tuple> select(
+            Expression<T, ?> first, Expression<T, ?> second, Expression<T, ?> third, Expression<T, ?>... rest);
 
     /// 用显式映射器投影：查哪些列、每行怎么造 `R` 都由映射器决定。
     ///

@@ -41,6 +41,7 @@
 - `Op` 改为 `sealed`：`Op` 是「值 → AST」的线格式，语义由后端按 `operation()` 穷尽解释，不允许外部再实现出后端无法解释的运算。
 - `Path` / `NumberPath` / `StringPath` 不再继承 `PathRef`：`PathRef` 只表示用户写的方法引用，路径值由新增的 `where(Path)` / `where(StringPath)` / `orderBy(Path)` 承载。**为什么必须破**：继承会让后端的 `where(PathRef)` 把 api 值对象当 lambda 解析（`writeReplace()` 抛 `NoSuchMethodException`）。
 - `SelectStep` 增抽象方法 `project(ProjectionMapper)`：**接口的外部实现者需要补实现**（仓库内唯一实现是 `core.builder.QueryBuilder`）；调用方不受影响，既有 `select(...)` 重载的签名与语义未变。
+- 删掉 4 处**死类型参数**：`SelectStep.select(3 列及以上)` 的 `<A, B, C>`（返回的是按位置取值的 `Tuple`，三列类型不进返回类型），以及 `Conditions` 两个私有辅助方法 `operands(Collection)` / `checked(Collection)` 的 `<T>`（只在唯一那个参数里出现一次，不约束任何第二个参数）。判断标准：类型参数至少出现两次、或用进返回类型才有意义。它们是已被否决的 `Tuple3<A,B,C>` 方案的残留。擦除后方法描述符不变，**二进制兼容**、调用点零改动。
 
 ### Removed
 

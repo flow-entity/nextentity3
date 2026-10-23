@@ -215,13 +215,13 @@ final class Conditions {
     }
 
     /// 只校验并复制元素，不加接收者（`TRUE ∧ x = x` 时用）。
-    private static <T> List<Object> operands(Collection<? extends Expression<T, Boolean>> others) {
+    private static List<Object> operands(Collection<? extends Expression<?, Boolean>> others) {
         return checked(others);
     }
 
-    private static <T> List<Object> checked(Collection<? extends Expression<T, Boolean>> others) {
+    private static List<Object> checked(Collection<? extends Expression<?, Boolean>> others) {
         List<Object> operands = new ArrayList<>(others.size());
-        for (Expression<T, Boolean> other : others) {
+        for (Expression<?, Boolean> other : others) {
             operands.add(Objects.requireNonNull(other, "others 元素不能为 null"));
         }
         return operands;
