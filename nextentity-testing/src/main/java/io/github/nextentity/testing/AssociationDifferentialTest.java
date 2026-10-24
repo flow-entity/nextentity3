@@ -13,13 +13,19 @@ import org.junit.jupiter.api.TestFactory;
 /// 「真库跑一遍」与「内存里按 LEFT JOIN + 三值逻辑独立算一遍」逐元素比对，两条路径不相交——
 /// 内存侧不调生产代码、不读后端结果，只读 {@link #fixtureRows()} 的原始值。
 ///
-/// 夹具四行（`AssetFixture` 复用 {@link AssociationConsistencyTest} 的常量）：
+/// 夹具七行（`AssetFixture` 复用 {@link AssociationConsistencyTest} 的常量）：
 /// ```text
 /// id=1 anvil   owner=alpha
 /// id=2 axe     owner=alpha
 /// id=3 bolt    owner=beta
 /// id=4 bandage owner=null      ← NULL 关联锚点
+/// id=5 chisel  owner=aardvark  ← alpha 的下界邻居
+/// id=6 clamp   owner=amber     ← alpha 与 beta 之间的取值
+/// id=7 chain   owner=alps      ← 共享 `al` 前缀但不被 `_lpha` 命中
 /// ```
+/// 后三行的作用是**让 17 个谓词格两两可区分**（二值域下 `gt(alpha)`≡`ne(alpha)`、
+/// `le(alpha)`≡`eq(alpha)`、`between`≡`isNotNull`，把算子渲染错也全绿）；这一条由
+/// {@link #predicateCellsAreMutuallyDistinguishable()} 逐对钉住。
 /// 内存一侧把它当作 `asset LEFT JOIN owner` 的**结果集**求值：关联为 `null` 时 join 出来的
 /// owner 列就是 `null`；`= / <> / > / < / between / in / notIn` 遇 `null` 一律 `UNKNOWN`（`WHERE`
 /// 不保留），`isNull` / `isNotNull` 判的就是 `null` 本身。所以 `null` 关联行**只**被 `isNull()` 命中，
@@ -59,14 +65,17 @@ import org.junit.jupiter.api.TestFactory;
 /// @param <T> 后端实体类型
 public abstract class AssociationDifferentialTest<T extends Asset> extends AssociationConsistencyTest<T> {
 
-    /// 四行夹具：`ownerName` 为 `null` 的那行就是 join 不出 owner 的行（LEFT JOIN 的判据来源）。
+    /// 七行夹具：`ownerName` 为 `null` 的那行就是 join 不出 owner 的行（LEFT JOIN 的判据来源）。
     ///
     /// 唯一真身，只通过 {@link #fixtureRows()} 暴露。
     private static final List<AssetFixture> FIXTURE_ROWS = List.of(
             new AssetFixture(ANVIL_ID, "anvil", ALPHA),
             new AssetFixture(AXE_ID, "axe", ALPHA),
             new AssetFixture(BOLT_ID, "bolt", BETA),
-            new AssetFixture(BANDAGE_ID, "bandage", null));
+            new AssetFixture(BANDAGE_ID, "bandage", null),
+            new AssetFixture(CHISEL_ID, "chisel", AARDVARK),
+            new AssetFixture(CLAMP_ID, "clamp", AMBER),
+            new AssetFixture(CHAIN_ID, "chain", ALPS));
 
     /// 夹具的唯一真身：内存侧直接用它求值，落库也是它。
     ///
@@ -109,6 +118,16 @@ public abstract class AssociationDifferentialTest<T extends Asset> extends Assoc
     @Test
     void nullJoinColumnMatchesNeitherEqNorNe() {
         predicates().assertLeftJoinSemantics();
+    }
+
+    /// 谓词格之间的**可区分性**自检：二值域夹具下 17 个格子只有 4 个不同结果集，
+    /// 把 `gt` 渲染成 `<>`、把 `between` 渲染成 `is not null`、把 `le` 渲染成 `=` 都能全绿。
+    ///
+    /// 这条用例只检查"夹具够不够刁"，不检查生产代码：夹具一旦退化回 alpha/beta 两值，
+    /// 这里先红，而不是让 17 条谓词格继续假装在验证算子。
+    @Test
+    void predicateCellsAreMutuallyDistinguishable() {
+        predicates().assertCellsAreDistinguishable();
     }
 
     /// 完整谓词矩阵：17 格（`eq` / `ne` / `in` / `in([])` / `notIn` / `notIn([])` / `isNull` /

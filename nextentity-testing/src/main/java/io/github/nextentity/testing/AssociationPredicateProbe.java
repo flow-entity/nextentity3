@@ -8,8 +8,10 @@ import io.github.nextentity.api.PathRef;
 import io.github.nextentity.api.StringPath;
 import io.github.nextentity.api.model.Tuple2;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -194,6 +196,40 @@ final class AssociationPredicateProbe<T extends Asset> {
                 () -> query.get().where(plain).between(alpha, beta).list(),
                 value -> value != null && value.compareTo(alpha) >= 0 && value.compareTo(beta) <= 0));
         return runs;
+    }
+
+    /// 谓词格的**可区分性**自检：把每格的期望集合算出来，断言"本该互相区分"的配对确实不同。
+    ///
+    /// 这不是在验证生产代码，而是在验证**夹具够不够刁**。夹具只有 alpha/beta 两个非空取值时：
+    /// `gt(alpha)` 与 `ne(alpha)` 都只命中 beta 那行、`le(alpha)` 与 `eq(alpha)` 都是 alpha 那两行、
+    /// `between(alpha,beta)` 等于 `isNotNull`、`like("al%")` 与 `like("_lpha")` 同集合——
+    /// 于是把 `gt` 渲染成 `<>`、把 `between` 渲染成 `is not null`、把 `_` 通配丢掉，17 个格子全绿。
+    /// 每个格子的"非空 / 非全表"自检挡不住这种退化，必须逐对比较期望集合。
+    void assertCellsAreDistinguishable() {
+        Map<String, Set<Long>> expected = new LinkedHashMap<>();
+        for (CellRun<T> run : runs()) {
+            expected.put(run.label(), AssociationJoinOracle.matchingIds(rows, run.matches()));
+        }
+        List<List<String>> pairs = List.of(
+                // `le` 退化成 `=`：需要夹具里存在 alpha 的下界取值（aardvark）
+                List.of(EQ_ALPHA, LE_ALPHA),
+                // `gt` 退化成 `<>`：需要下界取值
+                List.of(NE_ALPHA, GT_ALPHA),
+                // `ge(beta)` 退化成 `gt(alpha)`：需要 alpha 与 beta 之间的取值（amber）
+                List.of(GT_ALPHA, GE_BETA),
+                // `lt(beta)` 退化成 `le(alpha)`：需要 alpha 与 beta 之间的取值
+                List.of(LE_ALPHA, LT_BETA),
+                // `between` 退化成 `is not null`：需要 [alpha, beta] 之外的取值（aardvark）
+                List.of(BETWEEN_ALPHA_BETA, IS_NOT_NULL),
+                // `_` 通配被当成前缀匹配：需要共享前缀但长度不同的取值（alps）
+                List.of(LIKE_AL_PREFIX, LIKE_UNDERSCORE));
+        for (List<String> pair : pairs) {
+            String left = pair.get(0);
+            String right = pair.get(1);
+            assertThat(expected.get(left))
+                    .as("夹具退化：`%s` 与 `%s` 的期望集合相同，这一对算子互相区分不了", left, right)
+                    .isNotEqualTo(expected.get(right));
+        }
     }
 
     /// 一格的自检：先用内存 oracle 算出期望集合，再与真库结果逐元素比对。

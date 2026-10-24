@@ -33,7 +33,7 @@ final class AssociationAggregateProbe<T extends Asset> {
     /// 同上但先按嵌套条件过滤：`null` 关联那一组整组消失（`WHERE` 不保留 `UNKNOWN` 行）。
     private static final String GROUPED_COUNT_FILTERED = "groupBy(id) count(owner.name) where isNotNull";
 
-    /// 全表去重计数：`null` 不计入，所以是 2（alpha、beta）而不是 3。
+    /// 全表去重计数：`null` 不计入，所以等于**非空 owner 取值的个数**（夹具里是 5），不是行数 7。
     private static final String COUNT_DISTINCT = "countDistinct(owner.name)";
 
     /// 全表最大 / 最小值：`null` 不参与比较。
