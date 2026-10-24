@@ -6,6 +6,8 @@ import io.github.nextentity.api.Path;
 import io.github.nextentity.api.ProjectionMappers;
 import io.github.nextentity.testing.ConsistencySupport;
 import io.github.nextentity.testing.MultiColumnProjectionConsistencyTest;
+import java.util.List;
+import java.util.Locale;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -25,7 +27,14 @@ class ItemMultiColumnProjectionConsistencyTest extends MultiColumnProjectionCons
         support.close();
     }
 
-    /// 四列必须按实参顺序出现在投影子句里（用 `containsSubsequence` 避开门别名与引号的方言差异）。
+    /// 四列必须按实参顺序出现在投影子句里，且**只有**这四列。
+    ///
+    /// 整句快照（转小写 + 连续空白压一个空格，同 `ItemSqlSnapshotTest` 口径）：原先用
+    /// `containsSubsequence(".id", ".name", ".score", ".status")` 时，投影里混进多余列
+    /// （`select id,name,score,score2,status`）、列被重复、或多带一个 `distinct`，子序列仍然成立
+    /// ——而「投影列集与 `expressions()` 完全一致」正是这条用例要证明的东西。
+    ///
+    /// 快照只对 **H2 + 当前 Hibernate** 成立（表别名 `ie1_0` 来自 Hibernate 渲染）。
     @Test
     void fourColumnsRenderInOrder() {
         support.clearSql();
@@ -38,7 +47,14 @@ class ItemMultiColumnProjectionConsistencyTest extends MultiColumnProjectionCons
                         Path.of(support.statusRef())))
                 .list();
 
-        assertThat(support.drainSql())
-                .anySatisfy(sql -> assertThat(sql).containsSubsequence(".id", ".name", ".score", ".status"));
+        assertThat(normalized(support.drainSql()))
+                .containsExactly("select ie1_0.id,ie1_0.name,ie1_0.score,ie1_0.status from item ie1_0");
+    }
+
+    /// 与 `ItemSqlSnapshotTest` 同一套归一化：转小写 + 连续空白压一个空格，其余字符原样比对。
+    private static List<String> normalized(List<String> sqls) {
+        return sqls.stream()
+                .map(sql -> sql.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim())
+                .toList();
     }
 }
