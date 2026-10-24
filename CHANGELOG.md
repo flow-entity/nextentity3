@@ -28,9 +28,14 @@
 - `SelectStep.select` 的 3 列重载**收窄为固定三列**并返回 `Tuple3<A, B, C>`（原先是 `Expression<T, ?>...` 变长、返回无类型的 `Tuple`）：三列的类型因此进入返回类型，列序写反从运行期错值变成编译错误。四列及以上不再有 `select` 重载，改走 `ProjectionMappers`。
 - `model.Tuple#size()` 契约从「恒大于等于 2」放宽到「恒大于等于 1」：映射器路径单列也产出 `Tuple`，`Tuple` 类注释同步去掉「3 列及以上」的限定。
 - `select(Expression)` / 2 列 / 3 列以上重载现在也接受 `PathRef`（裸方法引用）：它们与 `select(PathRef)` / `project(...)` 共用 `builder.ValueProjections.of(...)` 这条「api 表达式 → 投影项」转换，因此在静态类型被拓宽为 `Expression` 的 `PathRef` 上也能投影，不再抛 `IllegalArgumentException`（原先只有 `select(PathRef)` 重载能接，是既有的洞）。
+- `nextentity-api` 有了自己的测试源码（`src/test`，140 条执行条目）：断言 `Op` 的四件套线格式（`operation()` / `arguments()` / `subject()` / `refs()` 逐级 `apply`），不依赖任何后端。此前该模块零测试，覆盖率全靠 `core` 的用例顺带贡献，而 PIT 有条硬门槛「模块没有测试源码就跳过」，所以 api 的变异门禁一直开不了。
+- 新增两个**差分**一致性基类：`ColumnComparisonDifferentialTest`（列对列 6 个算子）与 `ArithmeticDifferentialTest`（`add`/`sub`/`mul`/`div`/`mod` 5 个算子）。oracle 是内存独立实现读同一份夹具原始值、按算子语义自己算期望行集，与真库执行结果逐行比对——补上了原先只有手算常量的那批用例缺的正确性证据。夹具抽出 `FixtureRow` / `Fixtures`（`ConsistencyTestBase.seed()` 改为从 `fixtureRows()` 映射，保证后端与内存 oracle 读同一份数据）。
+- **L4（跨方言对拍）落地**：`nextentity-tests-jpa` 用 `testcontainers:mysql` 起一个 `mysql:8.0.18`（一个 JVM 一个容器，所有容器用例共享），把**同一批一致性基类**（14 个）加 4 类写路径场景接到真 MySQL 上，共 110 条。H2 用例走 surefire、`*IntegrationTest` 走 failsafe，两条通道按类名显式分流（failsafe 默认 includes 是 `**/IT*`/`**/*IT`/`**/*ITCase`，与项目约定的 `*IntegrationTest` 一个都不匹配，不显式配就会「surefire 全跑掉、failsafe 一条不收」）。实测 H2 与 MySQL 结果**零不一致**。
 
 ### Changed
 
+- **`nextentity-api` 的零依赖门禁从「禁一切依赖」收窄为「只禁发布作用域」**：`bannedDependencies` 的 exclude 由 `*:*` 改为 `*:*:*:*:compile` / `:runtime` / `:provided` / `:system`，`test` 作用域放行。红线实质未变——发布产物仍零三方依赖（实测加 `org.slf4j:slf4j-api` 依然构建失败），松开的只是测试类路径，这样 api 才能有自己的单测与变异门禁。
+- **`nextentity-jpa` 的变异测试从 `compile` 包扩到全模块**，阈值 90 → 95：全模块实测 125 个变异、约 28s，原先「exec/meta 每个变异都要起 Hibernate、太慢」的理由不成立。
 - `count()` 用 `count(TRUE 字面量)`、`exists()` 用 `select TRUE` + `limit 1`，与 2.2.3 的 `SELECT_COUNT_ANY` / `SELECT_ANY` 逐行对应（对照表见 `tmp/contract/JPA-SEMANTICS.md` §3）。
 - 嵌套关联路径（`EntityPath.of(A::getB).get(C::getD)`）固定走 **显式 LEFT JOIN**，与 2.2.3 相同；同前缀路径只 join 一次。
 - `single()` 命中多行抛 `IllegalStateException("found more than one result, expected one")`（2.2.3 的 api Javadoc 写的就是 `IllegalStateException`，虽然其实现抛 `NextEntityException`；point-mall 无 `catch` 依赖）。
@@ -47,6 +52,7 @@
 
 ### Fixed
 
+- `rules/checkstyle.xml` 的 FQN 规则把**合法的静态导入**判成违规：豁免正则只写了 `(?:import|package)\s+<前缀>`，漏了 `import static`，于是 `import static io.github.nextentity.api.WireFormatFixture.SALARY` 被报「禁止使用全类名」。四条规则（`io.github.nextentity` / `java` / `jakarta` / `org.springframework`）统一改成 `(?:import|package)\s+(?:static\s+)?<前缀>`。规则本意是拦「在代码里内联写全类名」，静态导入不属于这一类。
 - `Path.of(...).<条件>.or(PathRef)` 之后的 `*IfNotNull(null)` 会把已挂上的前半条条件一起丢掉：`Conditions.PathOperatorValue` 的 `eqIfNotNull` / `geIfNotNull` / `gtIfNotNull` / `leIfNotNull` / `ltIfNotNull` / `inIfNotNull` 在参数为 `null` 时直接返回恒真占位，而**不是**只丢本次条件。于是 `where(x.eq(3).or(A::getScore).eqIfNotNull(null))` 退化成「无条件」，静默返回**全表**，正确结果应是 `x = 3`——`or(PathRef)` 的用途正是可选条件拼接，参数为 `null` 只表示「这条不加」。同一个算子名在 `core.builder.PathStepOperator` 里走 `skip.get()`，语义是「只丢本次条件」，两条入口此前相反。现在 `Conditions.AbstractOperators.skip()` 把三种情形分开（整条链已恒真 → 恒真；本次是唯一条件 → 恒真；有 `parent` → 原样交还），6 处短路改走它，两个入口语义一致。`ApiOperatorAssemblyTest` 的 6 条用例逐条钉住「`null` 侧结果与 `parent` 同一实例且 Spec 等于前半条、非 `null` 侧仍包成 `Leaf(OR, [parent, next])`、已恒真的链短路后仍恒真」。
 - `nextentity-spring` 补上 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`：`@AutoConfiguration` 只是标记，Spring Boot 2.7+ 靠该文件发现配置类。此前 jar 里没有这个文件，消费方引入依赖后**拿不到任何 bean**（`docs/USAGE.md` §12 的「引入即自动配置」并不成立）。原用例用 `AutoConfigurations.of(...)` 显式注册，绕过了注册表，所以一直没暴露；新增 `AutoConfigurationImportsTest` 直接读 classpath 上那个固定路径，把「能否被发现」钉住。
 - `Path.of(...).in(...)` / `.notIn(...)` 的变长参数改用 `Arrays.asList`：原先用 `List.of(values)`，遇到 `null` 元素抛 `NullPointerException`，与 `Membership` 声明的「元素允许为 `null`」冲突，也与 `where(ref).in(...)`（走 `Arrays.asList`）行为不一致。同一算子两条入口现在一致，`OperatorMappingTest.membershipVarargsAcceptNullElement` 覆盖。

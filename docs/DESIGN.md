@@ -107,7 +107,7 @@ S  （后端语句）
 | 层 | 测什么 | 判定标准 | 依赖 | 位置 |
 |---|---|---|---|---|
 | 0. 架构门禁 | 模块循环、`core` 包边界、`spec` 纯净与不可变、时间/随机注入 | 编译期或测试期变红；同类问题不允许留到运行期 | 无 | `nextentity-arch` |
-| 1. Spec 单测 | builder 调用 → AST 结构（对象断言） | 结构等价：断言节点类型与字段值，不看 SQL | 无 | `core` 的 `src/test`（含 `api` 的组装层断言，落点理由见下「api 值层断言的落点」） |
+| 1. Spec 单测 | builder 调用 → AST 结构（对象断言） | 结构等价：断言节点类型与字段值，不看 SQL | 无 | `api` 与 `core` 的 `src/test`（api 钉线格式、core 钉 Spec 翻译，分工见下「api 值层断言的落点」） |
 | 2. 编译快照 | Spec → SQL（H2 + `StatementInspector` 抓取） | 语句文本的确定性片段必须出现；期望值不得写进方言的引号、别名、大小写 | H2 | `nextentity-tests-jpa` |
 | 3. 一致性 | 能力而非 SQL 文本：条件/分页/聚合/投影/写入/乐观锁 | 真库执行结果 vs 独立算出的期望；用例不引用任何后端类型 | 仅 `api`+`core` 接口 | `nextentity-testing` 抽象基类，由 jpa 子类继承 |
 | 4. 集成 | 真实方言、`@Convert`、并发乐观锁 | 同一用例在各方言下结果集完全相同（载体：`nextentity-tests-jpa` 的 `*IntegrationTest`，跑真 MySQL 容器） | Docker | `nextentity-tests-jpa` |
@@ -116,7 +116,9 @@ L2 只证明「语句下发正确」，不证明「参数绑定正确」：`SqlR
 
 L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（`*IntegrationTest`）走 failsafe，两条通道按类名显式分开（见下「通道拆分」）。容器侧用 `org.testcontainers:mysql` 起一个 `mysql:8.0.18`，一个 JVM 一个容器、所有容器用例共享，接的是**同一批一致性基类**——所以「跨方言结果集相同」是逐行比出来的，不是另写一套 MySQL 专用断言。真 MySQL 的另一处出现是 `nextentity-tests-legacy`，需手动开 `-Ddbc=h2,mysql`，与 L4 无关。
 
-**api 值层断言的落点**：`nextentity-api` 不能有自己的 `src/test`。该模块的 enforcer 规则 `enforce-api-is-dependency-free` 用 `<exclude>*:*</exclude>` 禁掉**一切**依赖，test 作用域也在内（加 `junit-jupiter` 会让 `validate` 直接失败），这不是疏漏而是「api 零三方依赖」这条红线的直接后果。而 api 的实现类全是包私有的值对象，可观察入口只有 `Path#refs()` / `Op#operation()` 这组线格式。因此 api 的组装层断言住在**第一个消费者** `nextentity-core` 的测试树：用 api 的公开入口构造，用同包可见的 `OpInterpreter` 读成 `core.spec` 节点。oracle 是**节点结构整体相等**（record 相等），因为 api 的职责就是「只拼值不求值」，结构即契约。代价是 api 的覆盖率由 `core` 的执行数据贡献，单模块 `jacoco:report` 看不到——统计口径见下「覆盖率口径」。
+**api 值层断言的落点**：`nextentity-api` 有自己的 `src/test`，但**只放它自己的线格式用例**。该模块的 enforcer 规则 `enforce-api-is-dependency-free` 只禁发布作用域（`compile` / `runtime` / `provided` / `system`），`test` 作用域放行，于是 `junit-jupiter` / `assertj-core` 能进测试类路径而不进 jar。api 的用例断言 `Op` 的四件套线格式（`operation()` 等于哪个常量、`arguments()` 的精确内容、`subject()` 为 `null` 还是哪个表达式、`refs()` 逐级 `apply(实体)` 取到的值），不依赖任何后端；「值 → `core.spec` 节点」的翻译证据仍在 `core` 的 `ApiOperatorAssemblyTest`，用同包可见的 `OpInterpreter` 把 api 值读成 Spec 节点、断言结构整体相等。两层各管一段：api 管「拼出来的线格式对不对」，core 管「翻译成 Spec 对不对」。
+
+这条门禁以前是「禁一切依赖（含 `test` 作用域）」，后果是 api 长期没有测试源码——而 PIT 有条硬门槛：模块没有 `src/test` 就打印 `Project is either no tests or no production code.` 并直接跳过，连 `failWhenNoMutations=true` 都不触发。收窄作用域是为了让 api 能自己跑测试与变异；红线的实质（**发布产物零三方依赖**）没有松动，`compile` 作用域仍被拦（实测加 `org.slf4j:slf4j-api` 依然 `BUILD FAILURE`）。
 
 编写约定：
 
@@ -138,7 +140,7 @@ L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（
 
 | 指标 | 角色 | 目标 |
 |---|---|---|
-| 变异分数（PIT） | 主指标 | `core` ≥ 95%、`jpa` ≥ 90%；当前实测均 **100%**（见下「变异测试」，阈值写在各模块 pom） |
+| 变异分数（PIT） | 主指标 | `api` / `core` / `jpa` 均 ≥ 95%；当前实测 99% / 100% / 98%（见下「变异测试」，阈值写在各模块 pom） |
 | 语义等价律条数 | 辅助 | 每条律至少 1 条差分用例，条数只增不减 |
 | 方言矩阵通过率 | 辅助 | 100% 通过；skip 数单独报表，只许降不许升（矩阵目前是 H2 + MySQL 8.0.18 两列；skip 报表待建，见上「通道拆分」） |
 | 缺陷逃逸率 | 辅助 | 发版后发现的语义缺陷数 / 版本，趋势必须向下 |
@@ -149,7 +151,7 @@ L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（
 **覆盖率口径**（数字必须能复算，否则不许引用）：
 
 - 官方数字 = **除 `nextentity-tests-legacy` 之外**全部模块的 `jacoco.exec` 合并后按模块出报表。legacy 只作 2.2.3 语义回归证据，**不进分子也不进分母**——它覆盖的是旧语义，并进来会让新能力的缺口被旧用例填平。
-- 单模块 `jacoco:report` 只反映本模块用例的贡献，不能当官方数字（`api` 尤其如此，见上「api 值层断言的落点」）。
+- 单模块 `jacoco:report` 只反映本模块用例的贡献，不能当官方数字：`nextentity-testing` 没有自己的测试源码（它是被 `tests-jpa` 继承执行的基类库），单跑它只会得到 0；`api` 的单模块数字也漏掉 `core` 用例对它的执行。
 - 复算（仓库根目录，先跑 `mvn verify` 产出各模块 `target/jacoco.exec`）：
 
 ```bash
@@ -162,7 +164,7 @@ java -jar <同上> report tmp/cov/merged.exec \
     --sourcefiles nextentity-<模块>/src/main/java --xml tmp/cov/<模块>.xml
 ```
 
-**本轮覆盖率快照**（第 3 轮整改结束时，聚合口径）：`api` 行 285/286（99.7%）、分支 80/81（98.8%）；`core` 447/450（99.3%）、分支 196/196；`jpa` 360/364（98.9%）、分支 163/166（98.2%）；`spring` 10/10；`testing` 538/538。合计行 1640/1648（99.5%）、分支 443/447（99.1%）。剩下的 8 行 / 4 分支就是下表全部内容。
+**覆盖率快照**（聚合口径，第 4 轮结束时）：`api` 行 286/286（100%）、分支 80/81（98.8%）；`core` 447/450（99.3%）、分支 196/196（100%）；`jpa` 360/364（98.9%）、分支 163/166（98.2%）；`spring` 10/10；`testing` 652/652（100%）、分支 48/48。合计行 1755/1762（99.6%）、分支 487/491（99.2%）。剩下的 8 行 / 4 分支就是下表全部内容。
 
 **已判定不可达与度量限制**（这些未覆盖行**已论证**，不再按缺口追；新增未覆盖行要么补用例，要么先在这里写下论证）：
 
@@ -193,16 +195,29 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 两个方向都写死：surefire `<excludes>` 排掉 `*IntegrationTest`，failsafe `<includes>` 收这些类。failsafe 的默认 includes 是 `**/IT*`、`**/*IT`、`**/*ITCase`，与项目约定的 `*IntegrationTest` 一个都不匹配——不显式配置时容器用例会被 surefire 跑掉、failsafe 一条也收不到。容器用例统一 `@Tag("container")` + `@Testcontainers(disabledWithoutDocker = true)`：没有可用 Docker 的机器上它们计为 skip 而不是失败，构建仍然成功。改完后的实测条数：surefire 130 条（全 H2，与拆分前一致）、failsafe 110 条（真 MySQL，含 `@Version` 乐观锁、`@Convert`、批量写、悲观锁四类写路径场景）、无可用 Docker 时 failsafe 110 条全部 skip。
 
-**变异测试（PIT，已接入）**：`mvn -pl nextentity-core pitest:mutationCoverage`、`mvn -pl nextentity-jpa pitest:mutationCoverage`。它只出分数、不新增用例形态，所以是**度量层**而不是五层防线之一。阈值（95% / 90%）写在各模块 pom，低于阈值构建失败。
+**变异测试（PIT，已接入三个模块）**：`mvn -pl nextentity-api pitest:mutationCoverage`、`-pl nextentity-core`、`-pl nextentity-jpa`。它只出分数、不新增用例形态，所以是**度量层**而不是五层防线之一。三处阈值都是 **95%**，写在各模块 pom，低于阈值构建失败；都不绑生命周期，只在显式执行时校验。
 
-当前状态：`core` 的 221 个变异全部杀死。`jpa` 的 pom 里 `targetClasses` 只覆盖 `jpa.compile.*`，该范围 49 个变异全部杀死；**全模块口径不是当前门禁**——把 `meta`/`exec` 一起跑会多出到 130 个变异，其中杀伤 127，余下 3 条是已论证的等价变异（`nextVersion(null)` 返回 null、`detach` 分支的条件取反与调用删除）。要把全模块接进门禁，先得决定这 3 条怎么在配置层面表达（排除还是留作已知存活），否则阈值会被等价变异拉到 98% 以下。等价变异不算待补的债，但每新增一条都必须在对应测试的 javadoc 里留下论证，没有论证的存活一律按缺口处理。
+当前实测：
+
+| 模块 | 变异范围 | 生成 | 杀死 | 分数 | 已知存活 |
+|---|---|---|---|---|---|
+| `api` | `io.github.nextentity.api.*` | 186 | 185 | 99% | 1 条等价变异 |
+| `core` | `io.github.nextentity.core.*` | 221 | 221 | 100% | — |
+| `jpa` | `io.github.nextentity.jpa.*`（全模块，约 28s） | 125 | 123 | 98% | 2 条等价变异 |
+
+等价变异不算待补的债，但每新增一条都必须在对应测试的 javadoc 里留下论证，没有论证的存活一律按缺口处理：
+
+- `api/Conditions:206` 的 `new ArrayList<>(others.size() + 1)` 被 `MATH` 变异成 `- 1`：只影响局部 `ArrayList` 的初始容量；所有调用点都先做 `others.isEmpty()` 守卫（到达时 `size() ≥ 1`），返回的 `List` 内容、顺序、类型与对外可观察行为完全一致。要杀它只能改生产代码（把守卫挪进方法或去掉容量提示）。
+- `jpa/exec/JpaPersistExecutor:89`、`:90`：`detach` 分支的条件取反与调用删除。走到该行时 `contains()` 已判 false，按 JPA 规范 `detach` 是 no-op，属死分支。
+
+`jpa` 的门禁原先只覆盖 `jpa.compile.*`（49 个变异），理由是「exec/meta 每个变异都要起 Hibernate，太慢」；实测全模块只需 28s，该理由不成立，已扩到全模块并把阈值从 90 提到 95。
 
 **尚未实施**（方向，不是已有能力——写进这里的东西不得当成现状引用）：
 
 - 属性测试：Spec 生成器 + 差分 oracle，用生成替代手写组合。
 - H2 兼容模式矩阵：以 `MODE=MySQL` / `PostgreSQL` / `Oracle` 跑同一套一致性用例。
 - 故障注入：连接中断、锁超时、方言不支持路径。
-- `api` 的变异测试：`api` 的行覆盖已接近满值，但**没有 PIT 配置**，`Conditions` 的组装语义目前只靠用例数量兜底。它的变异只能由 `core` 的用例执行（`api` 自己没有测试源码，见上「api 值层断言的落点」），所以接的时候要想清 `targetClasses` 跨模块怎么配，不能照抄 `core` 的写法。
+- 变异测试的历史文件（`historyInputFile` / `historyOutputFile`）：现在每次都全量重算，接上增量后夜间档可以更快。
 
 **与 §6 的关系**：L3 是第二后端的验收口——新后端必须原样通过同一套一致性用例，不得为它新增特例分支（见 §6 第 8 条）。
 
