@@ -19,6 +19,11 @@ import org.junit.jupiter.api.Test;
 /// @param <T> 后端实体类型
 public abstract class ProjectionMapperConsistencyTest<T extends Item> extends ConsistencyTestBase<T> {
 
+    /// 护栏消息里点出「为什么拒绝」的那一段：分组/聚合规格数不出「行数」。
+    ///
+    /// 只断异常类型时，任何别的 `UnsupportedOperationException` 都能冒名顶替。
+    private static final String AGGREGATE_GUARD = "分组/聚合规格";
+
     /// 端到端：`project` 与 `where` / `groupBy` / `orderBy` / `list()` 组合，列序即 `expressions()` 的顺序。
     ///
     /// 计数取主键而不是分组列：SQL 的 `count(列)` 不数 `NULL`，而消费方要的是组内行数。
@@ -88,11 +93,16 @@ public abstract class ProjectionMapperConsistencyTest<T extends Item> extends Co
     ///
     /// 护栏在后端执行器（`jpa/exec/JpaExecutor#count` 见 `spec.aggregate()` 即抛），不在 core——
     /// core 只保证映射器产出的规格带上聚合标志，因此这条是护栏对映射器路径生效的唯一证据。
+    ///
+    /// 消息也钉住「分组/聚合规格」这个由头：只断异常类型时，任何别的 `UnsupportedOperationException`
+    /// （后端不支持某条语句、查询在别处坏掉）都能冒名顶替，用例看着绿但护栏其实没了。
     @Test
     void countRejectsAggregateMapperQuery() {
         var aggregateQuery = query().project(new ScoreSumAndCountMapper());
 
-        assertThatThrownBy(aggregateQuery::count).isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(aggregateQuery::count)
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining(AGGREGATE_GUARD);
     }
 
     /// `slice(...)` 同样被拒绝：它先取 `count()` 算总数，因此撞的是同一道护栏。
@@ -100,7 +110,9 @@ public abstract class ProjectionMapperConsistencyTest<T extends Item> extends Co
     void sliceRejectsAggregateMapperQuery() {
         var aggregateQuery = query().project(new ScoreSumAndCountMapper());
 
-        assertThatThrownBy(() -> aggregateQuery.slice(0, 1)).isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> aggregateQuery.slice(0, 1))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining(AGGREGATE_GUARD);
     }
 
     /// 聚合映射器 + `having`：全表聚合的那一行被 `having` 过滤掉时，结果为空。
