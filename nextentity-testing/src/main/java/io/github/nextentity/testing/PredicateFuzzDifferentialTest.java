@@ -2,7 +2,9 @@ package io.github.nextentity.testing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.LongStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DynamicTest;
@@ -47,12 +49,20 @@ public abstract class PredicateFuzzDifferentialTest<T extends Item> extends Cons
     /// 因此从 fuzz 里漏了过去——靠抽签不算覆盖。现在形状 3 用固定配额保证每轮都抽到（见
     /// `Generator#stringSeed`），这条下限守的是「配额还在」。
     ///
-    /// 实测 12 个 `Contains`（形状 3 的 8 个专用 seed + 4 个随机形状）、8 个 `Like`（7 个专用 + 1 个）。
+    /// 计数盘面是 60 棵随机树 + 15 棵配额树（见 `allTrees`）：配额树是确定性的，把它们排除在外
+    /// 会让这条守卫随随机形状漂移，反而更容易假绿。实测 13 个 `Contains`（形状 3 的 8 个专用
+    /// seed + 配额表的 2 个 + 随机形状的 3 个）、13 个 `Like`（7 个专用 + 配额表 3 个 + 随机 3 个）。
     /// 下限钉在**实测值**上：生成器、取值域或形状分布任何一处变动都会让它红，逼着改动者重新确认。
-    private static final int CONTAINS_NODE_FLOOR = 12;
+    ///
+    /// 随机那部分里 `Contains` 的密度从 1/4 降到 1/5，是因为文本列的算子池新增了 `In`
+    /// （从 4 种变 5 种）——那是「每列每种算子都要能生成」的代价，用配额树补回绝对数量，门槛不降。
+    private static final int CONTAINS_NODE_FLOOR = 13;
 
-    /// 同上，`Like` 叶子的出现次数下限：实测 8 个。
-    private static final int LIKE_NODE_FLOOR = 8;
+    /// 同上，`Like` 叶子的出现次数下限：实测 13 个（盘面同上）。
+    private static final int LIKE_NODE_FLOOR = 13;
+
+    /// 配额 seed 的起始编号。配额 seed 与随机 seed 分开编号，失败信息里一眼能看出是哪一类。
+    private static final long QUOTA_SEED_BASE = 100;
 
     /// 能被「把 `contains` 退化成前缀匹配」区分出来的 seed 数下限。
     ///
@@ -75,6 +85,39 @@ public abstract class PredicateFuzzDifferentialTest<T extends Item> extends Cons
             Tree.And tree = Generator.forSeed(seed);
             return DynamicTest.dynamicTest("seed=" + seed + ": " + tree.render(), () -> assertTree(seed, tree));
         });
+    }
+
+    /// 覆盖配额用例：15 个 seed 逐个点到一个「算子 × 列」组合（见 [PredicateFuzzQuota]）。
+    ///
+    /// 与随机 seed 走**同一条差分路径**（同一棵概念树 → 两个渲染器），区别只在树的来源是固定的表。
+    @TestFactory
+    Stream<DynamicTest> everyQuotaTreeMatchesMemoryOracle() {
+        return LongStream.range(QUOTA_SEED_BASE, QUOTA_SEED_BASE + PredicateFuzzQuota.SIZE)
+                .mapToObj(seed -> {
+                    Tree.And tree = PredicateFuzzQuota.forSeed(seed);
+                    return DynamicTest.dynamicTest(
+                            "quota seed=" + seed + ": " + tree.render(), () -> assertTree(seed, tree));
+                });
+    }
+
+    /// 生成器覆盖守卫：每个「算子 × 列」组合都必须至少生成过一次。
+    ///
+    /// 这是把覆盖率报告事后才能发现的问题挪到事前：上一版生成器里 `In` 在文本列、`IsNull` 在
+    /// 枚举列上从没生成，后端那两个渲染分支因此从没被执行过。现在缺一个组合就红，且**不靠
+    /// 随机**——随机 seed 点不到的由 [PredicateFuzzQuota] 的固定表兜底。
+    @Test
+    void everyApplicableColumnAndKindIsGenerated() {
+        Set<String> generated = PredicateFuzzCoverage.pairs(allTrees());
+        List<String> missing = new ArrayList<>();
+        for (Column column : Column.all()) {
+            for (Column.Kind kind : Column.Kind.values()) {
+                String key = PredicateFuzzCoverage.key(kind, column);
+                if (kind.appliesTo(column) && !generated.contains(key)) {
+                    missing.add(key);
+                }
+            }
+        }
+        assertThat(missing).as("每种算子都要在它适用的每一列上生成过；未生成=%s", missing).isEmpty();
     }
 
     /// fuzz 的区分力守卫：期望值永远空集或永远全表的生成器等于没测。
@@ -103,8 +146,8 @@ public abstract class PredicateFuzzDifferentialTest<T extends Item> extends Cons
     void stringOperatorNodesAreDrawnOftenEnough() {
         long contains = 0;
         long like = 0;
-        for (long seed = 0; seed < SEED_COUNT; seed++) {
-            for (Tree part : Generator.forSeed(seed).parts()) {
+        for (Tree.And tree : allTrees()) {
+            for (Tree part : tree.parts()) {
                 if (part instanceof Tree.Contains) {
                     contains++;
                 } else if (part instanceof Tree.Like) {
@@ -113,10 +156,14 @@ public abstract class PredicateFuzzDifferentialTest<T extends Item> extends Cons
             }
         }
         assertThat(contains)
-                .as("Contains 叶子出现次数（下限 %s；seed 总数 %s）", CONTAINS_NODE_FLOOR, SEED_COUNT)
+                .as(
+                        "Contains 叶子出现次数（下限 %s；树总数 %s）；实测 %s",
+                        CONTAINS_NODE_FLOOR, allTrees().size(), contains)
                 .isGreaterThanOrEqualTo(CONTAINS_NODE_FLOOR);
         assertThat(like)
-                .as("Like 叶子出现次数（下限 %s；seed 总数 %s）", LIKE_NODE_FLOOR, SEED_COUNT)
+                .as(
+                        "Like 叶子出现次数（下限 %s；树总数 %s）；实测 %s",
+                        LIKE_NODE_FLOOR, allTrees().size(), like)
                 .isGreaterThanOrEqualTo(LIKE_NODE_FLOOR);
     }
 
@@ -147,21 +194,24 @@ public abstract class PredicateFuzzDifferentialTest<T extends Item> extends Cons
     /// @param tree 原始概念树
     /// @return 退化后的概念树
     private static Tree.And prefixBlind(Tree.And tree) {
+        // 单个节点退化：`Contains` → 前缀 `Like`，其余原样（`Or` / `Not` 里不可能有字符串叶子）。
         return new Tree.And(tree.parts().stream()
-                .map(PredicateFuzzDifferentialTest::asPrefix)
+                .map(part -> part instanceof Tree.Contains contains
+                        ? (Tree) new Tree.Like(contains.column(), contains.text() + "%")
+                        : part)
                 .toList());
     }
 
-    /// 单个节点退化：`Contains` → 前缀 `Like`，其余原样（`Or` / `Not` 里不可能有字符串叶子）。
+    /// 守卫用的统一盘面：60 棵随机树 + [PredicateFuzzQuota#SIZE] 棵配额树。
     ///
-    /// @param node 概念树节点
-    /// @return 退化后的节点
-    private static Tree asPrefix(Tree node) {
-        return switch (node) {
-            case Tree.Contains contains -> new Tree.Like(contains.column(), contains.text() + "%");
-            case Tree.Scalar scalar -> scalar;
-            case Tree.Like like -> like;
-        };
+    /// 覆盖守卫与节点计数守卫都看这一个盘面：配额树是**确定性**的（谁点哪个组合写在表里），
+    /// 把它们排除在外会让「字符串叶子够不够」随随机形状漂移，反而更容易假绿。
+    private static List<Tree.And> allTrees() {
+        List<Tree.And> trees = new ArrayList<>();
+        LongStream.range(0, SEED_COUNT).forEach(seed -> trees.add(Generator.forSeed(seed)));
+        LongStream.range(QUOTA_SEED_BASE, QUOTA_SEED_BASE + PredicateFuzzQuota.SIZE)
+                .forEach(seed -> trees.add(PredicateFuzzQuota.forSeed(seed)));
+        return trees;
     }
 
     /// 逐元素比对，不是集合比对：排序错了也要红。
