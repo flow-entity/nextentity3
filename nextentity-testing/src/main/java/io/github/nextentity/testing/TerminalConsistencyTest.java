@@ -8,8 +8,8 @@ import org.junit.jupiter.api.Test;
 
 /// 终止符与排序的一致性：`list` / `first` / `single` / `count` / `exists`。
 ///
-/// 窗口参数的契约（`list(0)` 不限行、`list(负数)` 拒绝）见 {@link PaginationConsistencyTest}，
-/// 零行聚合见 {@link EmptyResultConsistencyTest}。
+/// 本类只放**有命中**的语义：零行上的同一批终止符见 {@link EmptyTerminalConsistencyTest}，
+/// 窗口参数契约（`list(0)` 不限行、`list(负数)` 拒绝）见 {@link PaginationConsistencyTest}。
 ///
 /// @param <T> 后端实体类型
 public abstract class TerminalConsistencyTest<T extends Item> extends ConsistencyTestBase<T> {
@@ -38,14 +38,6 @@ public abstract class TerminalConsistencyTest<T extends Item> extends Consistenc
         assertThat(first.id()).isEqualTo(APPLE_PIE_ID);
     }
 
-    /// `first()` 无命中返回 `null`（不是抛异常）。
-    @Test
-    void firstReturnsNullWhenNothingMatches() {
-        T first = query().where(nameRef()).eq(MISSING_NAME).first();
-
-        assertThat(first).isNull();
-    }
-
     /// `single()` 在唯一命中时返回该行。
     @Test
     void singleReturnsOnlyRow() {
@@ -70,31 +62,12 @@ public abstract class TerminalConsistencyTest<T extends Item> extends Consistenc
         assertThat(count).isEqualTo(2L);
     }
 
-    /// `count()` 无命中返回 `0`（不是抛异常、不是 `null`）。
-    ///
-    /// 与 `first()` 无命中返回 `null` 是一对：`count()` 的返回类型是 `long`，
-    /// 「没有行」只能表达成 `0`，实现若把无结果当成错误就与契约相反。
-    @Test
-    void countReturnsZeroWhenNothingMatches() {
-        long count = query().where(nameRef()).eq(MISSING_NAME).count();
-
-        assertThat(count).isZero();
-    }
-
     /// `exists()` 命中为真。
     @Test
     void existsTrueWhenMatch() {
         boolean exists = query().where(nameRef()).contains(BANANA_NAME).exists();
 
         assertThat(exists).isTrue();
-    }
-
-    /// `exists()` 无命中为假。
-    @Test
-    void existsFalseWhenNoMatch() {
-        boolean exists = query().where(nameRef()).eq(MISSING_NAME).exists();
-
-        assertThat(exists).isFalse();
     }
 
     /// `orderBy(...).asc()` 升序。
