@@ -276,8 +276,11 @@ class JpaEndToEndTest extends JpaTestSupport {
             ShopOrder stale = entityManager.find(ShopOrder.class, 100L);
             entityManager.detach(stale);
             stale.setVersion(0);
+            // 影响行数 0 时执行器抛的就是本库的文案（`:111` 拼 `, version=<旧版本值>`）；
+            // 只断异常类型分不清「版本条件生效」与「主键条件都没生效」这两条路径
             assertThatThrownBy(() -> persister(entityManager).update(stale))
-                    .isInstanceOf(OptimisticLockException.class);
+                    .isInstanceOf(OptimisticLockException.class)
+                    .hasMessageContaining("version=0");
             return null;
         });
     }

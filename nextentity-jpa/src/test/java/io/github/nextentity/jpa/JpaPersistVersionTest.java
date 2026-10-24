@@ -138,6 +138,15 @@ class JpaPersistVersionTest extends JpaTestSupport {
 
             assertThat(drainSql()).noneMatch(sql -> sql.toLowerCase().startsWith("update"));
             assertThat(ledger.getVersion()).isEqualTo(0L);
+
+            // flush 之后只该有脏检查自己发的那**一条** UPDATE ——整句（`set` 里 name 在前、无别名）。
+            // 执行器若不早退，会先发自己那条 UPDATE，flush 再按新版本发第二条，语句集合对不上。
+            // 注意这条与下面 `updateWithNullVersionIsOptimisticLockConflict` 里那条**不是同一句**
+            // （那条带别名 `vl1_0`、`set version=?,name=?`）：两句各由生产它的途径钉住，别合并。
+            entityManager.flush();
+            assertThat(normalized(drainSql()))
+                    .containsExactly("update versioned_ledger set name=?,version=? where id=? and version=?");
+            assertThat(ledger.getVersion()).isEqualTo(1L);
             return null;
         });
         inTx(entityManager -> {
@@ -185,8 +194,13 @@ class JpaPersistVersionTest extends JpaTestSupport {
                     .hasMessageContaining("version=null");
             // 等价性论证的前提就在这里：`builder.equal(path, null)` 渲染成 `version=?`（绑 null），
             // 不是 `version is null`；NULL 比较恒为 UNKNOWN，任何行都命中不了 → 影响行数恒为 0，
-            // `SET` 里写 0 还是写 null 都没有行可写，两种实现的库状态与异常完全一致
-            assertThat(drainSql()).anySatisfy(sql -> assertThat(sql).containsIgnoringCase("version=?"));
+            // `SET` 里写 0 还是写 null 都没有行可写，两种实现的库状态与异常完全一致。
+            //
+            // 整句（执行器自己发的 UPDATE）：别名 `vl1_0`、`set` 里 version 在前、`where` 同时叠
+            // 主键与旧版本值。旧断言只断片段 `version=?`，执行器把 `and version=?` 整段丢掉也照样绿。
+            assertThat(normalized(drainSql()))
+                    .containsExactly("update versioned_ledger vl1_0 set version=?,name=?"
+                            + " where vl1_0.id=? and vl1_0.version=?");
             return null;
         });
         inTx(entityManager -> {
