@@ -7,7 +7,6 @@ import io.github.nextentity.api.model.Slice;
 import io.github.nextentity.api.model.Tuple2;
 import io.github.nextentity.api.model.Tuple3;
 import java.util.List;
-import java.util.Objects;
 import org.junit.jupiter.api.Test;
 
 /// `distinct()` 修饰符的一致性：它只作用于**紧随其后的那一次投影**，且 1 列 / 2 列 / 3 列一视同仁。
@@ -19,12 +18,15 @@ import org.junit.jupiter.api.Test;
 public abstract class DistinctConsistencyTest<T extends Item> extends ConsistencyTestBase<T> {
 
     /// 单列去重：`null` 只算一个分组，非空值各占一个。
+    ///
+    /// 三个值整体钉住（不是「行数 + 非空子集」）：夹具的两个空 `note` 折成一个 `null`，
+    /// 所以结果必须**恰好**是 `{n1, n2, null}`。只断 `hasSize(3)` + 非空子集时，
+    /// 把其中一个 `null` 换成重复的 `n1`（`[n1, n1, n2]`）行数与非空集合都仍然成立。
     @Test
     void distinctSingleColumnCollapsesNullIntoOneGroup() {
         List<String> notes = query().distinct().select(noteRef()).list();
 
-        assertThat(notes).hasSize(3);
-        assertThat(notes.stream().filter(Objects::nonNull).toList()).containsExactlyInAnyOrder(NOTE_1, NOTE_2);
+        assertThat(notes).containsExactlyInAnyOrder(NOTE_1, NOTE_2, null);
     }
 
     /// 多列去重：完全相同的投影行被折成一行（夹具里两行 `(NEW, null)` 只剩一行）。
