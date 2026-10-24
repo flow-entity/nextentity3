@@ -81,6 +81,12 @@
         <!-- 容器通道的开关：默认宽进（没有 Docker 就跳过），CI 应当传 true 让 L4 不可静默降级。
              语义与理由见 support/MySqlL4Gate.java。 -->
         <nextentity.requireContainer>false</nextentity.requireContainer>
+        <!-- 镜像源：直连 registry-1.docker.io 在受限网络下会 EOF，而容器用例是 L4 的唯一载体，
+             拉不到镜像等于这层没跑。默认走 docker.xuanyuan.run，换源/换版本用
+             -Dnextentity.mysql.image= / -Dnextentity.ryuk.image= 覆盖，不必改 pom。
+             ryuk 也要走同一个源：Testcontainers 会另起一个 Ryuk 容器负责回收，它默认从 Docker Hub 拉。 -->
+        <nextentity.mysql.image>docker.xuanyuan.run/library/mysql:8.0.18</nextentity.mysql.image>
+        <nextentity.ryuk.image>docker.xuanyuan.run/testcontainers/ryuk:0.11.0</nextentity.ryuk.image>
     </properties>
 
     <build>
@@ -110,7 +116,15 @@
                     <systemPropertyVariables>
                         <api.version>${docker.api.version}</api.version>
                         <nextentity.requireContainer>${nextentity.requireContainer}</nextentity.requireContainer>
+                        <nextentity.mysql.image>${nextentity.mysql.image}</nextentity.mysql.image>
+                        <!-- Testcontainers 自己的开关：Ryuk 容器镜像（默认 testcontainers/ryuk） -->
+                        <ryuk.container.image>${nextentity.ryuk.image}</ryuk.container.image>
                     </systemPropertyVariables>
+                    <environmentVariables>
+                        <!-- 同一个值的环境变量形态：Testcontainers 对 RYUK 镜像同时认 env 与属性，
+                             两条都给，避免只认其中一条的版本差异导致悄悄回落到 Docker Hub -->
+                        <TESTCONTAINERS_RYUK_CONTAINER_IMAGE>${nextentity.ryuk.image}</TESTCONTAINERS_RYUK_CONTAINER_IMAGE>
+                    </environmentVariables>
                 </configuration>
             </plugin>
         </plugins>

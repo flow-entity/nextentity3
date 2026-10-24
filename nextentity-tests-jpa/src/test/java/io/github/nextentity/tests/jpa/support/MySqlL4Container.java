@@ -12,9 +12,22 @@ import org.testcontainers.utility.DockerImageName;
 /// 关机交给 Testcontainers 的 Ryuk，随 JVM 退出回收。
 ///
 /// 镜像与 `nextentity-tests-legacy` 的真 MySQL 跑法对齐：那边已验证 8.0.x。
+///
+/// 镜像走 `docker.xuanyuan.run` 镜像源，不走 `registry-1.docker.io`：这台机器上直连 Docker Hub 会
+/// `EOF`，而容器用例是 L4 的唯一载体，镜像拉不到就等于这层没跑。要换源或换版本用
+/// `-Dnextentity.mysql.image=<repo>:<tag>` 覆盖，不必改代码；换源后必须**重新判断**
+/// [DockerImageName#asCompatibleSubstituteFor] 那一行是否还成立（见下）。
 public final class MySqlL4Container {
 
-    private static final DockerImageName IMAGE = DockerImageName.parse("mysql:8.0.18");
+    /// 镜像源与版本：默认走 `docker.xuanyuan.run`（内网/受限网络下的可用源）。
+    private static final String DEFAULT_IMAGE = "docker.xuanyuan.run/library/mysql:8.0.18";
+
+    /// `asCompatibleSubstituteFor(\"mysql\")` 不能省：`MySQLContainer` 会校验镜像仓库名，
+    /// 镜像站前缀的仓库叫 `docker.xuanyuan.run/library/mysql`，不改声明就会被判成
+    /// 「镜像与 mysql 不兼容」而拒启。声明的是**兼容替代**，不是绕过版本检查。
+    private static final DockerImageName IMAGE = DockerImageName.parse(
+                    System.getProperty("nextentity.mysql.image", DEFAULT_IMAGE))
+            .asCompatibleSubstituteFor("mysql");
 
     private static final MySQLContainer<?> CONTAINER = new MySQLContainer<>(IMAGE)
             .withDatabaseName("nextentity_l4")
