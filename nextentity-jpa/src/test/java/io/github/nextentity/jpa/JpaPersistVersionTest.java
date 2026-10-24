@@ -35,6 +35,25 @@ class JpaPersistVersionTest extends JpaTestSupport {
         drainSql();
     }
 
+    /// 无 `@Version` 的两条用例**自备** Customer 行（900 / 901）。
+    ///
+    /// 不复用 `JpaTestSupport` 的 10 / 11：那两行只在 `@BeforeAll` 灌一次，而本类要把名字改成
+    /// `Alice2`，复用共享行会让「另一条用例看到 Alice 还是 Alice2」取决于执行顺序
+    /// （上一版为此绕开了被改过的行，等于让断言去迁就耦合）。这里每条用例自己重建数据，
+    /// 断言可以重新钉在「这一行的旧值没被动过」上。
+    @BeforeEach
+    void seedCustomersForUpdate() {
+        inTx(entityManager -> {
+            entityManager
+                    .createQuery("delete from Customer c where c.id in (900, 901)")
+                    .executeUpdate();
+            entityManager.persist(new Customer(900L, 1L, "Alice", null));
+            entityManager.persist(new Customer(901L, 2L, "Bob", null));
+            return null;
+        });
+        drainSql();
+    }
+
     @Test
     @DisplayName("update：Long 版本列 0 → 1，并把新版本号回写到入参对象")
     void updateIncrementsLongVersion() {
@@ -84,7 +103,7 @@ class JpaPersistVersionTest extends JpaTestSupport {
     @DisplayName("无 @Version 实体：只按主键定位，不会误改其它行")
     void updateWithoutVersionFiltersByPrimaryKey() {
         inTx(entityManager -> {
-            Customer alice = entityManager.find(Customer.class, 10L);
+            Customer alice = entityManager.find(Customer.class, 900L);
             entityManager.detach(alice);
             alice.setName("Alice2");
 
@@ -92,9 +111,9 @@ class JpaPersistVersionTest extends JpaTestSupport {
             return null;
         });
         inTx(entityManager -> {
-            assertThat(entityManager.find(Customer.class, 10L).getName()).isEqualTo("Alice2");
-            // 丢掉主键条件的变异体会把 Bob 一起改掉（并且影响行数 2 → EntityNotFoundException）
-            assertThat(entityManager.find(Customer.class, 11L).getName()).isEqualTo("Bob");
+            assertThat(entityManager.find(Customer.class, 900L).getName()).isEqualTo("Alice2");
+            // 丢掉主键条件的变异体会把 901 一起改掉（并且影响行数 2 → EntityNotFoundException）
+            assertThat(entityManager.find(Customer.class, 901L).getName()).isEqualTo("Bob");
             return null;
         });
     }
@@ -114,15 +133,16 @@ class JpaPersistVersionTest extends JpaTestSupport {
             return null;
         });
         inTx(entityManager -> {
-            // 影响行数为 0：没有新行被造出来，既有行也没被写成 ghost。
-            // 断言落在 Bob 与「不存在 ghost 行」上：Alice 的姓名会被同类的另一条用例改掉，
-            // 拿它当 0 行更新的证据会变成用例间耦合。
+            // 影响行数为 0：没有新行被造出来，既有的两行也都没被写成 ghost。
+            // 数据是 {@link #seedCustomersForUpdate()} 为本类自备的，所以两行都能直接钉住，
+            // 不必再像上一版那样绕开「可能被别的用例改过」的行。
             assertThat(entityManager.find(Customer.class, 999L)).isNull();
             assertThat(entityManager
                             .createQuery("select count(c) from Customer c where c.name = 'ghost'", Long.class)
                             .getSingleResult())
                     .isZero();
-            assertThat(entityManager.find(Customer.class, 11L).getName()).isEqualTo("Bob");
+            assertThat(entityManager.find(Customer.class, 900L).getName()).isEqualTo("Alice");
+            assertThat(entityManager.find(Customer.class, 901L).getName()).isEqualTo("Bob");
             return null;
         });
     }
