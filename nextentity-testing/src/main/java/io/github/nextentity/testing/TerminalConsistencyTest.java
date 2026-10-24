@@ -15,11 +15,14 @@ import org.junit.jupiter.api.Test;
 public abstract class TerminalConsistencyTest<T extends Item> extends ConsistencyTestBase<T> {
 
     /// `list()` 返回全部行。
+    ///
+    /// 钉**具体 id 集合**而不是 `hasSize(4)`：这是「无条件查询返回全表」的基准用例，
+    /// 行数对而内容错（丢一行+重复一行、把 `where` 残留带进无 where 查询）时只有集合断言会红。
     @Test
     void listReturnsAllRows() {
         List<T> rows = query().list();
 
-        assertThat(rows).hasSize(4);
+        assertThat(rows).extracting(Item::id).containsExactlyInAnyOrder(APPLE_ID, BANANA_ID, CHERRY_ID, APPLE_PIE_ID);
     }
 
     /// `list(limit)` 只截断行数，不改变顺序。
