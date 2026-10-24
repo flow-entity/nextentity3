@@ -9,10 +9,9 @@ import org.junit.jupiter.api.Test;
 
 /// `not()` 取反的一致性：单层取反、链式取反（双重/三重否定）、短路占位取反。
 ///
-/// 为什么单独成类而不是并进 `LogicalConsistencyTest`：`not()` 是唯一会被后端渲染成**嵌套 `NOT`** 的算子，
-/// 而嵌套 `NOT` 恰好是 Hibernate 的薄弱点——`Predicate.not()` 对「最内层是比较谓词」的嵌套取反
-/// **只生效一次**（H2 与 MySQL 都能复现，见 `nextentity-jpa` 的渲染用例）。把「取反」单列，
-/// 既让这条语义在两条通道上各有独立证据，也避免 `LogicalConsistencyTest` 撞上 `TooManyMethods`（上限 12）。
+/// 单独成类而不是并进 `LogicalConsistencyTest`：`not()` 是唯一会被后端渲染成**嵌套 `NOT`** 的算子，
+/// 而嵌套 `NOT` 在 Hibernate 上不可靠（H2 与 MySQL 都能复现，见 `OpInterpreter#negate`），
+/// 取反因此需要自己的一组证据；`LogicalConsistencyTest` 的方法数也接近 PMD `TooManyMethods` 的上限（12）。
 ///
 /// @param <T> 后端实体类型
 public abstract class NegationConsistencyTest<T extends Item> extends ConsistencyTestBase<T> {
@@ -27,12 +26,9 @@ public abstract class NegationConsistencyTest<T extends Item> extends Consistenc
         assertThat(rows).extracting(Item::id).containsExactlyInAnyOrder(APPLE_ID, CHERRY_ID, APPLE_PIE_ID);
     }
 
-    /// 双重否定回到原条件，三重否定回到一层 `NOT`。
+    /// 双重否定回到原条件，三重否定回到一层 `NOT`（消去在 `OpInterpreter#negate`）。
     ///
-    /// 钉它的理由：Hibernate 的 `Predicate.not()` 对「最内层是比较谓词」的嵌套取反只生效一次，
-    /// 把 `NOT(NOT(x))` 原样下推会得到 `NOT(x)` 的结果（`not().not()` 静默退化）。
-    /// core 在 `OpInterpreter#negate` 里消去双重否定；本用例守规矩，也守住奇偶性——
-    /// 三重否定若落成「无 NOT」或「两层 NOT」，说明消去算错了。
+    /// 奇偶性由本用例守住：三重否定若落成「无 NOT」或「两层 NOT」，说明消去算错了。
     @Test
     void doubleNotCancelsOutAndTripleKeepsOne() {
         List<T> twice =

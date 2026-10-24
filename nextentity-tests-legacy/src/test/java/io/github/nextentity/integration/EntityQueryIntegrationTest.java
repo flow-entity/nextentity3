@@ -24,11 +24,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 ///
 /// Integration tests for QueryBuilder.
 ///
-/// 3.x 的对位改动只有调用形态：`.list(offset, limit)` → `.slice(offset, limit).data()`；
-/// `Predicate.and(PathRef)` → `Predicate.and(Path.of(...).op(...))`；
-/// 四~五列 `select(a, b, c, d/e)` → `project(ProjectionMappers.select(...))`（`Tuple4` / `Tuple5`）；
-/// 多列 `selectDistinct(...)` → `distinct().select(...)`。断言原样保留。
-/// `select(Class)` / `selectDistinct(Class)` 对应的用例已删除（见 `porting/NOT-PORTED-port-b.md`）。
+/// 3.x 的对位改动只有调用形态：`.list(offset, limit)` → `.slice(offset, limit).data()`、
+/// `Predicate.and(PathRef)` → `and(Path.of(...).op(...))`、四~五列 → `project(ProjectionMappers.select(...))`、
+/// 多列 `selectDistinct(...)` → `distinct().select(...)`；`select(Class)` 无对位，对应用例删除
+/// （见 `porting/NOT-PORTED-port-b.md`）。断言原样保留。
 class EntityQueryIntegrationTest {
 
     // Test data constants - Employees

@@ -21,12 +21,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 ///
 /// Select API integration tests.
 ///
-/// 3.x 的投影面：`select(PathRef)`、`select(Expression)`、`select(Expression, Expression)`（`Tuple2`）、
-/// 三列 `select(...)`（`Tuple3`）、四~六列 `project(ProjectionMappers.select(...))`（`Tuple4`~`Tuple6`）、
-/// `distinct()` 修饰符（含多列去重）——证据 `api/SelectStep.java` / `api/DistinctStep.java` /
-/// `api/ProjectionMappers.java`。因此只保留能对位的用例；
-/// 七~十列（`ProjectionMappers` 封顶六列，`Tuple7~10` 不存在）、`select(Collection)` / `select(List)`
-/// 形态、`select(Class)` / `selectDistinct(Class)` 对应的用例已删除（见 `porting/NOT-PORTED-port-b.md`）。
+/// 3.x 投影面：单列 / 两列 `Tuple2` / 三列 `Tuple3` / 四~六列 `ProjectionMappers` / `distinct()`（含多列）。
+/// 七列以上、`select(Collection)`、`select(Class)` 无对位，对应用例删除（见 `porting/NOT-PORTED-port-b.md`）。
 ///
 /// @author HuangChengwei
 @DisplayName("Select API Integration Tests")

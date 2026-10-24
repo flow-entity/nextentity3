@@ -111,11 +111,7 @@ class OpInterpreterTest {
         assertThat(where()).isEqualTo(Constant.FALSE);
     }
 
-    /// 双重否定在解释层消去：`NOT(NOT(x))` 落成 `x`，不再拼两层 `NOT`。
-    ///
-    /// Hibernate 的 `Predicate.not()` 对「最内层是比较谓词」的嵌套取反只生效一次
-    /// （H2 与 MySQL 都可复现，见 `AndOrPredicateIntegrationTest#shouldHandleChainedNotOperations`），
-    /// 原样下推会让 `not().not()` 静默退化成 `not()`。
+    /// 双重否定在解释层消去（原因见 `OpInterpreter#negate`）：`NOT(NOT(x))` 落成 `x`。
     @Test
     @DisplayName("双重否定消去：not().not() 落成原条件")
     void doubleNotCancelsOut() {

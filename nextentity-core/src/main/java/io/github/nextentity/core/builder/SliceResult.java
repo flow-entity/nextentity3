@@ -13,10 +13,8 @@ import java.util.function.Function;
 record SliceResult<T>(List<T> data, long total) implements Slice<T> {
 
     SliceResult {
-        // 不能用 `List.copyOf`：投影列可以是 NULL（`select(可空列).slice(...)` 的每一行就是一个可能为
-        // null 的值），`List.copyOf` 遇到 null 元素抛 NPE——整页数据直接炸，而不是返回那一行的 null。
-        // 2.2.3 的 `SliceImpl` 是纯 record，原样持有调用方给的 list，允许 null；
-        // `Stream.toList()` 同样不可变，但允许 null 元素。
+        // 投影列可以是 NULL，而 `List.copyOf` 遇到 null 元素抛 NPE（2.2.3 的 `SliceImpl` 允许 null）。
+        // `Stream.toList()` 同样不可变，但允许 null。
         data = data.stream().toList();
     }
 

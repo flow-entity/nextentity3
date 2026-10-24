@@ -4,7 +4,8 @@ import java.util.List;
 
 /// 终止操作：把查询真正执行掉。
 ///
-/// 取行的方法（`list(int)` / `first()`）在调用方没有显式 `orderBy` 时自动按主键升序，
+/// 取行的方法（`list(int)` / `first()`）在调用方没有显式 `orderBy` 时自动按主键升序
+/// （`distinct()` 投影除外，见 [SliceStep#slice]），
 /// 因此「前 N 条」「第一条」取到的行是确定的（证据：`core/builder/QueryBuilder.java:266-275`）。
 /// `count()` / `exists()` 反过来不排序、不分页，也不应用 `lock(...)` 指定的锁——锁随窗口一起被清掉，
 /// 只有真正取行的方法才有锁语义。
@@ -24,7 +25,8 @@ public interface Collector<T> {
 
     /// 取前 N 条。
     ///
-    /// @param limit 条数上限；`0` 表示不限行（顺序仍按主键升序），负数抛 `IllegalArgumentException`
+    /// @param limit 条数上限；`0` 表示不限行（`distinct()` 投影除外，顺序仍按主键升序），
+    ///     负数抛 `IllegalArgumentException`
     /// @return 至多 `limit` 条结果；无行时是空列表，不是 `null`
     List<T> list(int limit);
 

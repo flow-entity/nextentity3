@@ -15,14 +15,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 ///
 /// Integration tests for the `IfNotNull` operators.
 ///
-/// 2.2.3 的 `ExpressionBuilder.StringOperator` / `NumberOperator` 在 3.x 已整体删除：
-/// `api/StringOperator.java` 只留 `Comparison + Nullness + Membership + StringOps`，
-/// 没有 `likeIfNotEmpty` / `substring` / `length`；算术算子改挂在数值路径上
-/// （`api/NumberPath.java:10` 继承 `NumberArithmetic`，`api/NumberArithmetic.java:16/22/28/36/42`），
-/// 但**没有** `*IfNotNull` 变体（右操作数是 `U`，`null` 不可表达，也就没有"短路"语义）。
-/// 因此：字符串侧可对位的只有 `StringOps.likeIfNotNull`（调用方自带通配符，`null` 短路）；
-/// 数值侧只移植**非空值分支**的 5 个用例（`*IfNotNull` → `add`/`sub`/`mul`/`div`/`mod`）与链式/组合用例，
-/// `*WithNullValue` 一类（5 条）与链中含 `null` 的用例删除（见 NOT-PORTED-port-b.md）。
+/// 2.2.3 的 `ExpressionBuilder.StringOperator` / `NumberOperator` 在 3.x 已删除：算术算子改挂在数值路径上
+/// （`api/NumberPath` 继承 `api/NumberArithmetic`），但没有 `*IfNotNull` 变体，`null` 短路不可表达，
+/// 因此只移植非空值分支与链式/组合用例；字符串侧可对位的只有 `StringOps.likeIfNotNull`。
+/// `*WithNullValue` 与 `substring` / `length` / `likeIfNotEmpty` 一类删除（见 `porting/NOT-PORTED-port-b.md`）。
 ///
 /// @author HuangChengwei
 @DisplayName("ExpressionBuilder Default Methods Integration Tests")

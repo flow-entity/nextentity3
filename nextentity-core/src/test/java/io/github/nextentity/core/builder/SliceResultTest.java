@@ -49,10 +49,8 @@ class SliceResultTest {
         assertThat(slice.data()).containsExactly("a");
     }
 
-    /// 投影列可以是 NULL：`select(可空列).slice(...)` 的每一行就是一个可能为 null 的值。
-    ///
-    /// 守护点：构造器曾用 `List.copyOf(data)`，它对 null 元素抛 NPE——可空列一进分页就整页炸。
-    /// 2.2.3 的 `SliceImpl` 是纯 record，原样持有 list，允许 null；本用例把这条口径钉住。
+    /// 投影列可以是 NULL：`select(可空列).slice(...)` 的每一行就是一个可能为 null 的值，
+    /// 而 `List.copyOf` 遇到 null 元素直接抛 NPE（原因见 `SliceResult` 的构造器注释）。
     @Test
     @DisplayName("构造：data 允许 null 元素（投影列可空）")
     void constructorAcceptsNullElements() {

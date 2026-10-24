@@ -11,9 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 
 /// 把 `not()` 取反的一致性用例接到真实 MySQL 上：L4 的载体，用例本体仍是 `nextentity-testing` 的基类。
 ///
-/// 这一条通道不是凑数：嵌套 `NOT` 在 H2 上「看起来对」而在真 MySQL 上才是同一份 Hibernate 行为，
-/// 双重否定退化（`not().not()` 变成 `not()`）在两条通道上都会暴露，但只有真方言能证明
-/// 「core 的消解在真实 SQL 上也成立」。
+/// core 消去双重否定是纯语法重写，真方言要证明的是消去后生成的 SQL 仍然正确。
 @ExtendWith(MySqlL4Gate.class)
 @Tag("container")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)

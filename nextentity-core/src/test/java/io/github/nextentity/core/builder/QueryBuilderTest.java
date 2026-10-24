@@ -399,12 +399,8 @@ class QueryBuilderTest {
         assertThat(backend.last().orderBy()).isEmpty();
     }
 
-    /// 去重投影的分页**不**补主键排序。
-    ///
-    /// 主键通常不在 `SELECT DISTINCT` 的投影列里，MySQL 会直接拒绝
-    /// `SELECT DISTINCT x ... ORDER BY 主键`（`Expression #1 of ORDER BY clause is not in SELECT list`），
-    /// 而 H2 容忍这种写法——补了排序会让 H2 通道全绿、真 MySQL 才炸
-    /// （`legacy` 的 `TmpProbe3Test` 实测复现：H2 返回 `[1, 2]`，MySQL 抛 `GenericJDBCException`）。
+    /// 去重投影的分页**不**补主键排序：主键不在 `SELECT DISTINCT` 的投影列里时 MySQL 会拒绝
+    /// （H2 放行，补了排序会让 H2 全绿、真方言才炸）。
     @Test
     @DisplayName("去重投影的分页不补主键排序（主键不在 SELECT 列表里）")
     void distinctPagingKeepsNoIdOrder() {

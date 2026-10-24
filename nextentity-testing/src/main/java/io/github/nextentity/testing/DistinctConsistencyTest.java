@@ -64,12 +64,8 @@ public abstract class DistinctConsistencyTest<T extends Item> extends Consistenc
                 .containsExactlyInAnyOrder(ItemStatus.NEW, ItemStatus.ACTIVE, ItemStatus.DONE, ItemStatus.NEW);
     }
 
-    /// 去重投影 + 分页：`list(n)` / `first()` / `slice(o, l)` 必须可执行。
-    ///
-    /// 主键通常不在 `SELECT DISTINCT` 的投影列里，MySQL 会直接拒绝
-    /// `SELECT DISTINCT x ... ORDER BY 主键`（`Expression #1 of ORDER BY clause is not in SELECT list`），
-    /// 而 H2 容忍这种写法——「分页自动补主键排序」会让 H2 通道全绿、真 MySQL 才炸。
-    /// core 因此在去重投影上不补排序；本用例在两条通道上都跑，断言只依赖去重语义与行数，不依赖行序。
+    /// 去重投影 + 分页：`list(n)` / `first()` / `slice(o, l)` 必须可执行（原因见 `QueryBuilder#spec`）。
+    /// 断言只依赖去重语义与行数，不依赖行序。
     @Test
     void distinctSurvivesPaginationWithoutExplicitOrder() {
         assertThat(query().distinct().select(noteRef()).list(2)).hasSize(2);
@@ -78,9 +74,8 @@ public abstract class DistinctConsistencyTest<T extends Item> extends Consistenc
 
         Slice<String> slice = query().distinct().select(noteRef()).slice(0, 2);
         assertThat(slice.data()).hasSize(2);
-        // total 与 `count()` 同口径（`COUNT(DISTINCT note)`），而 SQL 的 `COUNT(DISTINCT)` **不计 NULL**：
-        // 去重后的三组（NULL / n1 / n2）里 total 只算 2。`data()` 会给出 NULL 那一行，
-        // 因此分页元数据在「可空列去重」上比实际行数少 1——这是已知口径，钉住以免被当成回归修掉。
+        // total 与 `count()` 同口径，而 `COUNT(DISTINCT)` 不计 NULL：三组（NULL / n1 / n2）里只算 2。
+        // 这是已知口径（见 `Slice#total`），钉住以免被当成回归修掉。
         assertThat(slice.total()).isEqualTo(2);
     }
 }

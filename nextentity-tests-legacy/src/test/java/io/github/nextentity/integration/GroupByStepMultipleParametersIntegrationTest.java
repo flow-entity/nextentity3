@@ -28,13 +28,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// - groupBy(Path, Path, Path, Path, Path): Group by five paths
 /// - groupBy(Path, Path, Path, Path, Path, Path): Group by six paths
 /// <p>
-/// 3.x 的多参数 `groupBy` 只有一个变长重载 `groupBy(PathRef...)`（`api/GroupByStep.java:20`），
-/// 因此四条 `groupBy(a, b, …)` 用例的**分组写法原样**；变的是投影：
-/// - 三列投影有对位重载 `select(a, b, c)` → `Tuple3`（`api/SelectStep.java:51`）；
-/// - 四列及以上 `api` 不加重载（`SelectStep` 方法数有上限，见 `api/SelectStep.java:50` 与
-///   `api/ProjectionMappers.java:12-19`），改走 `project(ProjectionMappers.select(e1, e2, e3, e4))`
-///   → `Tuple4`~`Tuple6`（`api/ProjectionMappers.java:38` / `:54` / `:75`），取值访问器
-///   `get0()`~`get3()` 与上游一致（`Tuple4` 是 record，具名访问器由 record 生成）。
+/// 3.x 的多参数 `groupBy` 只有一个变长重载，分组写法原样；变的是投影：三列走 `select(a, b, c)`（`Tuple3`），
+/// 四~六列走 `project(ProjectionMappers.select(...))`（`Tuple4`~`Tuple6`，`SelectStep` 的方法数有上限）。
+/// 取值访问器 `get0()`~`get3()` 与上游一致。
 /// <p>
 /// These tests run against MySQL and PostgreSQL using 测试containers.
 ///

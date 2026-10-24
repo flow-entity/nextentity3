@@ -26,16 +26,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// Note: For GROUP BY + HAVING, the select must come BEFORE groupBy.
 /// All paths in select must use get() wrapper.
 /// <p>
-/// 3.x 的 having 入口是 `api/HavingStep.java:21`（`BaseWhereStep` 继承它，`BaseWhereStep.java:7-13`），
-/// 多次 `having(...)` 按 AND 累加；条件里的聚合值 `AggregateValue` 可 eq/ne/ge/gt/le/lt/between，
-/// 因此下面 19 条逐字对位。另外 3 条按能力缺口删除，不造 Java 侧替代：
-/// - `shouldCombineHavingWithOffset`：`.list(offset, limit)` 在 3.x 无对位（`api/Collector.java:23/29`
-///   的取行方法只有 `list()` / `list(int)`），`slice(offset, limit)` 先调 `count()`
-///   （`core/builder/QueryBuilder.java:232`），
-///   而分组/聚合规格的 `count()` 被拒（`jpa/exec/JpaExecutor.java:57`）；
-/// - `shouldCountWithHavingClause` / `shouldCheckExistenceWithHaving`：`count()` / `exists()` 对
-///   带 `groupBy` / `having` / 聚合投影的规格显式抛 `UnsupportedOperationException`
-///   （`jpa/exec/JpaExecutor.java:57` / `:94`）。
+/// 3.x 的 having 入口是 `api/HavingStep#having`（`BaseWhereStep` 继承它），多次 `having(...)` 按 AND 累加，
+/// 条件里的 `AggregateValue` 可以比较与取区间，因此下面 19 条逐字对位。另外 3 条按能力缺口删除，
+/// 不造 Java 侧替代：`having` 之后的 `count()` / `exists()` / 分页在 3.x 被显式拒绝
+/// （见 `porting/NOT-PORTED-port-a.md`）。
 /// <p>
 /// These tests run against MySQL and PostgreSQL using 测试containers.
 ///

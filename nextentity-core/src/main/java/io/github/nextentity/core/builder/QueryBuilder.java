@@ -42,7 +42,7 @@ import java.util.Objects;
 ///
 /// 两条终止符语义在 core 落地而不是后端（2.2.3 `Collector` 的 default 方法即如此）：
 /// - `first()/single()/slice()` 用 `list` + `count` 组合；
-/// - 分页且没有 `orderBy` 时自动追加 `ORDER BY 主键 ASC`（2.2.3 `autoAddIdOrder` 默认开启）。
+/// - 分页且没有 `orderBy` 时自动追加 `ORDER BY 主键 ASC`（2.2.3 `autoAddIdOrder` 默认开启；去重投影除外）。
 ///
 /// @param <T> 实体类型
 /// @param <S> 后端语句类型
@@ -264,7 +264,6 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
         return distinct;
     }
 
-    /// 当前投影是否带 `SELECT DISTINCT`。
     private boolean distinctSelection() {
         return selection instanceof ValueSelection value && value.distinct();
     }
@@ -315,14 +314,12 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
 
     /// 组装当前状态下的查询规格。
     ///
-    /// 带 limit 的分页且没有排序、又不是聚合查询时，追加 `ORDER BY 主键 ASC`——
+    /// 带 limit 的分页且没有排序、不是聚合查询、也不是去重投影时，追加 `ORDER BY 主键 ASC`——
     /// 2.2.3 `autoAddIdOrder` 默认 true 且 point-mall 未覆盖，去掉它会改变 `first()`/`slice()`
     /// 取到哪一行。
     ///
-    /// **去重投影（`SELECT DISTINCT`）下不追加**：主键通常不在投影列里，MySQL 会直接拒绝
-    /// `SELECT DISTINCT x ... ORDER BY 主键`（`Expression #1 of ORDER BY clause is not in SELECT list`），
-    /// 而 H2 容忍这种写法——自动补的排序在 H2 通道看不出问题、到真 MySQL 才炸。去重投影要稳定分页
-    /// 必须显式 `orderBy`。
+    /// **去重投影下不追加**：主键通常不在 `SELECT DISTINCT` 的投影列里，MySQL 会拒绝
+    /// `SELECT DISTINCT x ... ORDER BY 主键`（H2 放行，只会在真方言炸）。稳定分页请显式 `orderBy`。
     private QuerySpec spec(Window window) {
         QuerySpec spec = new QuerySpec(entityType.type(), selection, where, groupBy, having, orderBy, window, lock);
         if (!window.limited() || !orderBy.isEmpty() || spec.aggregate() || distinctSelection()) {
