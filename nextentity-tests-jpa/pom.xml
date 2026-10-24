@@ -97,6 +97,24 @@
                  failsafe 默认 includes 是 `**/IT*` / `**/*IT` / `**/*ITCase`，与项目约定的 `*IntegrationTest`
                  命名不匹配，不显式覆盖则容器用例会被 surefire 跑掉、failsafe 一条也收不到。
                  PR 档只要 H2：`-DskipITs`（failsafe 自带属性，只跳容器通道），H2 条数不变。 -->
+            <!-- 跨模块合并覆盖率：本模块是唯一同时执行 L2/L3/L4 的地方，只有在这里做
+                 `report-aggregate` 才能看到「全部测试合起来还有哪些生产代码行没人跑」。
+                 各模块自己的 `report` 只看得到本模块 src/test 的执行数据（模块局部口径），
+                 语义套件跑出来的覆盖率进不去——`JpaOperands` 的算术分支就是这样被误判成未覆盖的。
+                 产物在 `target/site/jacoco-aggregate/jacoco.xml`。 -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>report-aggregate</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report-aggregate</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
