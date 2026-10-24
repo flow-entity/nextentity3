@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.tests.jpa.support.MySqlEntityOperationsSupport;
+import io.github.nextentity.tests.jpa.support.MySqlL4Gate;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.OptimisticLockException;
 import java.util.function.Consumer;
@@ -12,14 +13,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
-import org.testcontainers.junit.jupiter.Testcontainers;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 /// `@Version` 乐观锁在真实 MySQL 上的形态：`update` 让版本号自增，过期版本号更新抛
 /// `OptimisticLockException`。
 ///
 /// 与 H2 侧 `ItemVersionConsistencyTest` 同一夹具、同一断言；本类只换方言。上真库的意义在于
 /// 版本条件落在 SQL 的 `WHERE id=? AND version=?` 上，影响行数为 0 的判定由驱动与库共同给出。
-@Testcontainers(disabledWithoutDocker = true)
+@ExtendWith(MySqlL4Gate.class)
 @Tag("container")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class MySqlVersionedIntegrationTest {

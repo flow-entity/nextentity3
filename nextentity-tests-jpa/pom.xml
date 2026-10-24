@@ -78,6 +78,9 @@
              `api.version` 读这个值，所以由 failsafe 在 fork 出的 JVM 里注入。
              换 Docker 版本时用 -Ddocker.api.version=<版本> 覆盖，不必改 pom。 -->
         <docker.api.version>1.44</docker.api.version>
+        <!-- 容器通道的开关：默认宽进（没有 Docker 就跳过），CI 应当传 true 让 L4 不可静默降级。
+             语义与理由见 support/MySqlL4Gate.java。 -->
+        <nextentity.requireContainer>false</nextentity.requireContainer>
     </properties>
 
     <build>
@@ -106,6 +109,7 @@
                     </includes>
                     <systemPropertyVariables>
                         <api.version>${docker.api.version}</api.version>
+                        <nextentity.requireContainer>${nextentity.requireContainer}</nextentity.requireContainer>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

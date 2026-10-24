@@ -7,7 +7,8 @@ import org.testcontainers.utility.DockerImageName;
 ///
 /// 单例的理由是预算：容器冷启动几十秒，按类起一次会把这套用例从「跑得起」拖成「没人跑」。
 /// 容器在**首次取连接信息时**（本类初始化）启动；Docker 不可用的机器上，用例类先被
-/// `@Testcontainers(disabledWithoutDocker = true)` 判为跳过，这条路径不会被走到。
+/// [MySqlL4Gate] 判为跳过，这条路径不会被走到——除非调用方加了
+/// `-Dnextentity.requireContainer=true`，那时门禁故意放行，让这里启动失败把构建打红。
 /// 关机交给 Testcontainers 的 Ryuk，随 JVM 退出回收。
 ///
 /// 镜像与 `nextentity-tests-legacy` 的真 MySQL 跑法对齐：那边已验证 8.0.x。

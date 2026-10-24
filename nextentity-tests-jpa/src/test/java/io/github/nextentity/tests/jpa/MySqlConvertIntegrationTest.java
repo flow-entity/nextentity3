@@ -3,19 +3,20 @@ package io.github.nextentity.tests.jpa;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.nextentity.tests.jpa.support.MySqlEntityOperationsSupport;
+import io.github.nextentity.tests.jpa.support.MySqlL4Gate;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
-import org.testcontainers.junit.jupiter.Testcontainers;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 /// `@Convert` 字段在真实 MySQL 上的形态：写入按转换后形态落库，读回按内存形态，条件里用的也是内存形态。
 ///
 /// 与 H2 侧 `ItemConvertConsistencyTest` 同一夹具、同一断言；本类只换方言。三条断言缺一不可：
 /// ① 原生查询看到的是转换后形态；② 走 DSL 读回的是内存形态；③ 用内存形态做 `eq` 条件能命中。
-@Testcontainers(disabledWithoutDocker = true)
+@ExtendWith(MySqlL4Gate.class)
 @Tag("container")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class MySqlConvertIntegrationTest {

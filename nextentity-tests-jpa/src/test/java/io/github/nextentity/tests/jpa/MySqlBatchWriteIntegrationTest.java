@@ -3,19 +3,20 @@ package io.github.nextentity.tests.jpa;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.nextentity.tests.jpa.support.MySqlEntityOperationsSupport;
+import io.github.nextentity.tests.jpa.support.MySqlL4Gate;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
-import org.testcontainers.junit.jupiter.Testcontainers;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 /// 批量写在真实 MySQL 上的形态：`insertAll` 全量落库、`updateAll` 让每条记录的 `@Version` 自增
 /// 并**回写调用方对象**。
 ///
 /// 与 H2 侧 `ItemBatchWriteConsistencyTest` 同一夹具、同一断言；本类只换方言。
-@Testcontainers(disabledWithoutDocker = true)
+@ExtendWith(MySqlL4Gate.class)
 @Tag("container")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class MySqlBatchWriteIntegrationTest {
