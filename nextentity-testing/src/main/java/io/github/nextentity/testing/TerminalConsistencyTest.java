@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 /// 终止符与排序的一致性：`list` / `first` / `single` / `count` / `exists`。
 ///
 /// 本类只放**有命中**的语义：零行上的同一批终止符见 {@link EmptyTerminalConsistencyTest}，
-/// 窗口参数契约（`list(0)` 不限行、`list(负数)` 拒绝）见 {@link PaginationConsistencyTest}。
+/// 窗口参数契约（`list(0)` 不限行、`list(负数)` 拒绝）见 {@link WindowArgumentConsistencyTest}。
 ///
 /// @param <T> 后端实体类型
 public abstract class TerminalConsistencyTest<T extends Item> extends ConsistencyTestBase<T> {

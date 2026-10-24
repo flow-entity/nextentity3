@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 /// 或把 `null` 兜成默认值，都会在这里露出来。
 ///
 /// 零行上的**聚合**见 {@link EmptyAggregateConsistencyTest}，分页上的空集见
-/// {@link PaginationConsistencyTest}。
+/// {@link WindowArgumentConsistencyTest}。
 ///
 /// @param <T> 后端实体类型
 public abstract class EmptyTerminalConsistencyTest<T extends Item> extends ConsistencyTestBase<T> {
