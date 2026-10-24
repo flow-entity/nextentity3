@@ -16,6 +16,21 @@
 
     <dependencies>
         <!-- api 零三方依赖：锁模式用自研 api.LockMode，不引入任何持久化/后端类型 -->
+        <!--
+          下面两个是 test 作用域，只为变异测试存在：api 的用例住在 core 的测试树
+          （理由见 docs/DESIGN.md §5「api 值层断言的落点」），而 PIT 要在本模块里跑，
+          就得让本模块的测试类路径上有 JUnit 5 与 AssertJ。test 作用域不进发布产物。
+        -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -36,9 +51,12 @@
                                 <bannedDependencies>
                                     <searchTransitive>false</searchTransitive>
                                     <excludes>
-                                        <exclude>*:*</exclude>
+                                        <exclude>*:*:*:*:compile</exclude>
+                                        <exclude>*:*:*:*:runtime</exclude>
+                                        <exclude>*:*:*:*:provided</exclude>
+                                        <exclude>*:*:*:*:system</exclude>
                                     </excludes>
-                                    <message>api 模块必须零三方依赖：任何依赖都应下沉到 core 或后端模块</message>
+                                    <message>api 的发布产物必须零三方依赖：compile / runtime / provided 一律下沉到 core 或后端模块。只有 test 作用域可用——它不进 jar，只服务本模块的变异测试（见 docs/DESIGN.md §5）</message>
                                 </bannedDependencies>
                             </rules>
                         </configuration>
@@ -82,6 +100,28 @@
                         </goals>
                     </execution>
                 </executions>
+            </plugin>
+
+            <!--
+              变异测试：api 自己的用例就在本模块（`src/test/java`），所以这条门禁是自足的，
+              不挂别的模块的产物。不绑生命周期，只在显式执行时跑：
+              `mvn -pl nextentity-api pitest:mutationCoverage`。
+              阈值 95：等价变异杀不死，新代码磨合期也会短暂掉分，阈值只用来挡真回退。
+              api 的「值 → Spec 节点」翻译证据不在这里，在 core 的 ApiOperatorAssemblyTest。
+            -->
+            <plugin>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-maven</artifactId>
+                <configuration>
+                    <targetClasses>
+                        <param>io.github.nextentity.api.*</param>
+                    </targetClasses>
+                    <targetTests>
+                        <param>io.github.nextentity.api.*</param>
+                    </targetTests>
+                    <failWhenNoMutations>true</failWhenNoMutations>
+                    <mutationThreshold>95</mutationThreshold>
+                </configuration>
             </plugin>
         </plugins>
     </build>
