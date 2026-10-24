@@ -12,6 +12,9 @@ import io.github.nextentity.core.meta.EntityType;
 import io.github.nextentity.core.spec.AggregateFunction;
 import io.github.nextentity.core.spec.AggregateProjection;
 import io.github.nextentity.core.spec.AttributePath;
+import io.github.nextentity.core.spec.Comparison;
+import io.github.nextentity.core.spec.ComparisonOperator;
+import io.github.nextentity.core.spec.Literal;
 import io.github.nextentity.core.spec.QuerySpec;
 import io.github.nextentity.core.spec.ValueSelection;
 import java.util.ArrayList;
@@ -52,7 +55,12 @@ class SimpleEntityOperationsFactoryTest {
         second.list();
 
         assertThat(recorder.specs.getLast().where()).isNull();
-        assertThat(recorder.specs.getFirst().where()).isNotNull();
+        // `isNotNull()` 只证明「第一个构建器的 where 非空」，与第二个构建器的条件串味
+        // （比如共用同一份可变规格，后写的条件覆盖前面的）分不出来。这里钉住第一个规格的
+        // 条件本身：列、算子、字面量任一处被覆盖或丢失都会红。
+        assertThat(recorder.specs.getFirst().where())
+                .isEqualTo(new Comparison(
+                        AttributePath.of(Order.class, "status"), ComparisonOperator.EQ, Literal.of("A")));
     }
 
     @Test
