@@ -76,25 +76,23 @@
             </plugin>
 
             <!--
-              变异测试：只跑本模块，不绑生命周期。命令：
+              变异测试：覆盖**整个模块**（渲染、谓词、操作数、执行器、元模型），不绑生命周期。命令：
               `mvn -pl nextentity-jpa pitest:mutationCoverage`
-              本模块的测试要起 Hibernate + H2，变异跑得比 core 慢得多，
-              因此默认只变异「渲染与谓词」这两块纯逻辑；执行器与元模型不在默认范围，
-              它们的变异体由 JpaExecutorWindowTest / JpaMetaTest / JpaPersistVersionTest 逐个钉住
-              （要评估执行器请显式加 `-DtargetClasses=io.github.nextentity.jpa.*`）。
+              全模块实测约 26s / 125 个变异，成本可以接受，因此不再只挑 compile 包。
+              阈值 95：已论证的等价变异（JpaPersistExecutor 的 detach 分支，见该文件 javadoc）
+              杀不死，理论满分是 123/125，留出余量只用来挡真回退。
             -->
             <plugin>
                 <groupId>org.pitest</groupId>
                 <artifactId>pitest-maven</artifactId>
                 <configuration>
                     <targetClasses>
-                        <param>io.github.nextentity.jpa.compile.*</param>
+                        <param>io.github.nextentity.jpa.*</param>
                     </targetClasses>
                     <targetTests>
                         <param>io.github.nextentity.jpa.*</param>
                     </targetTests>
-                    <!-- 比 core 宽松：本模块每个变异都要起 Hibernate，单次成本高，磨合期更长 -->
-                    <mutationThreshold>90</mutationThreshold>
+                    <mutationThreshold>95</mutationThreshold>
                 </configuration>
             </plugin>
         </plugins>
