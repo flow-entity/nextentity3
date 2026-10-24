@@ -64,6 +64,7 @@
 ./mvnw -pl nextentity-api pitest:mutationCoverage    # 变异测试：api，阈值 95%（门禁自足，用例在本模块）
 ./mvnw -pl nextentity-core pitest:mutationCoverage   # 变异测试：core，阈值 95%
 ./mvnw -pl nextentity-jpa pitest:mutationCoverage    # 变异测试：jpa 全模块，阈值 95%
+./mvnw -pl nextentity-spring pitest:mutationCoverage # 变异测试：spring（委派与条件装配），阈值 95%
 ```
 
 从仓库根目录执行；单模块内工作时才 `cd`。首次克隆后执行 `git config core.hooksPath githooks` 启用提交前门禁。
