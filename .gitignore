@@ -3,6 +3,7 @@ target/
 
 ### IDE ###
 .idea/
+.obsidian/
 .classpath
 .project
 .settings/
