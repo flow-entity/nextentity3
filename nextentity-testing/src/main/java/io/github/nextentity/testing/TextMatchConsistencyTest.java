@@ -26,12 +26,16 @@ public abstract class TextMatchConsistencyTest<T extends Item> extends Consisten
         assertThat(rows).isEmpty();
     }
 
-    /// `containsIfNotEmpty("")` 跳过条件。
+    /// `containsIfNotEmpty("")` 跳过条件：等于「无条件」，命中**全表**。
+    ///
+    /// 钉具体 id 集合而不是 `hasSize(4)`：只数个数时，「4 行里混进重复行、丢掉一行」
+    /// （如 `[1,1,2,3]`）与「投影取错列但恰好也是 4 行」都能通过；精确集合同时钉住
+    /// 「命中哪些行」与「没有重复」。
     @Test
     void containsIfNotEmptyWithEmptyStringSkipsCondition() {
         List<T> rows = query().where(nameRef()).containsIfNotEmpty("").list();
 
-        assertThat(rows).hasSize(4);
+        assertThat(rows).extracting(Item::id).containsExactlyInAnyOrder(APPLE_ID, BANANA_ID, CHERRY_ID, APPLE_PIE_ID);
     }
 
     /// `containsIfNotEmpty(值)` 生效。
@@ -42,12 +46,14 @@ public abstract class TextMatchConsistencyTest<T extends Item> extends Consisten
         assertThat(rows).extracting(Item::id).containsExactly(APPLE_PIE_ID);
     }
 
-    /// `likeIfNotNull(null)` 跳过条件（不传 `null` 给数据库）。
+    /// `likeIfNotNull(null)` 跳过条件（不传 `null` 给数据库）：等于「无条件」，命中**全表**。
+    ///
+    /// 同样钉具体 id 集合：只断 `hasSize(4)` 时，重复行 / 丢行 / 取错列恰好 4 行都能混过去。
     @Test
     void likeIfNotNullWithNullSkipsCondition() {
         List<T> rows = query().where(nameRef()).likeIfNotNull(null).list();
 
-        assertThat(rows).hasSize(4);
+        assertThat(rows).extracting(Item::id).containsExactlyInAnyOrder(APPLE_ID, BANANA_ID, CHERRY_ID, APPLE_PIE_ID);
     }
 
     /// 纯 `like`：模式原样进 SQL，api **不**替调用方包 `%`。
