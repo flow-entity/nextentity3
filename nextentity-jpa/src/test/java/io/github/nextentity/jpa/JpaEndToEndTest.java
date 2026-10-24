@@ -128,10 +128,9 @@ class JpaEndToEndTest extends JpaTestSupport {
 
             assertThat(executor.exists(compiler.compile(query(null).forExists())))
                     .isTrue();
-            // 条件被整段跳过：语句里没有 WHERE，而不是渲染成一个恒真条件
-            assertThat(drainSql()).anySatisfy(sql -> assertThat(sql)
-                    .containsIgnoringCase("from shop_order")
-                    .doesNotContainIgnoringCase(" where "));
+            // 条件被整段跳过：语句里没有 WHERE，而不是渲染成一个恒真条件；整句钉住「取一行判定」
+            assertThat(normalized(drainSql()))
+                    .containsExactly("select true from shop_order so1_0 fetch first ? rows only");
 
             QuerySpec emptyTable = QuerySpec.of(VersionedEntry.class);
             assertThat(executor.count(compiler.compile(emptyTable.forCount()))).isZero();

@@ -45,7 +45,10 @@ class JpaExecutorWindowTest extends JpaTestSupport {
     @DisplayName("只有 offset：跳过第一行，不设上限")
     void offsetAppliedWithoutLimit() {
         assertThat(ids(new Window(1, null))).containsExactly(101L);
-        assertThat(drainSql()).anySatisfy(sql -> assertThat(sql).containsIgnoringCase("offset"));
+        // 整句：`offset ? rows` 单独出现、且没有 `fetch first`（不设上限）
+        assertThat(normalized(drainSql()))
+                .containsExactly("select so1_0.id,so1_0.amount,so1_0.customer_id,so1_0.note,so1_0.status,so1_0.version"
+                        + " from shop_order so1_0 order by so1_0.id offset ? rows");
     }
 
     @Test

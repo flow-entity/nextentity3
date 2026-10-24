@@ -72,7 +72,11 @@ class JpaPathsNestedTest extends JpaTestSupport {
 
         // 101 的 customer 为空：LEFT JOIN 下它不命中，但也不会被 INNER JOIN 吞掉
         assertThat(ids).containsExactly(100L);
-        assertThat(drainSql()).anySatisfy(sql -> assertThat(sql).containsIgnoringCase("join"));
+        // 整句：中段是关联 → `left join customer`，且条件落在被 join 的别名 c1_0 上
+        assertThat(normalized(drainSql()))
+                .containsExactly("select so1_0.id,so1_0.amount,so1_0.customer_id,so1_0.note,so1_0.status,so1_0.version"
+                        + " from shop_order so1_0 left join customer c1_0 on c1_0.id=so1_0.customer_id"
+                        + " where c1_0.name=? order by so1_0.id");
     }
 
     @Test
@@ -97,9 +101,9 @@ class JpaPathsNestedTest extends JpaTestSupport {
                         .toList());
 
         assertThat(ids).containsExactly(1L);
-        assertThat(drainSql())
-                .anySatisfy(
-                        sql -> assertThat(sql).containsIgnoringCase("city=?").doesNotContainIgnoringCase(" join "));
+        // 整句：嵌入路径直接渲染成 shipment 自己的列 `s1_0.city`，语句里没有任何 join
+        assertThat(normalized(drainSql()))
+                .containsExactly("select s1_0.id,s1_0.city from shipment s1_0 where s1_0.city=?");
     }
 
     private JpaCompiler compiler(EntityManager entityManager) {
