@@ -264,6 +264,11 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
         return distinct;
     }
 
+    /// 当前投影是否带 `SELECT DISTINCT`。
+    private boolean distinctSelection() {
+        return selection instanceof ValueSelection value && value.distinct();
+    }
+
     private BaseWhereStep<T, T> addConditionStep(Spec spec) {
         addCondition(spec);
         return this;
@@ -313,9 +318,14 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     /// 带 limit 的分页且没有排序、又不是聚合查询时，追加 `ORDER BY 主键 ASC`——
     /// 2.2.3 `autoAddIdOrder` 默认 true 且 point-mall 未覆盖，去掉它会改变 `first()`/`slice()`
     /// 取到哪一行。
+    ///
+    /// **去重投影（`SELECT DISTINCT`）下不追加**：主键通常不在投影列里，MySQL 会直接拒绝
+    /// `SELECT DISTINCT x ... ORDER BY 主键`（`Expression #1 of ORDER BY clause is not in SELECT list`），
+    /// 而 H2 容忍这种写法——自动补的排序在 H2 通道看不出问题、到真 MySQL 才炸。去重投影要稳定分页
+    /// 必须显式 `orderBy`。
     private QuerySpec spec(Window window) {
         QuerySpec spec = new QuerySpec(entityType.type(), selection, where, groupBy, having, orderBy, window, lock);
-        if (!window.limited() || !orderBy.isEmpty() || spec.aggregate()) {
+        if (!window.limited() || !orderBy.isEmpty() || spec.aggregate() || distinctSelection()) {
             return spec;
         }
         List<Ordering> orders = new ArrayList<>(orderBy);

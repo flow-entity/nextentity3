@@ -399,6 +399,29 @@ class QueryBuilderTest {
         assertThat(backend.last().orderBy()).isEmpty();
     }
 
+    /// 去重投影的分页**不**补主键排序。
+    ///
+    /// 主键通常不在 `SELECT DISTINCT` 的投影列里，MySQL 会直接拒绝
+    /// `SELECT DISTINCT x ... ORDER BY 主键`（`Expression #1 of ORDER BY clause is not in SELECT list`），
+    /// 而 H2 容忍这种写法——补了排序会让 H2 通道全绿、真 MySQL 才炸
+    /// （`legacy` 的 `TmpProbe3Test` 实测复现：H2 返回 `[1, 2]`，MySQL 抛 `GenericJDBCException`）。
+    @Test
+    @DisplayName("去重投影的分页不补主键排序（主键不在 SELECT 列表里）")
+    void distinctPagingKeepsNoIdOrder() {
+        query().distinct().select(Order::getName).list(5);
+
+        assertThat(((ValueSelection) backend.last().selection()).distinct()).isTrue();
+        assertThat(backend.last().orderBy()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("去重投影 + 显式 orderBy：排序项原样保留")
+    void distinctPagingKeepsExplicitOrder() {
+        query().distinct().select(Order::getName).orderBy(Order::getName).asc().list(5);
+
+        assertThat(backend.last().orderBy()).containsExactly(new Ordering(path("name"), Ordering.Direction.ASC));
+    }
+
     // ------------------------------------------------------- groupBy / having
 
     /// 守护 `QueryBuilder:181` 的 `return this` → `null`：变长 `groupBy(refs...)` 只有多列
