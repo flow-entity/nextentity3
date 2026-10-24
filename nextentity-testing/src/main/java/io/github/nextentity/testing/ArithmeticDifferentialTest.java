@@ -41,6 +41,15 @@ import org.junit.jupiter.api.TestFactory;
 /// MySQL 侧是 `MySqlItemArithmeticDivisionIntegrationTest`（断言两个表达式逐值返回 `null`）。
 /// 两侧各钉一半，才算把「除零行为随方言变」这件事钉住。
 ///
+/// **链式里的除法也不进矩阵**，理由同上但形态不同：`(score / 3) * 3` 在 H2（`INTEGER / INTEGER`
+/// 整数除法）上是 `9 / 18 / 30 / null / 3 / -3`，而在 MySQL（`/` 走 DECIMAL 除法、不截断）上
+/// 逐值还原成 `10 / 20 / 30 / null / 5 / -4`——同一条表达式，两个方言给出不同结果。
+/// 这两格同样按方言分开钉：H2 侧 `ItemArithmeticDivisionTest.divThenMulTruncatesBeforeMultiplying`，
+/// MySQL 侧 `MySqlItemArithmeticDivisionIntegrationTest.divThenMulKeepsDecimalPrecision`。
+/// 矩阵里因此只保留**不跨方言分叉**的链（`/` 不出现在链中），但单算子 `DIV` 那一格仍在矩阵里：
+/// `score / 3` 单独投影时两侧都按 Integer 截断成 `3 / 6 / 10 / null / 1 / -1`，
+/// 分叉只在「除法结果继续参与运算」时才出现。
+///
 /// **`列 算子 列` 不在矩阵里，因为公开 API 表达不出来**：`NumberArithmetic.add(U)` 的 `U`
 /// 就是列的 Java 类型（此处 `Integer`），所以 `Path.of(score).add(Path.of(score2))` 在编译期
 /// 就过不了（实测 `javac` 报「不兼容的类型：`NumberPath<T,Integer>` 无法转换为 `Integer`」）。
@@ -135,8 +144,8 @@ public abstract class ArithmeticDifferentialTest<T extends Item> extends Consist
                                 .orderBy(idRef())
                                 .asc()
                                 .list();
-                    case DIV_THEN_MUL ->
-                        query().select(Path.of(scoreRef()).div(3).mul(3))
+                    case SUB_THEN_MUL ->
+                        query().select(Path.of(scoreRef()).sub(5).mul(2))
                                 .orderBy(idRef())
                                 .asc()
                                 .list();
@@ -210,13 +219,16 @@ public abstract class ArithmeticDifferentialTest<T extends Item> extends Consist
     /// - `(score + 5) * 2`：加法先做、乘法后做，交换两步的顺序结果不同；
     /// - `(score - 5) + 3`：负数行 `-4` 使「先减后加」与「先加后减」不同；
     /// - `(score * 2) - 7`：乘法先做、减法后做；
-    /// - `(score / 3) * 3`：**截断可见**——`10 → 3 → 9`，若除法被实现成实数除法，这一格立刻红；
+    /// - `(score - 5) * 2`：减法先做、乘法后做（`-4` 与 `5` 两行钉住符号方向）；
     /// - `(score % 3) + 10`：余数符号跟随被除数（`-4 % 3 = -1`）。
+    ///
+    /// 链里**刻意不放 `/`**：`(score / 3) * 3` 是跨方言分叉点（H2 整数除法 vs MySQL DECIMAL 除法），
+    /// 放进后端中立的矩阵会绑死方言，改由按方言分开的两条用例各钉一侧（见类注释）。
     enum Chain {
         ADD_THEN_MUL(Step.ADD, 5, Step.MUL, 2),
         SUB_THEN_ADD(Step.SUB, 5, Step.ADD, 3),
         MUL_THEN_SUB(Step.MUL, 2, Step.SUB, 7),
-        DIV_THEN_MUL(Step.DIV, 3, Step.MUL, 3),
+        SUB_THEN_MUL(Step.SUB, 5, Step.MUL, 2),
         MOD_THEN_ADD(Step.MOD, 3, Step.ADD, 10);
 
         private final Step first;

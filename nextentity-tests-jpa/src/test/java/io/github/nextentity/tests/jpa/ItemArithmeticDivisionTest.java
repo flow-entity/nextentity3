@@ -1,5 +1,6 @@
 package io.github.nextentity.tests.jpa;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.api.Path;
@@ -51,6 +52,26 @@ class ItemArithmeticDivisionTest extends ConsistencyTestBase<ItemEntity> {
                         .asc()
                         .list())
                 .isInstanceOf(DataException.class);
+    }
+
+    /// `(score / 3) * 3` 在 H2 上**先截断再乘**：`10 → 3 → 9`。
+    ///
+    /// 这一格刻意不放进 `ArithmeticDifferentialTest` 的后端中立矩阵：MySQL 的 `/` 走 DECIMAL
+    /// 除法不截断，同一条表达式在那里逐值还原成原值（见 `MySqlItemArithmeticDivisionIntegrationTest`
+    /// 的同名格）。两侧各钉一侧，差异才看得见；写进中立矩阵就只能挑一侧当通用语义。
+    ///
+    /// 期望值由内存侧的整数除法独立算出（Java 的 `/` 向零截断），不读后端结果。
+    @Test
+    void divThenMulTruncatesBeforeMultiplying() {
+        List<Integer> actual = query().select(Path.of(scoreRef()).div(3).mul(3))
+                .orderBy(idRef())
+                .asc()
+                .list();
+        List<Integer> expected = fixtureRows().stream()
+                .map(row -> row.score() == null ? null : row.score() / 3 * 3)
+                .toList();
+
+        assertThat(actual).containsExactlyElementsOf(expected);
     }
 
     @Test

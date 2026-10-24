@@ -56,6 +56,28 @@ class MySqlItemArithmeticDivisionIntegrationTest extends ConsistencyTestBase<Ite
                 .isGreaterThan(1L);
     }
 
+    /// `(score / 3) * 3` 在 MySQL 上**不截断**：逐值还原成 `10 / 20 / 30 / null / 5 / -4`。
+    ///
+    /// 与 H2 侧 `ItemArithmeticDivisionTest.divThenMulTruncatesBeforeMultiplying`（`9 / 18 / 30 / null / 3 / -3`）
+    /// 构成同一表达式的跨方言对拍：MySQL 的 `/` 对两个整数返回 DECIMAL（`10/3 = 3.3333`），
+    /// 乘回 3 后由投影类型转回 `Integer` 时取整，因此不丢精度；H2 的 `INTEGER / INTEGER`
+    /// 是整数除法，先截断再乘。**这是真实存在的方言差异，不是实现缺陷**，所以两侧各钉一侧，
+    /// 谁都不许把对方的结果当成通用语义。
+    ///
+    /// 期望值按「十进制除法 + 取整回 Integer」独立建模，不抄后端输出。
+    @Test
+    void divThenMulKeepsDecimalPrecision() {
+        List<Integer> actual = query().select(Path.of(scoreRef()).div(3).mul(3))
+                .orderBy(idRef())
+                .asc()
+                .list();
+        List<Integer> expected = fixtureRows().stream()
+                .map(row -> row.score() == null ? null : (int) Math.round(row.score() / 3.0 * 3))
+                .toList();
+
+        assertThat(actual).containsExactlyElementsOf(expected);
+    }
+
     @Test
     void divByZeroYieldsNull() {
         List<Integer> actual = query().select(Path.of(scoreRef()).div(0))
