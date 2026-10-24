@@ -19,24 +19,26 @@
     </module>
 
     <module name="TreeWalker">
-        <!-- 禁止使用全类名（FQN），统一 import + 短类名 -->
+        <!-- 禁止使用全类名（FQN），统一 import + 短类名。
+             豁免 `import` / `package` / `import static` 三种行首形式：它们本来就是 import 语句，
+             不是"在代码里写全类名"。漏掉 `static` 会把合法的静态导入判成违规。 -->
         <module name="RegexpSinglelineJava">
-            <property name="format" value="^(?!.*(?:import|package)\s+io\.github\.nextentity\.).*\bio\.github\.nextentity(?:\.\w+)*\.[A-Z]\w*"/>
+            <property name="format" value="^(?!.*(?:import|package)\s+(?:static\s+)?io\.github\.nextentity\.).*\bio\.github\.nextentity(?:\.\w+)*\.[A-Z]\w*"/>
             <property name="message" value="禁止使用全类名（FQN），请用 import + 短类名"/>
             <property name="ignoreComments" value="true"/>
         </module>
         <module name="RegexpSinglelineJava">
-            <property name="format" value="^(?!.*(?:import|package)\s+java\.).*\bjava\.\w+\.[A-Z]\w*"/>
+            <property name="format" value="^(?!.*(?:import|package)\s+(?:static\s+)?java\.).*\bjava\.\w+\.[A-Z]\w*"/>
             <property name="message" value="禁止使用全类名（FQN），请用 import + 短类名"/>
             <property name="ignoreComments" value="true"/>
         </module>
         <module name="RegexpSinglelineJava">
-            <property name="format" value="^(?!.*(?:import|package)\s+jakarta\.).*\bjakarta\.\w+\.[A-Z]\w*"/>
+            <property name="format" value="^(?!.*(?:import|package)\s+(?:static\s+)?jakarta\.).*\bjakarta\.\w+\.[A-Z]\w*"/>
             <property name="message" value="禁止使用全类名（FQN），请用 import + 短类名"/>
             <property name="ignoreComments" value="true"/>
         </module>
         <module name="RegexpSinglelineJava">
-            <property name="format" value="^(?!.*(?:import|package)\s+org\.springframework\.).*\borg\.springframework\.\w+\.[A-Z]\w*"/>
+            <property name="format" value="^(?!.*(?:import|package)\s+(?:static\s+)?org\.springframework\.).*\borg\.springframework\.\w+\.[A-Z]\w*"/>
             <property name="message" value="禁止使用全类名（FQN），请用 import + 短类名"/>
             <property name="ignoreComments" value="true"/>
         </module>
