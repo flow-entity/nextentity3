@@ -9,7 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 ///
 /// 子类只需给一个 {@link ConsistencySupport}（后端接线），本类负责建夹具与转发查询入口。
 ///
-/// 固定夹具（每个用例执行前重建），后续断言全部按这份数据手算：
+/// 固定夹具（每个用例执行前重建）来自 {@link Fixtures#ITEM_ROWS}，后续断言全部按这份数据手算：
 /// ```text
 /// id=1 name=apple     score=10   score2=10   note=null status=NEW
 /// id=2 name=banana    score=20   score2=10   note=n1   status=ACTIVE
@@ -47,15 +47,26 @@ public abstract class ConsistencyTestBase<T extends Item> {
 
     protected static final String NOTE_2 = "n2";
 
-    /// 每个用例前重建固定夹具（状态分布：apple=NEW, banana=ACTIVE, cherry=DONE, apple pie=NEW）。
+    /// 每个用例前重建夹具（状态分布：apple=NEW, banana=ACTIVE, cherry=DONE, apple pie=NEW）。
+    ///
+    /// 行数据只有一个出处：写进后端的是 {@link #fixtureRows()} 映射出的实体，内存 oracle 读的
+    /// 也是同一份 {@link FixtureRow}，两边不可能因为复制粘贴而分家。
     @BeforeEach
     final void seed() {
         ConsistencySupport<T> support = support();
-        support.seedData(List.of(
-                support.newItem(APPLE_ID, APPLE_NAME, 10, 10, null, ItemStatus.NEW),
-                support.newItem(BANANA_ID, BANANA_NAME, 20, 10, NOTE_1, ItemStatus.ACTIVE),
-                support.newItem(CHERRY_ID, CHERRY_NAME, 30, null, NOTE_2, ItemStatus.DONE),
-                support.newItem(APPLE_PIE_ID, APPLE_PIE_NAME, null, 5, null, ItemStatus.NEW)));
+        support.seedData(fixtureRows().stream()
+                .map(row -> support.newItem(row.id(), row.name(), row.score(), row.score2(), row.note(), row.status()))
+                .toList());
+    }
+
+    /// 本次用例写入后端的夹具行。
+    ///
+    /// 默认是标准四行；差分矩阵用例换 {@link Fixtures#OPERATOR_ROWS}——标准夹具里没有一行
+    /// `score < score2`，`lt` 那一格在标准夹具上恒为假，等于没测。
+    ///
+    /// @return 夹具原始数据，按 id 升序；写进后端与内存 oracle 读的是同一份
+    protected List<FixtureRow> fixtureRows() {
+        return Fixtures.ITEM_ROWS;
     }
 
     /// 后端接线（由具体后端提供）。
