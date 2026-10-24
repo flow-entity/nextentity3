@@ -83,7 +83,9 @@ class JpaPredicatesBetweenTest extends JpaTestSupport {
         assertThat(ids(spec)).containsExactly(101L);
         // 字面量路径必须留下两个绑定参数：判反 instanceof 的变异体会把两侧字面量塞进 builder.literal，
         // 渲染成内联的 `between 4 and 6`，参数占位符随之消失
-        assertThat(drainSql()).anySatisfy(sql -> assertThat(sql).containsIgnoringCase("amount between ? and ?"));
+        assertThat(normalized(drainSql()))
+                .containsExactly("select so1_0.id,so1_0.amount,so1_0.customer_id,so1_0.note,so1_0.status,so1_0.version"
+                        + " from shop_order so1_0 where so1_0.amount between ? and ?");
     }
 
     @Test
@@ -104,10 +106,11 @@ class JpaPredicatesBetweenTest extends JpaTestSupport {
         QuerySpec spec = query(new Between(id, id, Literal.of(100L)));
 
         assertThat(ids(spec)).containsExactly(100L);
-        // 表达式路径：只要有一侧不是 Literal 就走 Expression 重载，两侧都内联，语句里不出现参数占位符
-        assertThat(drainSql())
-                .anySatisfy(
-                        sql -> assertThat(sql).containsIgnoringCase("between").doesNotContain("?"));
+        // 表达式路径：只要有一侧不是 Literal 就走 Expression 重载，两侧都内联，语句里不出现参数占位符；
+        // 整句同时钉住「下界是列 so1_0.id、上界内联成 100」
+        assertThat(normalized(drainSql()))
+                .containsExactly("select so1_0.id,so1_0.amount,so1_0.customer_id,so1_0.note,so1_0.status,so1_0.version"
+                        + " from shop_order so1_0 where so1_0.id between so1_0.id and 100");
     }
 
     @Test
@@ -120,9 +123,10 @@ class JpaPredicatesBetweenTest extends JpaTestSupport {
                 new ArithmeticOperand(BinaryOperator.ADD, id, Literal.of(2L))));
 
         assertThat(ids(spec)).isEmpty();
-        assertThat(drainSql())
-                .anySatisfy(
-                        sql -> assertThat(sql).containsIgnoringCase("between").doesNotContain("?"));
+        // 整句：两条算术边界都内联成 `(so1_0.id+1)` / `(so1_0.id+2)`，而不是退化成常量或参数
+        assertThat(normalized(drainSql()))
+                .containsExactly("select so1_0.id,so1_0.amount,so1_0.customer_id,so1_0.note,so1_0.status,so1_0.version"
+                        + " from shop_order so1_0 where so1_0.id between (so1_0.id+1) and (so1_0.id+2)");
     }
 
     /// 表达式形态的 `between`：主语与两端都是列，经公开 api 的 `between(Expression, Expression)` 进入。
@@ -144,10 +148,12 @@ class JpaPredicatesBetweenTest extends JpaTestSupport {
                 .map(PriceWindow::getId)
                 .toList());
         assertThat(matched).containsExactly(1L, 3L, 4L);
-        // 两侧都是列 → 没有绑定参数（字面量路径才会渲染 `between ? and ?`）
-        assertThat(drainSql())
-                .anySatisfy(
-                        sql -> assertThat(sql).containsIgnoringCase("between").doesNotContain("?"));
+        // 两侧都是列 → 没有绑定参数（字面量路径才会渲染 `between ? and ?`）；整句钉住两侧列名
+        assertThat(normalized(drainSql()))
+                .containsExactly("select pw1_0.id,pw1_0.lower_price,pw1_0.upper_price,pw1_0.price"
+                        + " from price_window pw1_0"
+                        + " where pw1_0.price between pw1_0.lower_price and pw1_0.upper_price"
+                        + " order by pw1_0.id");
 
         // 同一区间用字面量形态表达：结果必须与列对列形态一致（两条渲染路径对拍）
         List<Long> literalForm = inTx(entityManager -> operations(entityManager)
