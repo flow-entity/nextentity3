@@ -20,8 +20,12 @@ import org.junit.jupiter.api.TestFactory;
 ///
 /// 差分分工（两条路径不相交）：
 /// - 真库一侧：`query().where(<后端谓词>).orderBy(id).asc()`，渲染走生产代码的谓词编译路径；
-/// - 内存一侧：{@link Matrix} 里的三值逻辑直接读 {@link Fixtures#OPERATOR_ROWS} 的原始字段求值，
+/// - 内存一侧：{@link Matrix} 里的三值逻辑直接读 `fixtureRows()` 的原始字段求值，
 ///   不调用 nextentity 的任何生产代码，也不回读后端结果。
+///
+/// 行数据一律取自 `fixtureRows()`（播种用的就是它），不硬编码 {@link Fixtures#OPERATOR_ROWS}：
+/// 子类覆写 `fixtureRows()` 时，灌进库的行与内存求值的行必须是同一份，否则差分静默假绿。
+/// 独立性说的是**求值逻辑**不碰生产代码，与行数据从哪来无关。
 ///
 /// 比对是**逐元素**的（`containsExactlyElementsOf`），不是集合相等：行集一样但顺序错，同样要红。
 ///
@@ -67,11 +71,9 @@ public abstract class PredicateDifferentialTest<T extends Item> extends Consiste
     }
 
     private void assertCell(Case<T> cell) {
-        List<Long> expected = Fixtures.OPERATOR_ROWS.stream()
-                .filter(cell.memory())
-                .map(FixtureRow::id)
-                .toList();
-        cell.shape().verify(cell.name(), expected, Fixtures.OPERATOR_ROWS.size());
+        List<Long> expected =
+                fixtureRows().stream().filter(cell.memory()).map(FixtureRow::id).toList();
+        cell.shape().verify(cell.name(), expected, fixtureRows().size());
 
         List<Long> actual = cell.backend().apply(query()).orderBy(idRef()).asc().list().stream()
                 .map(Item::id)
