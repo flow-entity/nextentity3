@@ -2,28 +2,41 @@
 
 ## 结果
 
-| 项 | 2.2.3 | 移植后 |
-|---|---|---|
-| `integration` 用例注解数 | 1,063 | **603** |
-| 单环境执行数 | — | **593**（`@Nested` 与参数化展开后） |
-| 文件数 | 114（含夹具/环境/DTO） | 83 |
-| 删除用例 | — | **460** 条 + 5 个整类 |
+| 项 | 2.2.3 | 第一轮移植 | 第二轮回填（当前） |
+|---|---|---|---|
+| `integration` 用例注解数 | 1,063 | 603 | **727** |
+| 单环境执行数 | — | 593 | **727** |
+| 文件数 | 114（含夹具/环境/DTO） | 83 | 85 |
+| 删除用例 | — | 460 条 + 5 个整类 | **336 条 + 3 个整类** |
 
-环境覆盖：`h2`（默认，随全量构建跑）与 `mysql`（真 MySQL 8.0.18）**各 593 条全绿**，合计 1,186 次执行。
+环境覆盖：`h2`（默认，随全量构建跑）与 `mysql`（真 MySQL 8.0.18）**各 727 条全绿**，合计 1,454 次执行。
+
+> 第二轮的口径：`7b8a71aa` 之后 api 补齐了第一梯队 10 项能力（`not()`、`min`/`avg`、`having`、
+> 多列 `groupBy`、`Tuple3~6` + `ProjectionMappers`、数值算术、列对列比较、`notBetween`、`like`、`distinct()`），
+> 第一轮按「能力缺口就删」处理掉的用例里有一批重新可移植。回填 **+134 条**，逐条依据见各
+> `NOT-PORTED-*.md` 顶部的「本轮回填」小节。
 
 ## 保留原则
 
 **断言不动，只改调用形态。** 期望值、边界、异常类型一处未改；改的只有：怎么拿到查询入口
 （`EntityTemplateFactory` → `EntityOperations`）、算子叫什么（`like` → `likeIfNotNull`、
 `list(offset,limit)` → `slice(offset,limit).data()`）、锁模式枚举（`LockModeType` → `LockMode`）、
-谓词组合（`Predicates.and(a,b)` → `a.and(b)`）。
+谓词组合（`Predicates.and(a,b)` → `a.and(b)`）、多参数 `orderBy` → 累积链 `orderBy(a).asc().orderBy(b).desc()`。
 
-**能力缺口就删，不造映射。** 3.x 没有的能力（`fetch`、`Tuple3+`、DTO/record 投影、`avg`/`min`、
-`having`、条件更新/删除、子查询、`startsWith`/`endsWith`/`notLike`、多参数 `orderBy`/`groupBy`、
-数值算术、`core.util.Predicates`、`jdbc` 引擎、`Order` 枚举、`stream()`）对应的用例一律删除，
+**能力缺口就删，不造映射。** 3.x 仍然没有的能力（`fetch`、DTO/record/接口投影（`select(Class)`）、
+条件更新/删除、子查询（`toSubQuery`）、`startsWith`/`endsWith`/`notLike`/`lower`/`length`/`substring`、
+算术的 `*IfNotNull` 变体、`orderBy(Collection)`、`Slice.offset()/limit()`、锁 + 分页组合、
+`EntityRoot.literal`、7 列及以上投影与 `select(Collection)`）对应的用例一律删除，
 逐条依据见本目录四个 `NOT-PORTED-*.md`，每条都指到 api 源码的 `文件:行`。
 
-这条纪律的意义在于：移植语料**不能**反过来要求库把删掉的 API 加回来。若把 460 条都"想办法"凑绿，
+两处**刻意不采纳**的等价替换，避免把「等价前提」藏进用例：
+
+- `startsWith(v)` / `endsWith(v)` 在 2.2.3 的实现就是 `like(v + '%')`，用 `StringOps.like("A%")` 能跑通，
+  但等价性依赖「实参不含 `%` / `_`」，且用例名会与被测算子不符（名字说 startsWith，测的是 like）；
+- 7 列及以上 / `select(Collection)` 可用自定义 `ProjectionMapper` 透传表达，但结果类型会从 `TupleN`
+  降为 `Tuple`、断言里的 `getN()` 要改成 `get(N)`，属改写断言形态。
+
+这条纪律的意义在于：移植语料**不能**反过来要求库把删掉的 API 加回来。若把剩下的用例都"想办法"凑绿，
 等于用上一个版本的 API 形状锁死这一版的设计。
 
 ## 裁决（跑出来才发现的语义差异）
@@ -67,6 +80,40 @@
 这两处都是**能力面缺口**，不是移植偷懒。当前 point-mall 对二者零调用点（锁只用于
 `lock(PESSIMISTIC_WRITE).first()`，分页不要求加锁），因此按「无调用点不加 API」的规矩**不补**，
 留档待将来真有消费方时再议。
+
+## 第二轮回填的用例（+134 条）
+
+| 能力 | 文件 | 条数 |
+|---|---|---|
+| `having()` | `HavingClauseIntegrationTest`（新，整类） | 19 |
+| 多列 `groupBy` + `Tuple3`/`ProjectionMappers` | `GroupByStepMultipleParametersIntegrationTest`（新，整类） | 6 |
+| `min()` / `avg()` / 多列聚合 | `AggregateFunctionsIntegrationTest`、`SubqueryIntegrationTest`、`ErrorHandlingIntegrationTest` | 11 |
+| `Tuple3~6` + 多列 `distinct()` | `SelectApiIntegrationTest`、`EntityQueryIntegrationTest`、`TuplesIntegrationTest` | 35 |
+| 数值算术（`add`/`sub`/`mul`/`div`/`mod`） | `NumericOperationsIntegrationTest`、`ExpressionBuilderDefaultMethodsIntegrationTest` | 28 |
+| `not()` 与链式取反 | `AndOrPredicateIntegrationTest`、`ComplexPredicateIntegrationTest` | 14 |
+| `notBetween()` / 多参数 `orderBy` | `SimpleExpressionDefaultMethodsIntegrationTest`、`OrderByStepMultipleParametersIntegrationTest`、`SimpleExpressionSortOrderIntegrationTest` | 18 |
+| 其余（`having` 分组表达式、嵌套路径 `distinct` 投影） | `WhereImplIntegrationTest`、`NestedPathIntegrationTest` | 5 |
+
+## 这批语料抓到的生产代码缺陷（4 条）
+
+移植用例的价值就在这里：2.2.3 的期望值 + 3.x 的实现，跑红的地方就是缺陷。以下四条都已在
+`core` 修复并由 `nextentity-testing` 的一致性基类钉住（H2 与真 MySQL 双通道）。
+
+| # | 缺陷 | 症状 | 修复 |
+|---|---|---|---|
+| 1 | **双重否定只生效一次** | `not().not()` 结果等于 `not()`（`shouldHandleChainedNotOperations` 红，H2 与 MySQL 同错）。纯 JPA 对照确认是 Hibernate `Predicate.not()` 对「最内层是比较谓词」的嵌套取反幂等，而 core 把 `NOT(NOT(x))` 原样下推 | `OpInterpreter#negate` 消去双重否定（`NOT(NOT(x))` → `x`，三重 → 一层 `NOT`）；`NegationConsistencyTest` 钉住 |
+| 2 | **去重投影 + 分页在 MySQL 上必炸** | `distinct().select(col).list(n)/first()/slice()` 生成 `SELECT DISTINCT col ... ORDER BY 主键`，MySQL 报 `Expression #1 of ORDER BY clause is not in SELECT list`；H2 容忍 → H2 单通道全绿 | `QueryBuilder#spec(Window)` 在去重投影上不再自动补主键排序；`DistinctConsistencyTest#distinctSurvivesPaginationWithoutExplicitOrder` 钉住 |
+| 3 | **`slice()` 遇到 NULL 投影值 NPE** | `select(可空列).slice(0,n)` 直接抛 `NullPointerException`（`SliceResult` 用 `List.copyOf`，而 `List.copyOf` 拒绝 null 元素）。2.2.3 的 `SliceImpl` 是纯 record，允许 null | `SliceResult` 改用 `Stream.toList()`（不可变且允许 null）；`SliceResultTest` 与一致性用例钉住 |
+| 4 | **去重 + 可空列的 `total()` 比实际行数少 1** | `COUNT(DISTINCT 可空列)` 不计 `NULL` 组，而 `SELECT DISTINCT` 把 `NULL` 算一组；分页元数据因此少一行 | 不修语义（要修得加第二条查询），在 `Slice#total` 与一致性用例里写明口径 |
+
+另有三条**已确认但不修**的形态问题，记录备查：
+
+- `EntityQuery.groupBy(...)` / `having(...)` 编译合法、运行必然 SQL 错误（实体投影 + 分组）；接口形状
+  （`EntityQuery extends BaseWhereStep<T,T>`）留了这个洞，要堵得在 builder 里显式拒绝。
+- 算术右值走 `builder.literal` 内联进 SQL，`salary * 1.1` 在 H2（DECIMAL）与 MySQL（DOUBLE）上
+  结果差 1 ulp（`93500.0` vs `93500.00000000001`），且无法复用执行计划；与条件走参数绑定的口径不对称。
+- `like` / `contains` 的大小写语义由方言决定：H2（`MODE=MySQL`）区分大小写、真 MySQL 默认排序规则不区分。
+  H2 通道因此**发现不了**大小写相关的缺陷，跨方言语义只能靠 MySQL 通道兜。
 
 ## 复现
 

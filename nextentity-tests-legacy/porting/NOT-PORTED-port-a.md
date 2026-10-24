@@ -1,5 +1,13 @@
 # NOT-PORTED — port-a（谓词 / 条件 / 聚合 / 关联）
 
+> **本轮回填（2026-10-24，`7b8a71aa` 之后）**：下表里的「删除」判定有一部分已随第一梯队能力落地而失效，
+> 这些用例已经移植回来：`HavingClauseIntegrationTest` 整类 19 条（`having()`）、`AndOrPredicateIntegrationTest` 11 条
+> （`not()` 与链式取反）、`ComplexPredicateIntegrationTest` 3 条（`not()`）、`AggregateFunctionsIntegrationTest` 6 条
+> （`avg`/`min`/多列聚合）、`SubqueryIntegrationTest` 4 条（`min`/`avg` 比较）、`WhereImplIntegrationTest` 3 条
+> （`avg` + 多列 `groupBy`/`having`）、`ErrorHandlingIntegrationTest` 1 条（`avg`）、`NestedPathIntegrationTest` 2 条
+> （`distinct()` + 嵌套路径投影）。仍然缺的能力：`fetch`、`toSubQuery`、`startsWith`、`having` 之后的
+> `count()`/`exists()`/分页。总账见 [`REPORT.md`](REPORT.md)。
+
 批次：port-a（11 个文件）。编译验证：`.\tmp\scripts\legacy-javac.ps1 -Name port-a` → `tmp/legacy/javac-port-a.log`，
 日志中**本批 11 个文件 0 报错**（其余报错全部属于其他 agent 的文件）。
 

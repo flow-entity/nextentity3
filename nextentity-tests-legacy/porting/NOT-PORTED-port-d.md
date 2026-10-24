@@ -1,5 +1,9 @@
 # NOT-PORTED — port-d（写入 / 锁 / 事务 / 杂项批次）
 
+> **本轮回填（2026-10-24，`7b8a71aa` 之后）**：本批**没有**回填项——`fetch` 全族、条件更新/删除、
+> 锁 + 分页组合、`toSubQuery`、`JdbcConfig`/`SqlLogger` 配置对象在 3.x 仍然不存在。总账见
+> [`REPORT.md`](REPORT.md)。
+
 > 口径：[API-MAPPING.md](API-MAPPING.md)。编译验证：`.\tmp\scripts\legacy-javac.ps1 -Name port-d` → 日志 `tmp\legacy\javac-port-d.log`，**我这批 15 个文件 0 报错**（日志里剩余报错属其他 agent 的文件）。
 > 判定：`移植` = 改调用形态后能跑；`删除` = 3.x 能力已删；`待裁决` = 已改完但怀疑 3.x 行为不同，留 B2 跑出来看。
 

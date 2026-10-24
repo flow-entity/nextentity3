@@ -406,6 +406,111 @@ public class AndOrPredicateIntegrationTest {
     }
 
     @Nested
+    @DisplayName("NOT with AND/OR Tests")
+    class NotWithAndOrTests {
+
+        /// 测试 NOT 与 AND 组合。
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should combine NOT with AND")
+        void shouldCombineNotWithAnd(IntegrationTestContext context) {
+            // Given: active AND NOT(departmentId = 1)
+            List<Employee> employees = context.queryEmployees()
+                    .where(Path.of(Employee::getActive).eq(true)
+                            .and(Path.of(Employee::getDepartmentId).eq(1L).not()))
+                    .list();
+
+            // Then
+            assertThat(employees).isNotEmpty();
+            assertThat(employees).allMatch(e -> e.getActive() && e.getDepartmentId() != 1L);
+        }
+
+        /// 测试 NOT 与 OR 组合。
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should combine NOT with OR")
+        void shouldCombineNotWithOr(IntegrationTestContext context) {
+            // Given: active OR NOT(departmentId = 1)
+            List<Employee> employees = context.queryEmployees()
+                    .where(Path.of(Employee::getActive).eq(true)
+                            .or(Path.of(Employee::getDepartmentId).eq(1L).not()))
+                    .list();
+
+            // Then
+            assertThat(employees).isNotEmpty();
+            assertThat(employees).allMatch(e -> e.getActive() || e.getDepartmentId() != 1L);
+        }
+
+        /// 测试 AND 谓词的 NOT。
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should handle NOT of AND predicate")
+        void shouldHandleNotOfAndPredicate(IntegrationTestContext context) {
+            // Given: NOT(active AND departmentId = 1)
+            List<Employee> employees = context.queryEmployees()
+                    .where(Path.of(Employee::getActive).eq(true)
+                            .and(Path.of(Employee::getDepartmentId).eq(1L))
+                            .not())
+                    .list();
+
+            // Then
+            assertThat(employees).isNotEmpty();
+            assertThat(employees).allMatch(e -> !e.getActive() || e.getDepartmentId() != 1L);
+        }
+
+        /// 测试 OR 谓词的 NOT。
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should handle NOT of OR predicate")
+        void shouldHandleNotOfOrPredicate(IntegrationTestContext context) {
+            // Given: NOT(departmentId = 1 OR departmentId = 2)
+            List<Employee> employees = context.queryEmployees()
+                    .where(Path.of(Employee::getDepartmentId).eq(1L)
+                            .or(Path.of(Employee::getDepartmentId).eq(2L))
+                            .not())
+                    .list();
+
+            // Then
+            assertThat(employees).isNotEmpty();
+            assertThat(employees).allMatch(e -> e.getDepartmentId() != 1L && e.getDepartmentId() != 2L);
+        }
+
+        /// 测试链式 NOT 操作。
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should handle chained NOT operations")
+        void shouldHandleChainedNotOperations(IntegrationTestContext context) {
+            // Given: NOT(NOT(active))
+            List<Employee> employees = context.queryEmployees()
+                    .where(Path.of(Employee::getActive).eq(true).not().not())
+                    .list();
+
+            // Then
+            assertThat(employees).isNotEmpty();
+            assertThat(employees).allMatch(Employee::getActive);
+        }
+
+        /// 测试复杂的 NOT 与 AND/OR 组合。
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should handle complex NOT with AND/OR combination")
+        void shouldHandleComplexNotWithAndOr(IntegrationTestContext context) {
+            // Given: NOT(active AND (departmentId = 1 OR departmentId = 2))
+            List<Employee> employees = context.queryEmployees()
+                    .where(Path.of(Employee::getActive).eq(true)
+                            .and(Path.of(Employee::getDepartmentId).eq(1L)
+                                    .or(Path.of(Employee::getDepartmentId).eq(2L)))
+                            .not())
+                    .list();
+
+            // Then
+            assertThat(employees).isNotEmpty();
+            assertThat(employees).allMatch(e ->
+                    !e.getActive() || (e.getDepartmentId() != 1L && e.getDepartmentId() != 2L));
+        }
+    }
+
+    @Nested
     @DisplayName("Edge Cases Tests")
     class EdgeCasesTests {
 
@@ -490,6 +595,27 @@ public class AndOrPredicateIntegrationTest {
             assertThat(employees).isNotEmpty();
             assertThat(employees).allMatch(e ->
                     e.getEmail().endsWith("@example.com") && e.getActive());
+        }
+
+        /// 测试包含所有操作符的复杂谓词。
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should handle complex predicate with all operators")
+        void shouldHandleComplexPredicateWithAllOperators(IntegrationTestContext context) {
+            // Given: (active AND status = ACTIVE) OR
+            //        (NOT(departmentId IN (1,2)) AND salary > 70000)
+            List<Employee> employees = context.queryEmployees()
+                    .where(Path.of(Employee::getActive).eq(true)
+                            .and(Path.of(Employee::getStatus).eq(EmployeeStatus.ACTIVE))
+                            .or(Path.of(Employee::getDepartmentId).in(1L, 2L).not()
+                                    .and(Path.of(Employee::getSalary).gt(70000.0))))
+                    .list();
+
+            // Then
+            assertThat(employees).isNotEmpty();
+            assertThat(employees).allMatch(e ->
+                    (e.getActive() && e.getStatus() == EmployeeStatus.ACTIVE) ||
+                    ((e.getDepartmentId() != 1L && e.getDepartmentId() != 2L) && e.getSalary() > 70000.0));
         }
 
         /// 测试组合 Predicate.and() 方法。
@@ -783,6 +909,23 @@ public class AndOrPredicateIntegrationTest {
             assertThat(employees).allMatch(e -> e.getActive() && e.getSalary() > 60000.0);
         }
 
+        /// 测试带有算术运算的 Conjunction.and(NumberRef)。
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should chain and(NumberRef) with arithmetic operations")
+        void shouldChainAndNumberRefWithArithmeticOperations(IntegrationTestContext context) {
+            // Given: active AND salary + 10000 > 80000
+            List<Employee> employees = context.queryEmployees()
+                    .where(Path.of(Employee::getActive).eq(true)
+                            .and(Path.of(Employee::getSalary).add(10000.0).gt(80000.0)))
+                    .orderBy(Employee::getSalary).asc()
+                    .list();
+
+            // Then
+            assertThat(employees).isNotEmpty();
+            assertThat(employees).allMatch(e -> e.getActive() && e.getSalary() + 10000.0 > 80000.0);
+        }
+
         /// 测试返回 NumberOperator 的 Disjunction.or(NumberRef)。
         @ParameterizedTest
         @ArgumentsSource(IntegrationTestProvider.class)
@@ -838,6 +981,59 @@ public class AndOrPredicateIntegrationTest {
             assertThat(employees).allMatch(e ->
                     e.getActive() &&
                     (e.getStatus() == EmployeeStatus.ACTIVE || e.getSalary() > 70000.0));
+        }
+
+        /// 测试 Predicate.not() 返回用于链式操作的 Predicate。
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should chain after Predicate.not()")
+        void shouldChainAfterPredicateNot(IntegrationTestContext context) {
+            // Given: NOT(active) AND departmentId = 1
+            List<Employee> employees = context.queryEmployees()
+                    .where(Path.of(Employee::getActive).eq(true).not()
+                            .and(Path.of(Employee::getDepartmentId).eq(1L)))
+                    .list();
+
+            // Then
+            assertThat(employees).isNotEmpty();
+            assertThat(employees).allMatch(e -> !e.getActive() && e.getDepartmentId() == 1L);
+        }
+
+        /// 测试 Predicate.not().or() 链。
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should chain or() after Predicate.not()")
+        void shouldChainOrAfterPredicateNot(IntegrationTestContext context) {
+            // Given: NOT(departmentId = 1) OR active = true
+            List<Employee> employees = context.queryEmployees()
+                    .where(Path.of(Employee::getDepartmentId).eq(1L).not()
+                            .or(Employee::getActive).eq(true))
+                    .list();
+
+            // Then
+            assertThat(employees).isNotEmpty();
+            assertThat(employees).allMatch(e -> e.getDepartmentId() != 1L || e.getActive());
+        }
+
+        /// 测试带有 NOT、AND、OR 的复杂链。
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should handle complex chain with NOT, AND, OR")
+        void shouldHandleComplexChainWithNotAndOr(IntegrationTestContext context) {
+            // Given: active AND NOT(departmentId = 1) AND (status = ACTIVE OR salary > 60000)
+            List<Employee> employees = context.queryEmployees()
+                    .where(Path.of(Employee::getActive).eq(true)
+                            .and(Path.of(Employee::getDepartmentId).eq(1L).not())
+                            .and(Path.of(Employee::getStatus).eq(EmployeeStatus.ACTIVE)
+                                    .or(Employee::getSalary).gt(60000.0)))
+                    .list();
+
+            // Then
+            assertThat(employees).isNotEmpty();
+            assertThat(employees).allMatch(e ->
+                    e.getActive() &&
+                    e.getDepartmentId() != 1L &&
+                    (e.getStatus() == EmployeeStatus.ACTIVE || e.getSalary() > 60000.0));
         }
 
         /// 测试返回用于链式操作的 Conjunction 的 Conjunction.and(Iterable)。

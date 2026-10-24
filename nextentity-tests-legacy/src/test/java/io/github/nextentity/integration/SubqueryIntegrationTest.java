@@ -70,6 +70,51 @@ public class SubqueryIntegrationTest {
     }
 
     ///
+    /// 测试s expression comparison with min salary.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should compare with min expression")
+    void shouldCompareWithMinExpression(IntegrationTestContext context) {
+        // Given - Get min salary
+        Double minSalary = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).min())
+                .single();
+
+        // When - Find employees with min salary
+        List<Employee> employees = context.queryEmployees()
+                .where(Employee::getSalary).eq(minSalary)
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+    }
+
+    ///
+    /// 测试s expression comparison with average salary.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should compare with average expression")
+    void shouldCompareWithAverageExpression(IntegrationTestContext context) {
+        // Given - Get average salary
+        Double avgSalary = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).avg())
+                .single();
+
+        // When - Find employees above average
+        List<Employee> aboveAvg = context.queryEmployees()
+                .where(Employee::getSalary).gt(avgSalary)
+                .list();
+
+        List<Employee> belowAvg = context.queryEmployees()
+                .where(Employee::getSalary).lt(avgSalary)
+                .list();
+
+        // Then
+        assertThat(aboveAvg).isNotEmpty();
+        assertThat(belowAvg).isNotEmpty();
+    }
+
+    ///
     /// 测试s nested query with two-step approach.
     @ParameterizedTest
     @ArgumentsSource(IntegrationTestProvider.class)
@@ -174,6 +219,68 @@ public class SubqueryIntegrationTest {
         // Then
         assertThat(employees).isNotEmpty();
         assertThat(employees).allMatch(e -> e.getDepartmentId() != 1L);
+    }
+
+    ///
+    /// 测试s aggregation with filter.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should aggregate with filter")
+    void shouldAggregateWithFilter(IntegrationTestContext context) {
+        // Given - Get min salary
+        Double minSalary = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).min())
+                .single();
+
+        // When - Find employees with salary above min
+        List<Employee> employees = context.queryEmployees()
+                .where(Employee::getSalary).gt(minSalary)
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+
+        // Should have at least one employee NOT in the result (the min salary employee)
+        long total = context.queryEmployees().count();
+        assertThat(employees.size()).isLessThan((int) total);
+    }
+
+    ///
+    /// 测试s combined aggregation queries.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should combine multiple aggregations")
+    void shouldCombineMultipleAggregations(IntegrationTestContext context) {
+        // Given
+        Long count = context.queryEmployees()
+                .select(Path.of(Employee::getId).count())
+                .single();
+
+        Double avg = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).avg())
+                .single();
+
+        Double max = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).max())
+                .single();
+
+        Double min = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).min())
+                .single();
+
+        // When - Find employees in various ranges
+        List<Employee> aboveAvg = context.queryEmployees()
+                .where(Employee::getSalary).ge(avg)
+                .list();
+
+        List<Employee> belowAvg = context.queryEmployees()
+                .where(Employee::getSalary).le(avg)
+                .list();
+
+        // Then
+        assertThat(count).isEqualTo(12L);
+        assertThat(avg).isBetween(min, max);
+        assertThat(aboveAvg.size() + belowAvg.size()).isGreaterThanOrEqualTo(count.intValue());
     }
 
     ///

@@ -296,6 +296,67 @@ public class WhereImplIntegrationTest {
             // Then
             assertThat(results).isNotEmpty();
         }
+
+        ///
+        /// 测试目标: 验证y that groupBy(TypedExpression) works with aggregate functions.
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should group by TypedExpression with aggregate")
+        void shouldGroupBy_TypedExpressionWithAggregate(IntegrationTestContext context) {
+            // Given
+            var activePath = Path.of(Employee::getActive);
+
+            // When - 3.x 没有 groupByExpr(Expression)，Path 形态的分组走 groupBy(PathRef)
+            var results = context.queryEmployees()
+                    .select(activePath, Path.of(Employee::getSalary).avg())
+                    .groupBy(Employee::getActive)
+                    .list();
+
+            // Then
+            assertThat(results).isNotEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("groupBy(List<TypedExpression>) Integration Tests")
+    class GroupByExpressionListTests {
+
+        ///
+        /// 测试目标: 验证y that groupBy(List<TypedExpression>) adds all groupings.
+        /// Covers: WhereImpl.groupBy(List<TypedExpression>) line 198-200
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should group by list of TypedExpressions")
+        void shouldGroupBy_ListOfTypedExpressions(IntegrationTestContext context) {
+            // Given - use Path references directly for groupBy
+            // When - 3.x 没有 List 重载，多列分组走 groupBy(PathRef...) 变长参数
+            var results = context.queryEmployees()
+                    .select(Path.of(Employee::getDepartmentId), Path.of(Employee::getActive), Path.of(Employee::getId).count())
+                    .groupBy(Employee::getDepartmentId, Employee::getActive)
+                    .orderBy(Employee::getDepartmentId).asc()
+                    .list();
+
+            // Then
+            assertThat(results).isNotEmpty();
+        }
+
+        ///
+        /// 测试目标: 验证y that groupBy with list works with having clause.
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should group by list with having clause")
+        void shouldGroupByList_WithHavingClause(IntegrationTestContext context) {
+            // When
+            var results = context.queryEmployees()
+                    .select(Path.of(Employee::getDepartmentId), Path.of(Employee::getActive), Path.of(Employee::getId).count())
+                    .groupBy(Employee::getDepartmentId, Employee::getActive)
+                    .having(Path.of(Employee::getId).count().gt(1L))
+                    .orderBy(Employee::getDepartmentId).asc()
+                    .list();
+
+            // Then
+            assertThat(results).isNotEmpty();
+        }
     }
 
     @Nested

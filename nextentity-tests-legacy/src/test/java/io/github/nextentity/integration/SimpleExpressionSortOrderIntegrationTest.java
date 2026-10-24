@@ -325,6 +325,42 @@ public class SimpleExpressionSortOrderIntegrationTest {
 
     // ==================== Multiple Order Tests ====================
 
+    ///
+    /// 测试s using multiple Order objects with orderBy(Order, Order).
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should use orderBy with two Order objects")
+    void shouldUseOrderByWithTwoOrders(IntegrationTestContext context) {
+        // Given
+
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .orderBy(Employee::getSalary).desc()
+                .orderBy(Employee::getId).asc()
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+    }
+
+    ///
+    /// 测试s using three Order objects.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should use orderBy with three Order objects")
+    void shouldUseOrderByWithThreeOrders(IntegrationTestContext context) {
+        // Given
+
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .orderBy(Employee::getSalary).desc()
+                .orderBy(Employee::getName).asc()
+                .orderBy(Employee::getId).asc()
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+    }
 }
 
 

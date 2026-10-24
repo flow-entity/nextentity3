@@ -2,7 +2,11 @@ package io.github.nextentity.integration;
 
 import io.github.nextentity.api.Path;
 import io.github.nextentity.api.Predicate;
+import io.github.nextentity.api.ProjectionMappers;
 import io.github.nextentity.api.model.Tuple2;
+import io.github.nextentity.api.model.Tuple3;
+import io.github.nextentity.api.model.Tuple4;
+import io.github.nextentity.api.model.Tuple5;
 import io.github.nextentity.integration.config.IntegrationTestContext;
 import io.github.nextentity.integration.config.IntegrationTestProvider;
 import io.github.nextentity.integration.entity.Department;
@@ -21,14 +25,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// Integration tests for QueryBuilder.
 ///
 /// 3.x 的对位改动只有调用形态：`.list(offset, limit)` → `.slice(offset, limit).data()`；
-/// `Predicate.and(PathRef)` → `Predicate.and(Path.of(...).op(...))`。断言原样保留。
-/// `select(Class)`（`avg`/`min`/`Tuple3+`/算术/`Predicate.not()` 与多列去重现已由 `distinct()` 支持，用例待回填）
-/// 对应的用例已删除（见 `tmp/legacy/NOT-PORTED-port-b.md`）。
+/// `Predicate.and(PathRef)` → `Predicate.and(Path.of(...).op(...))`；
+/// 四~五列 `select(a, b, c, d/e)` → `project(ProjectionMappers.select(...))`（`Tuple4` / `Tuple5`）；
+/// 多列 `selectDistinct(...)` → `distinct().select(...)`。断言原样保留。
+/// `select(Class)` / `selectDistinct(Class)` 对应的用例已删除（见 `porting/NOT-PORTED-port-b.md`）。
 class EntityQueryIntegrationTest {
 
     // Test data constants - Employees
     private static final int TOTAL_TEST_EMPLOYEES = 12;
     private static final double MAX_SALARY = 85000.0;
+    private static final double MIN_SALARY = 48000.0;
     private static final String ALICE_NAME = "Alice Johnson";
     private static final String BOB_NAME = "Bob Smith";
 
@@ -282,6 +288,18 @@ class EntityQueryIntegrationTest {
 
     @ParameterizedTest
     @ArgumentsSource(IntegrationTestProvider.class)
+    void select_WithAvg_ShouldReturnAverage(IntegrationTestContext context) {
+        // when
+        Double avg = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).avg())
+                .first();
+
+        // then
+        assertThat(avg).isPositive();
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
     void select_WithMax_ShouldReturnMax(IntegrationTestContext context) {
         // when
         Double max = context.queryEmployees()
@@ -290,6 +308,18 @@ class EntityQueryIntegrationTest {
 
         // then
         assertThat(max).isEqualTo(MAX_SALARY);
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    void select_WithMin_ShouldReturnMin(IntegrationTestContext context) {
+        // when
+        Double min = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).min())
+                .first();
+
+        // then
+        assertThat(min).isEqualTo(MIN_SALARY);
     }
 
     @ParameterizedTest
@@ -317,6 +347,215 @@ class EntityQueryIntegrationTest {
 
         // then
         assertThat(departments).hasSize(TOTAL_DEPARTMENTS);
+    }
+
+    // ==================== Multi-field Select Tests ====================
+
+    @Nested
+    @DisplayName("Multi-field Select Tests")
+    class MultiFieldSelectTests {
+
+        ///
+        /// 测试s select with 3 fields returning Tuple3.
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should select 3 fields into Tuple3")
+        void shouldSelectThreeFieldsIntoTuple3(IntegrationTestContext context) {
+            // When
+            List<Tuple3<String, Double, Long>> results = context.queryEmployees()
+                    .select(Path.of(Employee::getName), Path.of(Employee::getSalary), Path.of(Employee::getId))
+                    .orderBy(Employee::getId).asc()
+                    .list();
+
+            // Then
+            assertThat(results).isNotEmpty();
+            assertThat(results).hasSize(TOTAL_TEST_EMPLOYEES);
+            Tuple3<String, Double, Long> first = results.get(0);
+            assertThat(first.get0()).isNotNull();
+            assertThat(first.get1()).isNotNull();
+            assertThat(first.get2()).isNotNull();
+        }
+
+        ///
+        /// 测试s select with 4 fields returning Tuple4.
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should select 4 fields into Tuple4")
+        void shouldSelectFourFieldsIntoTuple4(IntegrationTestContext context) {
+            // When
+            List<Tuple4<String, Double, Long, String>> results = context.queryEmployees()
+                    .project(ProjectionMappers.select(
+                            Path.of(Employee::getName),
+                            Path.of(Employee::getSalary),
+                            Path.of(Employee::getId),
+                            Path.of(Employee::getEmail)))
+                    .orderBy(Employee::getId).asc()
+                    .list();
+
+            // Then
+            assertThat(results).isNotEmpty();
+            assertThat(results).hasSize(TOTAL_TEST_EMPLOYEES);
+            Tuple4<String, Double, Long, String> first = results.get(0);
+            assertThat(first.get0()).isNotNull();
+            assertThat(first.get1()).isNotNull();
+            assertThat(first.get2()).isNotNull();
+            assertThat(first.get3()).isNotNull();
+        }
+
+        ///
+        /// 测试s select with 5 fields returning Tuple5.
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should select 5 fields into Tuple5")
+        void shouldSelectFiveFieldsIntoTuple5(IntegrationTestContext context) {
+            // When
+            List<Tuple5<String, Double, Long, String, Boolean>> results = context.queryEmployees()
+                    .project(ProjectionMappers.select(
+                            Path.of(Employee::getName),
+                            Path.of(Employee::getSalary),
+                            Path.of(Employee::getId),
+                            Path.of(Employee::getEmail),
+                            Path.of(Employee::getActive)))
+                    .orderBy(Employee::getId).asc()
+                    .list();
+
+            // Then
+            assertThat(results).isNotEmpty();
+            assertThat(results).hasSize(TOTAL_TEST_EMPLOYEES);
+            Tuple5<String, Double, Long, String, Boolean> first = results.get(0);
+            assertThat(first.get0()).isNotNull();
+            assertThat(first.get1()).isNotNull();
+            assertThat(first.get2()).isNotNull();
+            assertThat(first.get3()).isNotNull();
+            assertThat(first.get4()).isNotNull();
+        }
+    }
+
+    // ==================== SelectDistinct Multi-field Tests ====================
+
+    @Nested
+    @DisplayName("SelectDistinct Multi-field Tests")
+    class SelectDistinctMultiFieldTests {
+
+        ///
+        /// 测试s selectDistinct with 2 fields.
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should selectDistinct 2 fields")
+        void shouldSelectDistinctTwoFields(IntegrationTestContext context) {
+            // When
+            List<Tuple2<Long, Boolean>> results = context.queryEmployees()
+                    .distinct().select(Path.of(Employee::getDepartmentId), Path.of(Employee::getActive))
+                    .list();
+
+            // Then
+            assertThat(results).isNotEmpty();
+            // Verify distinctness by counting unique combinations
+            long distinctCount = results.stream().distinct().count();
+            assertThat(results.size()).isEqualTo(distinctCount);
+        }
+
+        ///
+        /// 测试s selectDistinct with 3 fields.
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should selectDistinct 3 fields")
+        void shouldSelectDistinctThreeFields(IntegrationTestContext context) {
+            // When
+            var results = context.queryEmployees()
+                    .distinct().select(Path.of(Employee::getDepartmentId), Path.of(Employee::getActive),
+                            Path.of(Employee::getStatus))
+                    .list();
+
+            // Then
+            assertThat(results).isNotEmpty();
+            // Verify distinctness
+            long distinctCount = results.stream().distinct().count();
+            assertThat(results.size()).isEqualTo(distinctCount);
+        }
+    }
+
+    // ==================== Select with Expressions Tests ====================
+
+    @Nested
+    @DisplayName("Select with Expressions Tests")
+    class SelectWithExpressionsTests {
+
+        ///
+        /// 测试s select with aggregate expression.
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should select with count expression")
+        void shouldSelectWithCountExpression(IntegrationTestContext context) {
+            // When
+            Long count = context.queryEmployees()
+                    .select(Path.of(Employee::getId).count())
+                    .first();
+
+            // Then
+            assertThat(count).isEqualTo(TOTAL_TEST_EMPLOYEES);
+        }
+
+        ///
+        /// 测试s select with sum expression.
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should select with sum expression")
+        void shouldSelectWithSumExpression(IntegrationTestContext context) {
+            // When
+            Double sum = context.queryEmployees()
+                    .select(Path.of(Employee::getSalary).sum())
+                    .first();
+
+            // Then
+            assertThat(sum).isPositive();
+        }
+
+        ///
+        /// 测试s select with multiple expressions.
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should select with multiple expressions")
+        void shouldSelectWithMultipleExpressions(IntegrationTestContext context) {
+            // When
+            var result = context.queryEmployees()
+                    .select(
+                            Path.of(Employee::getSalary).avg(),
+                            Path.of(Employee::getSalary).max(),
+                            Path.of(Employee::getSalary).min()
+                    )
+                    .first();
+
+            // Then
+            assertThat(result).isNotNull();
+            assertThat((Double) result.get0()).isPositive(); // avg
+            assertThat((Double) result.get1()).isEqualTo(MAX_SALARY); // max
+            assertThat((Double) result.get2()).isEqualTo(MIN_SALARY); // min
+        }
+
+        ///
+        /// 测试s select with arithmetic expression.
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should select with arithmetic expression")
+        void shouldSelectWithArithmeticExpression(IntegrationTestContext context) {
+            // When - select salary + 1000
+            List<Double> salaries = context.queryEmployees()
+                    .select(Path.of(Employee::getSalary).add(1000.0))
+                    .orderBy(Employee::getId).asc()
+                    .list();
+
+            // Then
+            assertThat(salaries).isNotEmpty();
+            // Verify the arithmetic was applied
+            List<Double> originalSalaries = context.queryEmployees()
+                    .select(Employee::getSalary)
+                    .orderBy(Employee::getId).asc()
+                    .list();
+            for (int i = 0; i < salaries.size(); i++) {
+                assertThat(salaries.get(i)).isEqualTo(originalSalaries.get(i) + 1000.0);
+            }
+        }
     }
 
     // ==================== Predicate as Query Condition Tests ====================
@@ -424,6 +663,25 @@ class EntityQueryIntegrationTest {
             assertThat(employees).hasSize(2);
             assertThat(employees).extracting(Employee::getName)
                     .containsExactlyInAnyOrder(ALICE_NAME, BOB_NAME);
+        }
+
+        ///
+        /// 测试s NOT on predicate.
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should use NOT on predicate")
+        void shouldUseNotOnPredicate(IntegrationTestContext context) {
+            // Given
+            Predicate<Employee> isActive = Path.of(Employee::getActive).eq(true);
+
+            // When
+            List<Employee> employees = context.queryEmployees()
+                    .where(isActive.not())
+                    .list();
+
+            // Then
+            assertThat(employees).isNotEmpty();
+            assertThat(employees).allMatch(e -> !e.getActive());
         }
 
         ///

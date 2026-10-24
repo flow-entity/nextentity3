@@ -295,6 +295,22 @@ public class NumericOperationsIntegrationTest {
     }
 
     ///
+    /// 测试s AVG aggregation on numeric field.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should average numeric field")
+    void shouldAverageNumericField(IntegrationTestContext context) {
+        // When
+        Number avg = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).avg())
+                .single();
+
+        // Then
+        assertThat(avg).isNotNull();
+        assertThat(avg.doubleValue()).isPositive();
+    }
+
+    ///
     /// 测试s MAX aggregation on numeric field.
     @ParameterizedTest
     @ArgumentsSource(IntegrationTestProvider.class)
@@ -314,6 +330,28 @@ public class NumericOperationsIntegrationTest {
                 .max()
                 .orElse(0);
         assertThat(max.doubleValue()).isEqualTo(expectedMax);
+    }
+
+    ///
+    /// 测试s MIN aggregation on numeric field.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should find min of numeric field")
+    void shouldFindMinNumericField(IntegrationTestContext context) {
+        // When
+        Number min = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).min())
+                .single();
+
+        // Then
+        assertThat(min).isNotNull();
+        // Verify it's actually the min
+        List<Employee> employees = context.queryEmployees().list();
+        double expectedMin = employees.stream()
+                .mapToDouble(Employee::getSalary)
+                .min()
+                .orElse(0);
+        assertThat(min.doubleValue()).isEqualTo(expectedMin);
     }
 
     ///
@@ -348,6 +386,23 @@ public class NumericOperationsIntegrationTest {
         // Then
         assertThat(results).isNotEmpty();
         assertThat(results).allMatch(t -> t.get0() != null && t.get1() != null);
+    }
+
+    ///
+    /// 测试s numeric filter with aggregation.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should aggregate with numeric filter")
+    void shouldAggregateWithNumericFilter(IntegrationTestContext context) {
+        // When
+        Number avg = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).avg())
+                .where(Employee::getDepartmentId).eq(1L)
+                .single();
+
+        // Then
+        assertThat(avg).isNotNull();
+        assertThat(avg.doubleValue()).isPositive();
     }
 
     ///
@@ -443,6 +498,380 @@ public class NumericOperationsIntegrationTest {
 
     // ==================== Arithmetic Operations ====================
 
+    ///
+    /// 测试s addition 操作 in SELECT clause.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should add value to numeric field in SELECT")
+    void shouldAddValueInSelect(IntegrationTestContext context) {
+        // Given
+        List<Employee> employees = context.queryEmployees()
+                .where(Employee::getId).eq(1L)
+                .list();
+        Double originalSalary = employees.getFirst().getSalary();
+        Double bonus = 5000.0;
+
+        // When
+        List<Double> results = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).add(bonus))
+                .where(Employee::getId).eq(1L)
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst()).isEqualTo(originalSalary + bonus);
+    }
+
+    ///
+    /// 测试s subtraction 操作 in SELECT clause.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should subtract value from numeric field in SELECT")
+    void shouldSubtractValueInSelect(IntegrationTestContext context) {
+        // Given
+        List<Employee> employees = context.queryEmployees()
+                .where(Employee::getId).eq(1L)
+                .list();
+        Double originalSalary = employees.getFirst().getSalary();
+        Double deduction = 1000.0;
+
+        // When
+        List<Double> results = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).sub(deduction))
+                .where(Employee::getId).eq(1L)
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst()).isEqualTo(originalSalary - deduction);
+    }
+
+    ///
+    /// 测试s multiplication 操作 in SELECT clause.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should multiply numeric field in SELECT")
+    void shouldMultiplyValueInSelect(IntegrationTestContext context) {
+        // Given
+        List<Employee> employees = context.queryEmployees()
+                .where(Employee::getId).eq(1L)
+                .list();
+        Double originalSalary = employees.getFirst().getSalary();
+        Double multiplier = 1.1; // 10% raise
+
+        // When
+        List<Double> results = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).mul(multiplier))
+                .where(Employee::getId).eq(1L)
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst()).isEqualTo(originalSalary * multiplier);
+    }
+
+    ///
+    /// 测试s division 操作 in SELECT clause.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should divide numeric field in SELECT")
+    void shouldDivideValueInSelect(IntegrationTestContext context) {
+        // Given
+        List<Employee> employees = context.queryEmployees()
+                .where(Employee::getId).eq(1L)
+                .list();
+        Double originalSalary = employees.getFirst().getSalary();
+        Double divisor = 12.0; // Monthly salary
+
+        // When
+        List<Double> results = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).div(divisor))
+                .where(Employee::getId).eq(1L)
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst()).isEqualTo(originalSalary / divisor);
+    }
+
+    ///
+    /// 测试s modulo 操作 in SELECT clause with ID field.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should modulo numeric field in SELECT")
+    void shouldModuloValueInSelect(IntegrationTestContext context) {
+        // Given
+        Long modValue = 3L;
+
+        // When
+        List<Long> results = context.queryEmployees()
+                .select(Path.of(Employee::getId).mod(modValue))
+                .orderBy(Employee::getId).asc()
+                .list();
+
+        // Then
+        assertThat(results).isNotEmpty();
+        // Verify modulo results are in expected range [0, modValue)
+        assertThat(results).allMatch(n -> n >= 0 && n < modValue);
+    }
+
+    ///
+    /// 测试s chained arithmetic 操作s in SELECT.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should chain arithmetic operations in SELECT")
+    void shouldChainArithmeticOperationsInSelect(IntegrationTestContext context) {
+        // Given
+        List<Employee> employees = context.queryEmployees()
+                .where(Employee::getId).eq(1L)
+                .list();
+        Double originalSalary = employees.getFirst().getSalary();
+        // (salary + 1000) * 1.1 - 500
+        Double expected = (originalSalary + 1000.0) * 1.1 - 500.0;
+
+        // When
+        List<Double> results = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).add(1000.0).mul(1.1).sub(500.0))
+                .where(Employee::getId).eq(1L)
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst()).isEqualTo(expected);
+    }
+
+    ///
+    /// 测试s arithmetic 操作 in WHERE clause.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should use arithmetic in WHERE clause")
+    void shouldUseArithmeticInWhereClause(IntegrationTestContext context) {
+        // Given
+        double threshold = 70000.0;
+        Double bonus = 10000.0;
+
+        // When - Find employees where salary + bonus > threshold
+        List<Employee> employees = context.queryEmployees()
+                .where(Path.of(Employee::getSalary).add(bonus).gt(threshold))
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+        assertThat(employees).allMatch(e -> e.getSalary() + bonus > threshold);
+    }
+
+    ///
+    /// 测试s subtraction in WHERE clause.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should use subtraction in WHERE clause")
+    void shouldUseSubtractionInWhereClause(IntegrationTestContext context) {
+        // Given
+        double threshold = 50000.0;
+        Double deduction = 5000.0;
+
+        // When - Find employees where salary - deduction >= threshold
+        List<Employee> employees = context.queryEmployees()
+                .where(Path.of(Employee::getSalary).sub(deduction).ge(threshold))
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+        assertThat(employees).allMatch(e -> e.getSalary() - deduction >= threshold);
+    }
+
+    ///
+    /// 测试s multiplication in WHERE clause.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should use multiplication in WHERE clause")
+    void shouldUseMultiplicationInWhereClause(IntegrationTestContext context) {
+        // Given
+        double threshold = 100000.0;
+        Double multiplier = 2.0;
+
+        // When - Find employees where salary * multiplier > threshold
+        List<Employee> employees = context.queryEmployees()
+                .where(Path.of(Employee::getSalary).mul(multiplier).gt(threshold))
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+        assertThat(employees).allMatch(e -> e.getSalary() * multiplier > threshold);
+    }
+
+    ///
+    /// 测试s division in WHERE clause.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should use division in WHERE clause")
+    void shouldUseDivisionInWhereClause(IntegrationTestContext context) {
+        // Given
+        double threshold = 5000.0; // Monthly salary threshold
+        Double months = 12.0;
+
+        // When - Find employees where salary / 12 > threshold
+        List<Employee> employees = context.queryEmployees()
+                .where(Path.of(Employee::getSalary).div(months).gt(threshold))
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+        assertThat(employees).allMatch(e -> e.getSalary() / months > threshold);
+    }
+
+    ///
+    /// 测试s modulo in WHERE clause with ID field.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should use modulo in WHERE clause")
+    void shouldUseModuloInWhereClause(IntegrationTestContext context) {
+        // Given
+        Long modValue = 2L;
+
+        // When - Find employees where id % 2 = 0 (even IDs)
+        List<Employee> employees = context.queryEmployees()
+                .where(Path.of(Employee::getId).mod(modValue).eq(0L))
+                .orderBy(Employee::getId).asc()
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+        assertThat(employees).allMatch(e -> e.getId() % modValue == 0);
+    }
+
+    ///
+    /// 测试s combined arithmetic 操作s in WHERE clause.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should use combined arithmetic in WHERE clause")
+    void shouldUseCombinedArithmeticInWhereClause(IntegrationTestContext context) {
+        // Given - salary + 10000 > 80000
+        Double bonus = 10000.0;
+        double threshold = 80000.0;
+
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .where(Path.of(Employee::getSalary).add(bonus).gt(threshold))
+                .orderBy(Employee::getSalary).desc()
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+        assertThat(employees).allMatch(e -> e.getSalary() + bonus > threshold);
+    }
+
+    ///
+    /// 测试s arithmetic with count and filter.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should count results with arithmetic filter")
+    void shouldCountResultsWithArithmeticFilter(IntegrationTestContext context) {
+        // Given
+        Double threshold = 70000.0;
+        Double bonus = 5000.0;
+
+        // When
+        long count = context.queryEmployees()
+                .where(Path.of(Employee::getSalary).add(bonus).gt(threshold))
+                .count();
+
+        // Then
+        assertThat(count).isPositive();
+    }
+
+    ///
+    /// 测试s conditional arithmetic 操作s with non-null value.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should handle conditional add with non-null value")
+    void shouldHandleConditionalAddWithNonNull(IntegrationTestContext context) {
+        // Given
+        Double bonus = 5000.0;
+
+        // When
+        List<Double> results = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).add(bonus))
+                .where(Employee::getId).eq(1L)
+                .list();
+
+        // Then
+        List<Employee> employees = context.queryEmployees()
+                .where(Employee::getId).eq(1L)
+                .list();
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst()).isEqualTo(employees.getFirst().getSalary() + bonus);
+    }
+
+    ///
+    /// 测试s complex arithmetic expression with multiple 操作s.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should handle complex arithmetic expression")
+    void shouldHandleComplexArithmeticExpression(IntegrationTestContext context) {
+        // Given - Calculate: (salary * 12 + 1000) / 12 - 100
+        List<Employee> employees = context.queryEmployees()
+                .where(Employee::getId).eq(1L)
+                .list();
+        Double originalSalary = employees.getFirst().getSalary();
+        Double expected = (originalSalary * 12.0 + 1000.0) / 12.0 - 100.0;
+
+        // When
+        List<Double> results = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).mul(12.0).add(1000.0).div(12.0).sub(100.0))
+                .where(Employee::getId).eq(1L)
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst()).isEqualTo(expected);
+    }
+
+    ///
+    /// 测试s arithmetic with distinct select.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select distinct arithmetic results")
+    void shouldSelectDistinctArithmeticResults(IntegrationTestContext context) {
+        // Given - departmentId % 3 should have limited distinct values
+        Long modValue = 3L;
+
+        // When
+        List<Long> distinctResults = context.queryEmployees()
+                .distinct().select(Path.of(Employee::getDepartmentId).mod(modValue))
+                .list();
+
+        // Then
+        assertThat(distinctResults).isNotEmpty();
+        assertThat(distinctResults).doesNotHaveDuplicates();
+        assertThat(distinctResults).allMatch(n -> n >= 0 && n < modValue);
+    }
+
+    ///
+    /// 测试s arithmetic 操作s on integer ID field.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should perform arithmetic on ID field")
+    void shouldPerformArithmeticOnIdField(IntegrationTestContext context) {
+        // Given
+        Long offset = 100L;
+
+        // When
+        List<Long> results = context.queryEmployees()
+                .select(Path.of(Employee::getId).add(offset))
+                .orderBy(Employee::getId).asc()
+                .list();
+
+        // Then
+        assertThat(results).isNotEmpty();
+        List<Long> originalIds = context.queryEmployees()
+                .select(Employee::getId)
+                .orderBy(Employee::getId).asc()
+                .list();
+        for (int i = 0; i < results.size(); i++) {
+            assertThat(results.get(i)).isEqualTo(originalIds.get(i) + offset);
+        }
+    }
 }
 
 

@@ -235,6 +235,23 @@ public class ErrorHandlingIntegrationTest {
     }
 
     ///
+    /// 测试s aggregation error handling.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should handle aggregation queries")
+    void shouldHandleAggregationQueries(IntegrationTestContext context) {
+        // When
+        long count = context.queryEmployees().count();
+        double avgSalary = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).avg())
+                .single();
+
+        // Then
+        assertThat(count).isPositive();
+        assertThat(avgSalary).isPositive();
+    }
+
+    ///
     /// 测试s empty result set handling.
     @ParameterizedTest
     @ArgumentsSource(IntegrationTestProvider.class)

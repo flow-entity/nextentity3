@@ -244,6 +244,47 @@ public class SimpleExpressionDefaultMethodsIntegrationTest {
 
     // ==================== notBetween(U l, U r) Tests ====================
 
+    /// 测试 notBetween(U l, U r) - 不在两个值之间的范围。
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should filter with notBetween(value, value)")
+    void shouldFilterWithNotBetweenValues(IntegrationTestContext context) {
+        // Given
+        double minSalary = 55000.0;
+        double maxSalary = 75000.0;
+
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .where(Employee::getSalary).notBetween(minSalary, maxSalary)
+                .orderBy(Employee::getSalary).asc()
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+        assertThat(employees).allMatch(e ->
+                e.getSalary() < minSalary || e.getSalary() > maxSalary);
+    }
+
+    /// 测试带 ID 字段的 notBetween(U l, U r)。
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should filter with notBetween(value, value) on ID field")
+    void shouldFilterWithNotBetweenValuesOnId(IntegrationTestContext context) {
+        // Given
+        Long minId = 3L;
+        Long maxId = 7L;
+
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .where(Employee::getId).notBetween(minId, maxId)
+                .orderBy(Employee::getId).asc()
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+        assertThat(employees).allMatch(e -> e.getId() < minId || e.getId() > maxId);
+    }
+
     // ==================== between(TypedExpression, U) Tests ====================
 
     /// 测试 between(TypedExpression, U) - 表达式和值之间的范围。
@@ -294,7 +335,53 @@ public class SimpleExpressionDefaultMethodsIntegrationTest {
 
     // ==================== notBetween(TypedExpression, U) Tests ====================
 
+    /// 测试 notBetween(TypedExpression, U) - 不在表达式和值之间的范围。
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should filter with notBetween(expression, value)")
+    void shouldFilterWithNotBetweenExpressionAndValue(IntegrationTestContext context) {
+        // Given
+        double maxSalary = 80000.0;
+        Double employee1Salary = context.queryEmployees()
+                .select(Employee::getSalary)
+                .where(Employee::getId).eq(1L)
+                .single();
+
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .where(Employee::getSalary).notBetween(employee1Salary, maxSalary)
+                .orderBy(Employee::getSalary).asc()
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+        assertThat(employees).allMatch(e -> e.getSalary() < employee1Salary || e.getSalary() > maxSalary);
+    }
+
     // ==================== notBetween(U, TypedExpression) Tests ====================
+
+    /// 测试 notBetween(U, TypedExpression) - 不在值和表达式之间的范围。
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should filter with notBetween(value, expression)")
+    void shouldFilterWithNotBetweenValueAndExpression(IntegrationTestContext context) {
+        // Given
+        double minSalary = 50000.0;
+        Double employee1Salary = context.queryEmployees()
+                .select(Employee::getSalary)
+                .where(Employee::getId).eq(1L)
+                .single();
+
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .where(Employee::getSalary).notBetween(minSalary, employee1Salary)
+                .orderBy(Employee::getSalary).asc()
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+        assertThat(employees).allMatch(e -> e.getSalary() < minSalary || e.getSalary() > employee1Salary);
+    }
 
     // ==================== Combined Tests ====================
 
@@ -637,6 +724,27 @@ public class SimpleExpressionDefaultMethodsIntegrationTest {
             assertThat(employees).allMatch(e -> e.getSalary() >= minSalary && e.getSalary() <= maxSalary);
         }
 
+        /// 测试：notBetween(value, value) 创建可以传递给 where() 的谓词。
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should use notBetween predicate as where condition")
+        void shouldUseNotBetweenPredicateAsWhereCondition(IntegrationTestContext context) {
+            // Given
+            double minSalary = 55000.0;
+            double maxSalary = 75000.0;
+            Predicate<Employee> predicate = Path.of(Employee::getSalary).notBetween(minSalary, maxSalary);
+
+            // When
+            List<Employee> employees = context.queryEmployees()
+                    .where(predicate)
+                    .orderBy(Employee::getSalary).asc()
+                    .list();
+
+            // Then
+            assertThat(employees).isNotEmpty();
+            assertThat(employees).allMatch(e -> e.getSalary() < minSalary || e.getSalary() > maxSalary);
+        }
+
         /// 测试：geIfNotNull 创建可以传递给 where() 的谓词。
         @ParameterizedTest
         @ArgumentsSource(IntegrationTestProvider.class)
@@ -790,6 +898,25 @@ public class SimpleExpressionDefaultMethodsIntegrationTest {
             // Then
             assertThat(employees).isNotEmpty();
             assertThat(employees).allMatch(e -> e.getSalary() >= 50000.0 && e.getName().startsWith("A"));
+        }
+
+        /// 测试：对比较谓词使用 NOT。
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should use NOT on comparison predicate")
+        void shouldUseNotOnComparisonPredicate(IntegrationTestContext context) {
+            // Given
+            Predicate<Employee> highSalary = Path.of(Employee::getSalary).gt(80000.0);
+
+            // When
+            List<Employee> employees = context.queryEmployees()
+                    .where(highSalary.not())
+                    .orderBy(Employee::getId).asc()
+                    .list();
+
+            // Then
+            assertThat(employees).isNotEmpty();
+            assertThat(employees).allMatch(e -> e.getSalary() <= 80000.0);
         }
 
         /// 测试：使用比较表达式创建复杂谓词。

@@ -111,6 +111,25 @@ public class ComplexPredicateIntegrationTest {
     }
 
     ///
+    /// 测试s NOT condition.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should filter with NOT condition")
+    void shouldFilterWithNot(IntegrationTestContext context) {
+        // Given
+        Predicate<Employee> isActive = Path.of(Employee::getActive).eq(true);
+
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .where(isActive.not())
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+        assertThat(employees).allMatch(e -> !e.getActive());
+    }
+
+    ///
     /// 测试s complex AND-OR combination.
     @ParameterizedTest
     @ArgumentsSource(IntegrationTestProvider.class)
@@ -197,6 +216,26 @@ public class ComplexPredicateIntegrationTest {
                 e.getName().equals("Alice Johnson") ||
                 e.getName().equals("Bob Smith") ||
                 e.getName().equals("Charlie Brown"));
+    }
+
+    ///
+    /// 测试s NOT with OR.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should filter with NOT and OR")
+    void shouldFilterWithNotAndOr(IntegrationTestContext context) {
+        // Given: NOT (departmentId = 1 OR departmentId = 2)
+        Predicate<Employee> dept1Or2 = Path.of(Employee::getDepartmentId).eq(1L)
+                .or(Path.of(Employee::getDepartmentId).eq(2L));
+
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .where(dept1Or2.not())
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+        assertThat(employees).allMatch(e -> e.getDepartmentId() != 1L && e.getDepartmentId() != 2L);
     }
 
     ///
@@ -350,6 +389,26 @@ public class ComplexPredicateIntegrationTest {
                 e.getActive() &&
                 e.getStatus() == EmployeeStatus.ACTIVE &&
                 e.getDepartmentId() == 1L);
+    }
+
+    ///
+    /// 测试s predicate negation.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should filter with predicate negation")
+    void shouldFilterWithPredicateNegation(IntegrationTestContext context) {
+        // Given: NOT (active = true AND status = ACTIVE)
+        Predicate<Employee> activeAndStatus = Path.of(Employee::getActive).eq(true)
+                .and(Path.of(Employee::getStatus).eq(EmployeeStatus.ACTIVE));
+
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .where(activeAndStatus.not())
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+        assertThat(employees).allMatch(e -> !e.getActive() || e.getStatus() != EmployeeStatus.ACTIVE);
     }
 
     ///

@@ -1,5 +1,13 @@
 # NOT-PORTED — port-b（投影 / select / 分组 / fast 包）
 
+> **本轮回填（2026-10-24，`7b8a71aa` 之后）**：`Tuple3`~`Tuple6`、`ProjectionMappers`（四~六列）、多列
+> `distinct()`、`min`/`avg` 落地后，本批删掉的用例有 34 条移植回来：`SelectApiIntegrationTest` 22 条
+> （三~六列投影与去重、`min`/`avg`、多表达式投影）、`EntityQueryIntegrationTest` 12 条（`avg`/`min`、
+> `Tuple3~5`、多列去重、`not()`）、`TuplesIntegrationTest` 1 条（`Tuple3`）、
+> `GroupByStepMultipleParametersIntegrationTest` 整类 6 条（多列 `groupBy` + `Tuple3`/`Tuple4~6`）。
+> 仍然缺：`select(Class)` DTO/record/接口投影、7 列及以上投影、`select(Collection)`、`fetch`。总账见
+> [`REPORT.md`](REPORT.md)。
+
 批次：port-b。编译验证：`.\tmp\scripts\legacy-javac.ps1 -Name port-b` → `tmp/legacy/javac-port-b.log`，
 日志中**本批 11 个文件 0 报错**（其余报错全部属于其他 agent 的文件）。
 

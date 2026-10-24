@@ -1,5 +1,14 @@
 # port-c 移植记档（排序 / 字符串 / 数值 / 分页）
 
+> **本轮回填（2026-10-24，`7b8a71aa` 之后）**：数值算术、`notBetween`、`min`/`avg`、多列排序累积链落地后，
+> 本批删掉的用例有 46 条移植回来：`NumericOperationsIntegrationTest` 20 条（算术投影/条件、`avg`/`min`）、
+> `ExpressionBuilderDefaultMethodsIntegrationTest` 8 条（算术非空分支与链式）、
+> `OrderByStepMultipleParametersIntegrationTest` 10 条（多参数 `orderBy` → 累积链）、
+> `SimpleExpressionSortOrderIntegrationTest` 2 条、`SimpleExpressionDefaultMethodsIntegrationTest` 6 条
+> （`notBetween` 5 条 + `not()` 1 条）。仍然缺：`startsWith`/`endsWith`/`notLike`/`lower`/`length`/`substring`/
+> `likeIfNotEmpty`、算术的 `*IfNotNull` 变体、算术右值为表达式/`literal`、`orderBy(Collection)`。总账见
+> [`REPORT.md`](REPORT.md)。
+
 口径：[API-MAPPING.md](API-MAPPING.md)。3.x api 事实来源：`nextentity-api/src/main/java/io/github/nextentity/api/`。
 编译验证：`.\tmp\scripts\legacy-javac.ps1 -Name port-c` → `tmp/legacy/javac-port-c.log`，**我这 11 个文件 0 报错**。
 

@@ -1,7 +1,12 @@
 package io.github.nextentity.integration;
 
 import io.github.nextentity.api.Path;
+import io.github.nextentity.api.ProjectionMappers;
 import io.github.nextentity.api.model.Tuple2;
+import io.github.nextentity.api.model.Tuple3;
+import io.github.nextentity.api.model.Tuple4;
+import io.github.nextentity.api.model.Tuple5;
+import io.github.nextentity.api.model.Tuple6;
 import io.github.nextentity.integration.config.IntegrationTestContext;
 import io.github.nextentity.integration.config.IntegrationTestProvider;
 import io.github.nextentity.integration.entity.Employee;
@@ -17,9 +22,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// Select API integration tests.
 ///
 /// 3.x 的投影面：`select(PathRef)`、`select(Expression)`、`select(Expression, Expression)`（`Tuple2`）、
-/// 3 列起 `select(...)`（`Tuple`）、`distinct()` 修饰符——证据 `api/SelectStep.java` / `api/DistinctStep.java`。因此只保留能对位的用例；
-/// `Tuple3~10`、`select(Collection)`、多列 `selectDistinct`、`select(Class)`、`min`/`avg`
-/// 对应的用例已删除（见 `tmp/legacy/NOT-PORTED-port-b.md`）。
+/// 三列 `select(...)`（`Tuple3`）、四~六列 `project(ProjectionMappers.select(...))`（`Tuple4`~`Tuple6`）、
+/// `distinct()` 修饰符（含多列去重）——证据 `api/SelectStep.java` / `api/DistinctStep.java` /
+/// `api/ProjectionMappers.java`。因此只保留能对位的用例；
+/// 七~十列（`ProjectionMappers` 封顶六列，`Tuple7~10` 不存在）、`select(Collection)` / `select(List)`
+/// 形态、`select(Class)` / `selectDistinct(Class)` 对应的用例已删除（见 `porting/NOT-PORTED-port-b.md`）。
 ///
 /// @author HuangChengwei
 @DisplayName("Select API Integration Tests")
@@ -112,6 +119,23 @@ public class SelectApiIntegrationTest {
 
     @ParameterizedTest
     @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select distinct two paths")
+    void shouldSelectDistinctTwoPaths(IntegrationTestContext context) {
+        // When
+        List<Tuple2<Long, Boolean>> results = context.queryEmployees()
+                .distinct().select(Path.of(Employee::getDepartmentId), Path.of(Employee::getActive))
+                .orderBy(Employee::getDepartmentId).asc()
+                .list();
+
+        // Then
+        assertThat(results).isNotEmpty();
+        // Verify distinctness
+        long distinctCount = results.stream().distinct().count();
+        assertThat(results.size()).isEqualTo((int) distinctCount);
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
     @DisplayName("Should select two paths with condition")
     void shouldSelectTwoPathsWithCondition(IntegrationTestContext context) {
         // When
@@ -127,7 +151,180 @@ public class SelectApiIntegrationTest {
     }
 
     // ========================================
-    // 3. TypedExpression Selection（聚合只有 max / count / sum）
+    // 3. Tuple3 Selection (Three Paths)
+    // ========================================
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select three paths as Tuple3")
+    void shouldSelectThreePaths(IntegrationTestContext context) {
+        // When
+        List<Tuple3<String, String, Double>> results = context.queryEmployees()
+                .select(Path.of(Employee::getName), Path.of(Employee::getEmail), Path.of(Employee::getSalary))
+                .where(Employee::getId).eq(1L)
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        Tuple3<String, String, Double> tuple = results.getFirst();
+        assertThat(tuple.get0()).isEqualTo("Alice Johnson");
+        assertThat(tuple.get1()).isEqualTo("alice@example.com");
+        assertThat(tuple.get2()).isNotNull();
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select distinct three paths")
+    void shouldSelectDistinctThreePaths(IntegrationTestContext context) {
+        // When
+        List<Tuple3<Long, Boolean, Double>> results = context.queryEmployees()
+                .distinct().select(Path.of(Employee::getDepartmentId), Path.of(Employee::getActive),
+                        Path.of(Employee::getSalary))
+                .list();
+
+        // Then
+        assertThat(results).isNotEmpty();
+    }
+
+    // ========================================
+    // 4. Tuple4 Selection (Four Paths)
+    // ========================================
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select four paths as Tuple4")
+    void shouldSelectFourPaths(IntegrationTestContext context) {
+        // When
+        List<Tuple4<Long, String, String, Double>> results = context.queryEmployees()
+                .project(ProjectionMappers.select(
+                        Path.of(Employee::getId),
+                        Path.of(Employee::getName),
+                        Path.of(Employee::getEmail),
+                        Path.of(Employee::getSalary)))
+                .where(Employee::getId).eq(1L)
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        Tuple4<Long, String, String, Double> tuple = results.getFirst();
+        assertThat(tuple.get0()).isEqualTo(1L);
+        assertThat(tuple.get1()).isEqualTo("Alice Johnson");
+        assertThat(tuple.get2()).isEqualTo("alice@example.com");
+        assertThat(tuple.get3()).isNotNull();
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select distinct four paths")
+    void shouldSelectDistinctFourPaths(IntegrationTestContext context) {
+        // When
+        List<Tuple4<Long, Boolean, Double, String>> results = context.queryEmployees()
+                .distinct().project(ProjectionMappers.select(
+                        Path.of(Employee::getDepartmentId),
+                        Path.of(Employee::getActive),
+                        Path.of(Employee::getSalary),
+                        Path.of(Employee::getName)))
+                .list();
+
+        // Then
+        assertThat(results).hasSize(12); // All names are distinct
+    }
+
+    // ========================================
+    // 5. Tuple5 Selection (Five Paths)
+    // ========================================
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select five paths as Tuple5")
+    void shouldSelectFivePaths(IntegrationTestContext context) {
+        // When
+        List<Tuple5<Long, String, String, Double, Boolean>> results = context.queryEmployees()
+                .project(ProjectionMappers.select(
+                        Path.of(Employee::getId),
+                        Path.of(Employee::getName),
+                        Path.of(Employee::getEmail),
+                        Path.of(Employee::getSalary),
+                        Path.of(Employee::getActive)))
+                .where(Employee::getId).eq(1L)
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        Tuple5<Long, String, String, Double, Boolean> tuple = results.getFirst();
+        assertThat(tuple.get0()).isEqualTo(1L);
+        assertThat(tuple.get1()).isEqualTo("Alice Johnson");
+        assertThat(tuple.get4()).isTrue();
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select distinct five paths")
+    void shouldSelectDistinctFivePaths(IntegrationTestContext context) {
+        // When
+        List<Tuple5<Long, Boolean, String, Double, String>> results = context.queryEmployees()
+                .distinct().project(ProjectionMappers.select(
+                        Path.of(Employee::getDepartmentId),
+                        Path.of(Employee::getActive),
+                        Path.of(Employee::getName),
+                        Path.of(Employee::getSalary),
+                        Path.of(Employee::getEmail)))
+                .orderBy(Employee::getDepartmentId).asc()
+                .list();
+
+        // Then
+        assertThat(results).hasSize(12);
+    }
+
+    // ========================================
+    // 6. Tuple6 Selection (Six Paths)
+    // ========================================
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select six paths as Tuple6")
+    void shouldSelectSixPaths(IntegrationTestContext context) {
+        // When
+        List<Tuple6<Long, String, String, Double, Boolean, Long>> results = context.queryEmployees()
+                .project(ProjectionMappers.select(
+                        Path.of(Employee::getId),
+                        Path.of(Employee::getName),
+                        Path.of(Employee::getEmail),
+                        Path.of(Employee::getSalary),
+                        Path.of(Employee::getActive),
+                        Path.of(Employee::getDepartmentId)))
+                .where(Employee::getId).eq(1L)
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        Tuple6<Long, String, String, Double, Boolean, Long> tuple = results.getFirst();
+        assertThat(tuple.get0()).isEqualTo(1L);
+        assertThat(tuple.get5()).isEqualTo(1L);
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select distinct six paths")
+    void shouldSelectDistinctSixPaths(IntegrationTestContext context) {
+        // When
+        List<Tuple6<Long, Boolean, String, Double, String, Long>> results = context.queryEmployees()
+                .distinct().project(ProjectionMappers.select(
+                        Path.of(Employee::getDepartmentId),
+                        Path.of(Employee::getActive),
+                        Path.of(Employee::getName),
+                        Path.of(Employee::getSalary),
+                        Path.of(Employee::getEmail),
+                        Path.of(Employee::getId)))
+                .orderBy(Employee::getId).asc()
+                .list();
+
+        // Then
+        assertThat(results).hasSize(12);
+    }
+
+    // ========================================
+    // 7. TypedExpression Selection（聚合 max / min / count / sum / avg）
     // ========================================
 
     @ParameterizedTest
@@ -142,6 +339,20 @@ public class SelectApiIntegrationTest {
         // Then
         assertThat(maxSalary).isNotNull();
         assertThat(maxSalary).isGreaterThan(0);
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select with typed expression - min")
+    void shouldSelectWithTypedExpressionMin(IntegrationTestContext context) {
+        // When
+        Double minSalary = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).min())
+                .single();
+
+        // Then
+        assertThat(minSalary).isNotNull();
+        assertThat(minSalary).isGreaterThan(0);
     }
 
     @ParameterizedTest
@@ -171,8 +382,216 @@ public class SelectApiIntegrationTest {
         assertThat(sum).isGreaterThan(0);
     }
 
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select with typed expression - avg")
+    void shouldSelectWithTypedExpressionAvg(IntegrationTestContext context) {
+        // When
+        Double avg = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).avg())
+                .single();
+
+        // Then
+        assertThat(avg).isNotNull();
+        assertThat(avg).isGreaterThan(0);
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select distinct with typed expression")
+    void shouldSelectDistinctWithTypedExpression(IntegrationTestContext context) {
+        // When
+        Long distinctDeptCount = context.queryEmployees()
+                .distinct().select(Path.of(Employee::getDepartmentId).count())
+                .single();
+
+        // Then
+        assertThat(distinctDeptCount).isNotNull();
+    }
+
     // ========================================
-    // 4. Selection with Conditions and Ordering
+    // 8. Multiple TypedExpression Selection
+    // ========================================
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select with two typed expressions")
+    void shouldSelectWithTwoTypedExpressions(IntegrationTestContext context) {
+        // When
+        List<Tuple2<Double, Double>> results = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).min(), Path.of(Employee::getSalary).max())
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        Tuple2<Double, Double> tuple = results.getFirst();
+        assertThat(tuple.get0()).isLessThanOrEqualTo(tuple.get1());
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select with three typed expressions")
+    void shouldSelectWithThreeTypedExpressions(IntegrationTestContext context) {
+        // When
+        List<Tuple3<Double, Double, Double>> results = context.queryEmployees()
+                .select(Path.of(Employee::getSalary).min(), Path.of(Employee::getSalary).max(),
+                        Path.of(Employee::getSalary).avg())
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst().get0()).isLessThanOrEqualTo(results.getFirst().get1());
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select with four typed expressions")
+    void shouldSelectWithFourTypedExpressions(IntegrationTestContext context) {
+        // When
+        List<Tuple4<Double, Double, Double, Long>> results = context.queryEmployees()
+                .project(ProjectionMappers.select(
+                        Path.of(Employee::getSalary).min(),
+                        Path.of(Employee::getSalary).max(),
+                        Path.of(Employee::getSalary).avg(),
+                        Path.of(Employee::getId).count()))
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst().get3()).isEqualTo(12L);
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select with five typed expressions")
+    void shouldSelectWithFiveTypedExpressions(IntegrationTestContext context) {
+        // When
+        List<Tuple5<Double, Double, Double, Long, Double>> results = context.queryEmployees()
+                .project(ProjectionMappers.select(
+                        Path.of(Employee::getSalary).min(),
+                        Path.of(Employee::getSalary).max(),
+                        Path.of(Employee::getSalary).avg(),
+                        Path.of(Employee::getId).count(),
+                        Path.of(Employee::getSalary).sum()))
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst().get3()).isEqualTo(12L);
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select with six typed expressions")
+    void shouldSelectWithSixTypedExpressions(IntegrationTestContext context) {
+        // When
+        List<Tuple6<Double, Double, Double, Long, Double, Long>> results = context.queryEmployees()
+                .project(ProjectionMappers.select(
+                        Path.of(Employee::getSalary).min(),
+                        Path.of(Employee::getSalary).max(),
+                        Path.of(Employee::getSalary).avg(),
+                        Path.of(Employee::getId).count(),
+                        Path.of(Employee::getSalary).sum(),
+                        Path.of(Employee::getDepartmentId).count()))
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst().get3()).isEqualTo(12L);
+    }
+
+    // ========================================
+    // 9. distinct 变长表达式投影
+    // ========================================
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select distinct with two typed expressions varargs")
+    void shouldSelectDistinctWithTwoTypedExpressionsVarargs(IntegrationTestContext context) {
+        // When
+        List<Tuple2<Double, Double>> results = context.queryEmployees()
+                .distinct().select(Path.of(Employee::getSalary).min(), Path.of(Employee::getSalary).max())
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst().get0()).isLessThanOrEqualTo(results.getFirst().get1());
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select distinct with three typed expressions varargs")
+    void shouldSelectDistinctWithThreeTypedExpressionsVarargs(IntegrationTestContext context) {
+        // When
+        List<Tuple3<Double, Double, Double>> results = context.queryEmployees()
+                .distinct().select(Path.of(Employee::getSalary).min(), Path.of(Employee::getSalary).max(),
+                        Path.of(Employee::getSalary).avg())
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst().get0()).isLessThanOrEqualTo(results.getFirst().get1());
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select distinct with four typed expressions varargs")
+    void shouldSelectDistinctWithFourTypedExpressionsVarargs(IntegrationTestContext context) {
+        // When
+        List<Tuple4<Double, Double, Double, Long>> results = context.queryEmployees()
+                .distinct().project(ProjectionMappers.select(
+                        Path.of(Employee::getSalary).min(),
+                        Path.of(Employee::getSalary).max(),
+                        Path.of(Employee::getSalary).avg(),
+                        Path.of(Employee::getId).count()))
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst().get3()).isEqualTo(12L);
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select distinct with five typed expressions varargs")
+    void shouldSelectDistinctWithFiveTypedExpressionsVarargs(IntegrationTestContext context) {
+        // When
+        List<Tuple5<Double, Double, Double, Long, Double>> results = context.queryEmployees()
+                .distinct().project(ProjectionMappers.select(
+                        Path.of(Employee::getSalary).min(),
+                        Path.of(Employee::getSalary).max(),
+                        Path.of(Employee::getSalary).avg(),
+                        Path.of(Employee::getId).count(),
+                        Path.of(Employee::getSalary).sum()))
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst().get3()).isEqualTo(12L);
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select distinct with six typed expressions varargs")
+    void shouldSelectDistinctWithSixTypedExpressionsVarargs(IntegrationTestContext context) {
+        // When
+        List<Tuple6<Double, Double, Double, Long, Double, Long>> results = context.queryEmployees()
+                .distinct().project(ProjectionMappers.select(
+                        Path.of(Employee::getSalary).min(),
+                        Path.of(Employee::getSalary).max(),
+                        Path.of(Employee::getSalary).avg(),
+                        Path.of(Employee::getId).count(),
+                        Path.of(Employee::getSalary).sum(),
+                        Path.of(Employee::getDepartmentId).count()))
+                .list();
+
+        // Then
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst().get3()).isEqualTo(12L);
+    }
+
+    // ========================================
+    // 10. Selection with Conditions and Ordering
     // ========================================
 
     @ParameterizedTest
@@ -226,7 +645,7 @@ public class SelectApiIntegrationTest {
     }
 
     // ========================================
-    // 5. Edge Cases
+    // 11. Edge Cases
     // ========================================
 
     @ParameterizedTest

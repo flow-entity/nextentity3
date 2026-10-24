@@ -1,8 +1,8 @@
 package io.github.nextentity.integration;
 
 import io.github.nextentity.api.Path;
-
 import io.github.nextentity.api.model.Tuple2;
+import io.github.nextentity.api.model.Tuple3;
 import io.github.nextentity.integration.config.IntegrationTestContext;
 import io.github.nextentity.integration.config.IntegrationTestProvider;
 import io.github.nextentity.integration.entity.Employee;
@@ -18,8 +18,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 ///
 /// Integration tests for Tuples class with database queries.
 ///
-/// 3.x 只有 `Tuple2`（`api/model` 下没有 `Tuple3+`、也没有无编号 `Tuple`），
-/// 因此原 `shouldCreateTuple3FromQueryProjection` 已删除（见 NOT-PORTED-port-b.md）。
+/// 3.x 的具名元组族是 `api/model` 下的 `Tuple2`~`Tuple6`（record，具名 `getN()` + 按位置 `get(int)`）：
+/// `Tuple2` 来自两列 `select(...)`，`Tuple3` 来自三列 `select(...)`，四列及以上走
+/// `project(ProjectionMappers.select(...))`（证据 `api/SelectStep.java` / `api/ProjectionMappers.java`）。
 ///
 /// @author HuangChengwei
 @DisplayName("Tuples Integration Tests")
@@ -44,6 +45,24 @@ public class TuplesIntegrationTest {
             Tuple2<String, Double> tuple = results.get(0);
             assertThat(tuple.get0()).isNotNull();
             assertThat(tuple.get1()).isNotNull();
+        }
+
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should create Tuple3 from query projection")
+        void shouldCreateTuple3FromQueryProjection(IntegrationTestContext context) {
+            // When
+            List<Tuple3<String, Double, Boolean>> results = context.queryEmployees()
+                    .select(Path.of(Employee::getName), Path.of(Employee::getSalary), Path.of(Employee::getActive))
+                    .where(Employee::getId).eq(1L)
+                    .list();
+
+            // Then
+            assertThat(results).isNotEmpty();
+            Tuple3<String, Double, Boolean> tuple = results.get(0);
+            assertThat(tuple.get0()).isNotNull();
+            assertThat(tuple.get1()).isNotNull();
+            assertThat(tuple.get2()).isNotNull();
         }
 
         @ParameterizedTest

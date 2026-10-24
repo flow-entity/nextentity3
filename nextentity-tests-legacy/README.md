@@ -32,7 +32,7 @@ docker run -d --name nextentity-legacy-mysql \
   -p 13306:3306 mysql:8.0.18
 ```
 
-用例数是**按环境数乘出来的**：`-Ddbc=h2,mysql` 会跑两遍，1,186 条 = 593 条 × 2。
+用例数是**按环境数乘出来的**：`-Ddbc=h2,mysql` 会跑两遍，1,454 条 = 727 条 × 2。
 
 ## 装置
 

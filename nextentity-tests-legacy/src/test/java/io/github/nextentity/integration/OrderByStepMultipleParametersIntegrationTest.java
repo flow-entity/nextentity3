@@ -53,14 +53,200 @@ public class OrderByStepMultipleParametersIntegrationTest {
 
     // ==================== orderBy(Order, Order) Tests ====================
 
+    ///
+    /// 测试s orderBy(Order, Order) with two Order objects.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should order by two Order objects")
+    void shouldOrderByTwoOrders(IntegrationTestContext context) {
+        // Given
+
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .orderBy(Employee::getSalary).desc()
+                .orderBy(Employee::getName).asc()
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+        // Verify salary is in descending order
+        for (int i = 1; i < employees.size(); i++) {
+            Double current = employees.get(i).getSalary();
+            Double previous = employees.get(i - 1).getSalary();
+            assertThat(current).isLessThanOrEqualTo(previous);
+        }
+    }
+
+    ///
+    /// 测试s orderBy(Order, Order) with both ascending orders.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should order by two ascending Order objects")
+    void shouldOrderByTwoAscendingOrders(IntegrationTestContext context) {
+        // Given
+
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .orderBy(Employee::getId).asc()
+                .orderBy(Employee::getName).asc()
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+        assertThat(employees.get(0).getId()).isEqualTo(1L);
+    }
+
     // ==================== orderBy(Order, Order, Order) Tests ====================
+
+    ///
+    /// 测试s orderBy(Order, Order, Order) with three Order objects.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should order by three Order objects")
+    void shouldOrderByThreeOrders(IntegrationTestContext context) {
+        // Given
+
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .orderBy(Employee::getSalary).desc()
+                .orderBy(Employee::getName).asc()
+                .orderBy(Employee::getId).asc()
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+    }
 
     // ==================== orderBy(Path, Path) Tests ====================
 
+    ///
+    /// 测试s orderBy(Path, Path) with two paths.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should order by two paths")
+    void shouldOrderByTwoPaths(IntegrationTestContext context) {
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .orderBy(Employee::getSalary).asc()
+                .orderBy(Employee::getName).asc()
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+    }
+
+    ///
+    /// 测试s orderBy(Path, Path) with descending order.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should order by two paths descending")
+    void shouldOrderByTwoPathsDescending(IntegrationTestContext context) {
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .orderBy(Employee::getSalary).desc()
+                .orderBy(Employee::getId).desc()
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+        // Verify descending order
+        for (int i = 1; i < employees.size(); i++) {
+            assertThat(employees.get(i).getSalary())
+                    .isLessThanOrEqualTo(employees.get(i - 1).getSalary());
+        }
+    }
+
     // ==================== orderBy(Path, Path, Path) Tests ====================
+
+    ///
+    /// 测试s orderBy(Path, Path, Path) with three paths.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should order by three paths")
+    void shouldOrderByThreePaths(IntegrationTestContext context) {
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .orderBy(Employee::getDepartmentId).asc()
+                .orderBy(Employee::getSalary).asc()
+                .orderBy(Employee::getName).asc()
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+    }
+
+    ///
+    /// 测试s orderBy(Path, Path, Path) with descending order.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should order by three paths descending")
+    void shouldOrderByThreePathsDescending(IntegrationTestContext context) {
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .orderBy(Employee::getDepartmentId).desc()
+                .orderBy(Employee::getSalary).desc()
+                .orderBy(Employee::getId).desc()
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+    }
 
     // ==================== Combined with Filter Tests ====================
 
+    ///
+    /// 测试s combining multiple Order objects with where clause.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should combine multiple orders with where clause")
+    void shouldCombineMultipleOrdersWithWhere(IntegrationTestContext context) {
+        // Given
+
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .where(Employee::getSalary).gt(50000.0)
+                .orderBy(Employee::getSalary).desc()
+                .orderBy(Employee::getName).asc()
+                .list();
+
+        // Then
+        assertThat(employees).isNotEmpty();
+        assertThat(employees).allMatch(e -> e.getSalary() > 50000.0);
+    }
+
+    ///
+    /// 测试s count with multiple Order objects.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should count with multiple Order objects")
+    void shouldCountWithMultipleOrders(IntegrationTestContext context) {
+        // Given
+
+        // When
+        long count = context.queryEmployees()
+                .orderBy(Employee::getSalary).desc()
+                .orderBy(Employee::getId).asc()
+                .count();
+
+        // Then
+        assertThat(count).isPositive();
+    }
+
+    ///
+    /// 测试s limit with multiple paths.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should limit with multiple paths")
+    void shouldLimitWithMultiplePaths(IntegrationTestContext context) {
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .orderBy(Employee::getSalary).desc()
+                .orderBy(Employee::getName).desc()
+                .list(5);
+
+        // Then
+        assertThat(employees).hasSize(5);
+    }
 }
 
 
