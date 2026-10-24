@@ -8,6 +8,7 @@ import io.github.nextentity.api.PathRef;
 import io.github.nextentity.core.repo.EntityOperations;
 import io.github.nextentity.tests.jpa.support.WriteRoundTripSupport;
 import jakarta.persistence.EntityNotFoundException;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import org.junit.jupiter.api.AfterEach;
@@ -25,6 +26,11 @@ class ItemConvertRoundTripTest {
 
     /// 转换器落库前缀，见 `PayloadConverter` 的类注释；用例侧独立声明，不从生产代码反射取。
     private static final String STORED_PREFIX = "v1:";
+
+    /// 实际下发的整句（归一化后）：转换器只在参数值里生效，SQL 文本里看不到明文。
+    private static final String INSERT_CONVERTED = "insert into converted (payload,id) values (?,?)";
+
+    private static final String UPDATE_CONVERTED = "update converted ce1_0 set payload=? where ce1_0.id=?";
 
     private static final String WILDCARD_TEXT = "50%_off'quote\\back";
 
@@ -83,9 +89,7 @@ class ItemConvertRoundTripTest {
         insertAll(DECLARED);
 
         List<String> inserts = statements(support.drainSql(), "insert into converted");
-        assertThat(inserts).hasSize(DECLARED.size());
-        assertThat(inserts)
-                .allSatisfy(sql -> assertThat(sql).contains("payload").contains("values ("));
+        assertThat(inserts).containsExactlyElementsOf(Collections.nCopies(DECLARED.size(), INSERT_CONVERTED));
 
         support.clearSql();
         support.inTransaction(_ -> operations()
@@ -93,12 +97,7 @@ class ItemConvertRoundTripTest {
         support.clear();
 
         List<String> updates = statements(support.drainSql(), "update converted");
-        assertThat(updates).hasSize(1);
-        assertThat(updates.get(0))
-                .contains("payload")
-                .contains("where ")
-                .contains("id=?")
-                .doesNotContain("bound-not-inlined");
+        assertThat(updates).containsExactly(UPDATE_CONVERTED);
     }
 
     /// 更新不存在的行必须拒绝，而不是静默当成 upsert。
@@ -147,10 +146,12 @@ class ItemConvertRoundTripTest {
         return payloads.stream().map(Payload::id).toList();
     }
 
+    /// 归一化成一句话（小写 + 空白压缩）后按前缀筛，断言侧就能整句比对。
     private static List<String> statements(List<String> sql, String prefix) {
         String lowered = prefix.toLowerCase(Locale.ROOT);
         return sql.stream()
-                .filter(statement -> statement.toLowerCase(Locale.ROOT).startsWith(lowered))
+                .map(WriteRoundTripSupport::normalized)
+                .filter(statement -> statement.startsWith(lowered))
                 .toList();
     }
 

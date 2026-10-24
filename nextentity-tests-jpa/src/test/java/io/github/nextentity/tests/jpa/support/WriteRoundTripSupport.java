@@ -5,6 +5,7 @@ import io.github.nextentity.jpa.JpaEntityOperationsFactory;
 import jakarta.persistence.EntityManager;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -136,6 +137,17 @@ public final class WriteRoundTripSupport<T> implements AutoCloseable {
     /// 清空语句账本（跳过建表与前置准备，只记被测动作）。
     public void clearSql() {
         harness.clearSql();
+    }
+
+    /// 把记录到的语句归一化成一行：小写、连续空白压成单空格、去首尾空白。
+    ///
+    /// 断言侧一律拿归一化后的**整句**比对，不用片段：片段在列清单换序、占位符个数变化、
+    /// 别名或 `where` 子句被改写时都不会红，只有整句相等才能钉住「实际下发的是什么」。
+    ///
+    /// @param statement 记录到的原始语句
+    /// @return 归一化后的一行文本
+    public static String normalized(String statement) {
+        return statement.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
     }
 
     @Override

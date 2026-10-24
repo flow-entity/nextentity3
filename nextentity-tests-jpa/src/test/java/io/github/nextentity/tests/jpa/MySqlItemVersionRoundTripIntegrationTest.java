@@ -10,6 +10,7 @@ import jakarta.persistence.OptimisticLockException;
 import java.util.List;
 import java.util.Locale;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,10 @@ class MySqlItemVersionRoundTripIntegrationTest {
 
     private static final int SHORT_UPPER_BOUND = Short.MAX_VALUE;
 
+    /// 实际下发的整句（归一化后）：版本列既在 SET 里自增，也在 WHERE 里做乐观锁谓词。
+    private static final String UPDATE_VERSIONED =
+            "update versioned ve1_0 set version=?,name=? where ve1_0.id=? and ve1_0.version=?";
+
     private final WriteRoundTripSupport<VersionedEntity> support =
             WriteRoundTripSupport.onMySql(VersionedEntity.class, ShortVersionedEntity.class);
 
@@ -37,6 +42,17 @@ class MySqlItemVersionRoundTripIntegrationTest {
 
     @BeforeEach
     void truncateAndClear() {
+        support.truncate("VersionedEntity");
+        support.truncate("ShortVersionedEntity");
+        support.clear();
+        support.clearSql();
+    }
+
+    /// 复位（AGENTS.md：集成测试启动容器后须在 `@AfterEach` 复位被改状态）：删掉本轮写入的行，
+    /// 丢掉受管状态与语句账本，容器里的库回到空表。`@BeforeEach` 那条留作兜底——上一条用例
+    /// 若崩在复位之前，它保证这一条仍从空表开始。
+    @AfterEach
+    void resetState() {
         support.truncate("VersionedEntity");
         support.truncate("ShortVersionedEntity");
         support.clear();
@@ -88,13 +104,7 @@ class MySqlItemVersionRoundTripIntegrationTest {
         update(new VersionedEntity(ID, "v1", current));
 
         List<String> updates = statements(support.drainSql(), "update versioned");
-        assertThat(updates).hasSize(1);
-        assertThat(updates.get(0))
-                .contains("name=")
-                .contains("where ")
-                .contains("id=?")
-                .contains("and ")
-                .contains("version=?");
+        assertThat(updates).containsExactly(UPDATE_VERSIONED);
     }
 
     @Test
@@ -163,10 +173,12 @@ class MySqlItemVersionRoundTripIntegrationTest {
                 .getSingleResult();
     }
 
+    /// 归一化成一句话（小写 + 空白压缩）后按前缀筛，断言侧就能整句比对。
     private static List<String> statements(List<String> sql, String prefix) {
         String lowered = prefix.toLowerCase(Locale.ROOT);
         return sql.stream()
-                .filter(statement -> statement.toLowerCase(Locale.ROOT).startsWith(lowered))
+                .map(WriteRoundTripSupport::normalized)
+                .filter(statement -> statement.startsWith(lowered))
                 .toList();
     }
 }

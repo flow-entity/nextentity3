@@ -8,6 +8,7 @@ import io.github.nextentity.core.repo.EntityOperations;
 import io.github.nextentity.testing.ItemStatus;
 import io.github.nextentity.tests.jpa.support.WriteRoundTripSupport;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Predicate;
@@ -30,6 +31,13 @@ class ItemBatchWriteRoundTripTest {
     private static final String LONG_TEXT = "x".repeat(200);
 
     private static final String LONG_NOTE = "y".repeat(200);
+
+    /// 实际下发的整句（归一化后）：列清单与占位符个数、别名、主键谓词都在里面，改一处就红。
+    private static final String INSERT_ITEM =
+            "insert into item (name,note,score,score2,status,id) values (?,?,?,?,?,?)";
+
+    private static final String UPDATE_ITEM =
+            "update item ie1_0 set name=?,note=?,score=?,score2=?,status=? where ie1_0.id=?";
 
     /// 写入意图：四行全列非空、一行可选列全 null、边界文本、整数上下界、score 与 score2 各缺一个。
     private static final List<Row> DECLARED = List.of(
@@ -89,14 +97,7 @@ class ItemBatchWriteRoundTripTest {
 
         List<String> inserts = statements(support.drainSql(), "insert into item");
 
-        assertThat(inserts).hasSize(DECLARED.size());
-        assertThat(inserts).allSatisfy(sql -> assertThat(sql)
-                .contains("name")
-                .contains("score")
-                .contains("score2")
-                .contains("note")
-                .contains("status")
-                .contains("values ("));
+        assertThat(inserts).containsExactlyElementsOf(Collections.nCopies(DECLARED.size(), INSERT_ITEM));
     }
 
     /// 批量 `updateAll` 只给四行：改了的必须对，没改的一个字都不能动。
@@ -142,12 +143,7 @@ class ItemBatchWriteRoundTripTest {
 
         List<String> updates = statements(support.drainSql(), "update item");
 
-        assertThat(updates).hasSize(changed.size());
-        assertThat(updates).allSatisfy(sql -> assertThat(sql)
-                .contains("where ")
-                .contains("id=?")
-                .contains("name=")
-                .contains("score="));
+        assertThat(updates).containsExactlyElementsOf(Collections.nCopies(changed.size(), UPDATE_ITEM));
     }
 
     /// 删掉一部分之后，剩下的行必须逐列不变、数量对得上。
@@ -209,10 +205,12 @@ class ItemBatchWriteRoundTripTest {
         return rows.stream().filter(condition).map(Row::id).toList();
     }
 
+    /// 归一化成一句话（小写 + 空白压缩）后按前缀筛，断言侧就能整句比对。
     private static List<String> statements(List<String> sql, String prefix) {
         String lowered = prefix.toLowerCase(Locale.ROOT);
         return sql.stream()
-                .filter(statement -> statement.toLowerCase(Locale.ROOT).startsWith(lowered))
+                .map(WriteRoundTripSupport::normalized)
+                .filter(statement -> statement.startsWith(lowered))
                 .toList();
     }
 
