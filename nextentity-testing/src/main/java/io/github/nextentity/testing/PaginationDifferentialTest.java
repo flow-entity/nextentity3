@@ -18,8 +18,18 @@ import org.junit.jupiter.api.TestFactory;
 /// 为什么不复用 `PaginationConsistencyTest` 的手算常量：那里的期望值只有一种来源（人脑），
 /// `total` 与 `data` 混在一起算错时，常量常常跟着一起错。这里两条路径不相交：
 /// - 真库一侧：`ORDER BY` + `LIMIT`/`OFFSET` 由 Hibernate 生成并执行，`total` 来自独立的 count 查询；
-/// - 内存一侧：[Pages] 只读 {@link Fixtures#ITEM_ROWS} 的字段，自己排序、自己 `subList`，
+/// - 内存一侧：[Pages] 只读 {@link #fixtureRows()} 的字段，自己排序、自己 `subList`，
 ///   不调 nextentity 的任何生产代码，也不回读后端结果。
+///
+/// **内存侧的行数据一律取 {@link #fixtureRows()}，不写死 {@link Fixtures#ITEM_ROWS}**：播种走的是
+/// `@BeforeEach seed()` → `support().seedData(fixtureRows())`，而 `fixtureRows()` 可被子类覆写；
+/// 内存侧若钉死默认夹具，覆写之后就变成「灌的是 A、算的是 B」，差分静默假绿、永远不红。
+/// 行数据是**输入**不是答案，从同一入口取不损害 oracle 的独立性——独立性来自
+/// 「[Pages] 不调 nextentity 的任何生产代码、也不回读后端结果」。
+///
+/// 唯一写死的是各处 **oracle 自检**里的具体主键序列（如 `[1, 2, 3, 4]`、`[2, 3]`）：它们钉的是
+/// **默认夹具**的形状，用来证明期望值不是退化的（不是空、不是整表、排序真的变了序）。
+/// 子类覆写 `fixtureRows()` 时这些自检会故意变红，提醒把自检一起改成新夹具的形状。
 ///
 /// 本类专门钉这几类 bug（每一类都能在这里被切成红）：
 /// - **`total` 把窗口混进去**：`total` 返回「当前页行数」或「`total - offset`」而不是过滤后的总行数。
@@ -62,10 +72,11 @@ public abstract class PaginationDifferentialTest<T extends Item> extends Consist
         return WINDOWS.stream()
                 .map(window -> DynamicTest.dynamicTest("slice " + window.offset() + "/" + window.limit(), () -> {
                     Slice<T> slice = orderedBy(Scope.ALL).slice(window.offset(), window.limit());
-                    List<Long> expected = Pages.window(Fixtures.ITEM_ROWS, window);
+                    List<Long> expected = Pages.window(fixtureRows(), window);
 
                     // oracle 自检：窗口越界当且仅当 offset 已到总数之后，空页不能是「实现漏了一大截」。
-                    assertThat(expected.isEmpty()).isEqualTo(window.offset() >= Fixtures.ITEM_ROWS.size());
+                    assertThat(expected.isEmpty())
+                            .isEqualTo(window.offset() >= fixtureRows().size());
                     assertThat(slice.data()).extracting(Item::id).containsExactlyElementsOf(expected);
                 }));
     }
@@ -80,14 +91,14 @@ public abstract class PaginationDifferentialTest<T extends Item> extends Consist
         return LIMITS.stream()
                 .map(limit -> DynamicTest.dynamicTest("list " + limit, () -> {
                     List<T> rows = orderedBy(Scope.ALL).list(limit);
-                    List<Long> expected = Pages.window(Fixtures.ITEM_ROWS, new Window(0, limit));
+                    List<Long> expected = Pages.window(fixtureRows(), new Window(0, limit));
 
                     // oracle 自检：`0` = 不限行（全部 4 行），其余取 min(n, 总数)，期望值不得为空。
                     assertThat(expected)
                             .hasSize(
                                     limit == 0
-                                            ? Fixtures.ITEM_ROWS.size()
-                                            : Math.min(limit, Fixtures.ITEM_ROWS.size()));
+                                            ? fixtureRows().size()
+                                            : Math.min(limit, fixtureRows().size()));
                     assertThat(rows).extracting(Item::id).containsExactlyElementsOf(expected);
                 }));
     }
@@ -107,7 +118,7 @@ public abstract class PaginationDifferentialTest<T extends Item> extends Consist
                             long counted = scopedQuery(scope).count();
                             Slice<T> slice = orderedBy(scope).slice(window.offset(), window.limit());
 
-                            assertThat(memory).hasSizeLessThanOrEqualTo(Fixtures.ITEM_ROWS.size());
+                            assertThat(Pages.ids(memory)).containsExactlyElementsOf(expectedIds(scope));
                             assertThat(counted).isEqualTo(memory.size());
                             assertThat(slice.total()).isEqualTo(memory.size());
                         })));
@@ -124,7 +135,7 @@ public abstract class PaginationDifferentialTest<T extends Item> extends Consist
     Stream<DynamicTest> filteredMultiKeyPaginationMatchesMemory() {
         return WINDOWS.stream()
                 .map(window -> DynamicTest.dynamicTest("filtered " + window.offset() + "/" + window.limit(), () -> {
-                    List<FixtureRow> filtered = Pages.withScorePresent(Fixtures.ITEM_ROWS);
+                    List<FixtureRow> filtered = Pages.withScorePresent(fixtureRows());
                     List<Long> expected = Pages.window(Pages.scoredByDescThenName(filtered), window);
                     List<T> data = query().where(scoreRef())
                             .isNotNull()
@@ -136,7 +147,7 @@ public abstract class PaginationDifferentialTest<T extends Item> extends Consist
                             .data();
 
                     // oracle 自检：过滤真的去掉了一行，排序也不是夹具原序。
-                    assertThat(filtered).isNotEmpty().hasSizeLessThan(Fixtures.ITEM_ROWS.size());
+                    assertThat(Pages.ids(filtered)).containsExactly(1L, 2L, 3L);
                     assertThat(Pages.ids(Pages.scoredByDescThenName(filtered))).isNotEqualTo(Pages.ids(filtered));
                     assertThat(data).extracting(Item::id).containsExactlyElementsOf(expected);
                 }));
@@ -168,13 +179,13 @@ public abstract class PaginationDifferentialTest<T extends Item> extends Consist
     /// 前者在 `limit` 与 `offset` 混用时错位，后者在夹具顺序与索引顺序不同时分家。
     @Test
     void firstMatchesMemoryHead() {
-        List<Long> ascending = Pages.ids(Fixtures.ITEM_ROWS);
+        List<Long> ascending = Pages.ids(fixtureRows());
         List<Long> descending = ascending.reversed();
-        List<Long> scoredFirst = Pages.ids(Pages.scoredByDescThenName(Pages.withScorePresent(Fixtures.ITEM_ROWS)));
+        List<Long> scoredFirst = Pages.ids(Pages.scoredByDescThenName(Pages.withScorePresent(fixtureRows())));
 
-        assertThat(ascending).isNotEmpty();
-        assertThat(descending).isNotEmpty();
-        assertThat(scoredFirst).isNotEmpty();
+        assertThat(ascending).containsExactly(1L, 2L, 3L, 4L);
+        assertThat(descending).containsExactly(4L, 3L, 2L, 1L);
+        assertThat(scoredFirst).containsExactly(3L, 2L, 1L);
         assertThat(query().orderBy(idRef()).asc().first().id()).isEqualTo(ascending.getFirst());
         assertThat(query().orderBy(idRef()).desc().first().id()).isEqualTo(descending.getFirst());
         assertThat(query().where(scoreRef())
@@ -215,9 +226,25 @@ public abstract class PaginationDifferentialTest<T extends Item> extends Consist
     /// @return 期望行，保持夹具顺序
     private List<FixtureRow> memoryRows(Scope scope) {
         return switch (scope) {
-            case ALL -> Fixtures.ITEM_ROWS;
-            case SCORE_AT_LEAST_THRESHOLD -> Pages.withScoreAtLeast(Fixtures.ITEM_ROWS, SCORE_THRESHOLD);
-            case MISSING_NAME -> Pages.withName(Fixtures.ITEM_ROWS, MISSING_NAME);
+            case ALL -> fixtureRows();
+            case SCORE_AT_LEAST_THRESHOLD -> Pages.withScoreAtLeast(fixtureRows(), SCORE_THRESHOLD);
+            case MISSING_NAME -> Pages.withName(fixtureRows(), MISSING_NAME);
+        };
+    }
+
+    /// 三种过滤条件在**默认夹具**上的命中主键：oracle 自检用，证明内存侧真的筛过行
+    /// （`SCORE_AT_LEAST_THRESHOLD` 命中 id=2、3；`MISSING_NAME` 一行都不命中）。
+    ///
+    /// 这不是正确性证据（正确性来自与真库结果逐元素比对），而是防退化：内存侧若把过滤写成恒真，
+    /// 期望值就退化成整表，与实现一起错、用例照样绿；把具体主键写在这里，退化立刻变红。
+    ///
+    /// @param scope 过滤条件
+    /// @return 默认夹具上的期望主键序列
+    private List<Long> expectedIds(Scope scope) {
+        return switch (scope) {
+            case ALL -> List.of(1L, 2L, 3L, 4L);
+            case SCORE_AT_LEAST_THRESHOLD -> List.of(2L, 3L);
+            case MISSING_NAME -> List.of();
         };
     }
 
