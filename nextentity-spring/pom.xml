@@ -58,5 +58,52 @@
             <artifactId>mockito-core</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- 真实接线用例：真 Hibernate + H2 + 事务绑定的共享 EntityManager 代理（不用 mock 证明语义） -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-orm</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-tx</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+              变异测试（PIT）：本模块只有两个类，但 `AbstractRepository` 是纯委派、`NextEntityAutoConfiguration`
+              是纯条件装配，两处的变异（漏委托一个方法、条件装配漏一个 `@ConditionalOnMissingBean`）
+              都是「编译过、测试假绿」的典型形态，必须用变异分数兜住。
+              阈值 95：与 api/core/jpa 一致，等价变异杀不死，阈值只挡真回退。
+              见 docs/DESIGN.md §5「变异测试」。
+            -->
+            <plugin>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-maven</artifactId>
+                <configuration>
+                    <targetClasses>
+                        <param>io.github.nextentity.spring.*</param>
+                    </targetClasses>
+                    <targetTests>
+                        <param>io.github.nextentity.spring.*</param>
+                    </targetTests>
+                    <failWhenNoMutations>true</failWhenNoMutations>
+                    <mutationThreshold>95</mutationThreshold>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

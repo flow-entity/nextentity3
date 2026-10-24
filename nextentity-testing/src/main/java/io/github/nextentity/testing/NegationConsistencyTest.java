@@ -46,12 +46,16 @@ public abstract class NegationConsistencyTest<T extends Item> extends Consistenc
     ///
     /// 这条同时锁住「取反不会把短路占位当成普通谓词」：若实现把占位当普通谓词再拼 `NOT`，
     /// 单层取反会变成「命中全部行」，与 `LogicalOps#not` 的契约相反。
+    ///
+    /// 双重取反后的「全部行」钉**具体 id 集合**：夹具恰好 4 行，只断 `hasSize(4)` 时，
+    /// 丢掉一行又重复另一行、或条件错写成命中另一批 4 行，都照样通过。
     @Test
     void notOnShortCircuitPlaceholderMatchesNothing() {
         assertThat(query().where(Path.of(nameRef()).eqIfNotNull(null).not()).list())
                 .isEmpty();
         assertThat(query().where(Path.of(nameRef()).eqIfNotNull(null).not().not())
                         .list())
-                .hasSize(4);
+                .extracting(Item::id)
+                .containsExactlyInAnyOrder(APPLE_ID, BANANA_ID, CHERRY_ID, APPLE_PIE_ID);
     }
 }

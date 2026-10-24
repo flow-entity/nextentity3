@@ -11,6 +11,8 @@ import org.junit.jupiter.api.TestFactory;
 
 /// 表达式算术矩阵的**差分** oracle：`add` / `sub` / `mul` / `div` / `mod` 五格各跑一条
 /// 「算术表达式进投影」的查询，期望值由内存实现按算子语义独立算出，逐值比对。
+/// 另一组五格覆盖**链式**算术（左操作数本身是算术表达式，如 `score.add(5).mul(2)`），
+/// 见下方 `everyChainMatchesMemoryOracle`。
 ///
 /// 为什么用投影而不是只看行集：投影把**每一行算出来的值**都比一遍。
 /// 只看命中 id 的话，`sub` 写成 `5 - score`（交换操作数）、`div` 写成四舍五入这类错误
@@ -33,8 +35,28 @@ import org.junit.jupiter.api.TestFactory;
 /// ```
 /// 因此内存一侧直接用 Java 的 `/` 与 `%`：两者都是向零截断、余数跟随被除数，与上面实测逐值一致。
 ///
-/// 除数为 0 **不进矩阵**：H2 抛异常，而 MySQL 的 `/ 0` 返回 `NULL`，两个后端行为不同；
-/// 把任一侧写进后端中立的一致性基类都会绑死方言，这件事属于 L4（同一条用例跨方言对拍）的职责。
+/// 除数为 0 **不进矩阵**：H2 抛异常，而 MySQL 的 `/ 0` 返回 `NULL`，两个后端行为不同，
+/// 把任一侧写进后端中立的一致性基类都会绑死方言。跨方言对拍由两条按方言分开的用例承担：
+/// H2 侧是 `ItemArithmeticDivisionTest`（断言抛 `org.hibernate.exception.DataException`），
+/// MySQL 侧是 `MySqlItemArithmeticDivisionIntegrationTest`（断言两个表达式逐值返回 `null`）。
+/// 两侧各钉一半，才算把「除零行为随方言变」这件事钉住。
+///
+/// **链式里的除法也不进矩阵**，理由同上但形态不同：`(score / 3) * 3` 在 H2（`INTEGER / INTEGER`
+/// 整数除法）上是 `9 / 18 / 30 / null / 3 / -3`，而在 MySQL（`/` 走 DECIMAL 除法、不截断）上
+/// 逐值还原成 `10 / 20 / 30 / null / 5 / -4`——同一条表达式，两个方言给出不同结果。
+/// 这两格同样按方言分开钉：H2 侧 `ItemArithmeticDivisionTest.divThenMulTruncatesBeforeMultiplying`，
+/// MySQL 侧 `MySqlItemArithmeticDivisionIntegrationTest.divThenMulKeepsDecimalPrecision`。
+/// 矩阵里因此只保留**不跨方言分叉**的链（`/` 不出现在链中），但单算子 `DIV` 那一格仍在矩阵里：
+/// `score / 3` 单独投影时两侧都按 Integer 截断成 `3 / 6 / 10 / null / 1 / -1`，
+/// 分叉只在「除法结果继续参与运算」时才出现。
+///
+/// **`列 算子 列` 不在矩阵里，因为公开 API 表达不出来**：`NumberArithmetic.add(U)` 的 `U`
+/// 就是列的 Java 类型（此处 `Integer`），所以 `Path.of(score).add(Path.of(score2))` 在编译期
+/// 就过不了（实测 `javac` 报「不兼容的类型：`NumberPath<T,Integer>` 无法转换为 `Integer`」）。
+/// 公开 API 能表达的双操作数形态只有两种：右操作数是**字面量**（上面五格），以及左操作数是
+/// **算术表达式**（链式）。后者走 `JpaOperands.arithmetic` 里 `expression(left)` 的递归分支，
+/// 由 `everyChainMatchesMemoryOracle` 覆盖；「列 算子 列」若要支持，得先加 API 重载
+/// （如 `add(Expression)`），那是生产代码变更，不在测试职责内。
 ///
 /// @param <T> 后端实体类型
 public abstract class ArithmeticDifferentialTest<T extends Item> extends ConsistencyTestBase<T> {
@@ -55,6 +77,17 @@ public abstract class ArithmeticDifferentialTest<T extends Item> extends Consist
     Stream<DynamicTest> everyOperatorMatchesMemoryOracle() {
         return Stream.of(Operator.values())
                 .map(operator -> DynamicTest.dynamicTest(operator.name(), () -> assertOperator(operator)));
+    }
+
+    /// 五格各一条用例：链式算术进投影，左操作数是算术表达式而不是列。
+    ///
+    /// 这一组存在的理由是可覆盖性：`JpaOperands.arithmetic` 对左右操作数都调 `expression(...)`，
+    /// 而「右操作数是列」的形态公开 API 表达不出来（见类注释），能走到递归分支的只有链式形态。
+    ///
+    /// @return 每条链一条动态用例
+    @TestFactory
+    Stream<DynamicTest> everyChainMatchesMemoryOracle() {
+        return Stream.of(Chain.values()).map(chain -> DynamicTest.dynamicTest(chain.name(), () -> assertChain(chain)));
     }
 
     private void assertOperator(Operator operator) {
@@ -86,9 +119,44 @@ public abstract class ArithmeticDifferentialTest<T extends Item> extends Consist
                                 .asc()
                                 .list();
                 };
-        List<Integer> expected = operator.expectedScores(Fixtures.OPERATOR_ROWS);
+        List<Integer> expected = operator.expectedScores(fixtureRows());
 
         // oracle 自检：期望值必须跨多行不同，否则「算子写错」也可能碰巧对上。
+        assertThat(expected.stream().filter(Objects::nonNull).distinct()).hasSizeGreaterThan(1);
+        assertThat(actual).containsExactlyElementsOf(expected);
+    }
+
+    private void assertChain(Chain chain) {
+        List<Integer> actual =
+                switch (chain) {
+                    case ADD_THEN_MUL ->
+                        query().select(Path.of(scoreRef()).add(5).mul(2))
+                                .orderBy(idRef())
+                                .asc()
+                                .list();
+                    case SUB_THEN_ADD ->
+                        query().select(Path.of(scoreRef()).sub(5).add(3))
+                                .orderBy(idRef())
+                                .asc()
+                                .list();
+                    case MUL_THEN_SUB ->
+                        query().select(Path.of(scoreRef()).mul(2).sub(7))
+                                .orderBy(idRef())
+                                .asc()
+                                .list();
+                    case SUB_THEN_MUL ->
+                        query().select(Path.of(scoreRef()).sub(5).mul(2))
+                                .orderBy(idRef())
+                                .asc()
+                                .list();
+                    case MOD_THEN_ADD ->
+                        query().select(Path.of(scoreRef()).mod(3).add(10))
+                                .orderBy(idRef())
+                                .asc()
+                                .list();
+                };
+        List<Integer> expected = chain.expectedScores(fixtureRows());
+
         assertThat(expected.stream().filter(Objects::nonNull).distinct()).hasSizeGreaterThan(1);
         assertThat(actual).containsExactlyElementsOf(expected);
     }
@@ -142,6 +210,80 @@ public abstract class ArithmeticDifferentialTest<T extends Item> extends Consist
         /// @return 与夹具行一一对应的期望值
         List<Integer> expectedScores(List<FixtureRow> rows) {
             return rows.stream().map(row -> apply(row.score())).toList();
+        }
+    }
+
+    /// 五条链式算术：两步复合，左操作数是第一步的结果。
+    ///
+    /// 挑法（期望值见类注释的实测口径，内存侧独立算）：
+    /// - `(score + 5) * 2`：加法先做、乘法后做，交换两步的顺序结果不同；
+    /// - `(score - 5) + 3`：负数行 `-4` 使「先减后加」与「先加后减」不同；
+    /// - `(score * 2) - 7`：乘法先做、减法后做；
+    /// - `(score - 5) * 2`：减法先做、乘法后做（`-4` 与 `5` 两行钉住符号方向）；
+    /// - `(score % 3) + 10`：余数符号跟随被除数（`-4 % 3 = -1`）。
+    ///
+    /// 链里**刻意不放 `/`**：`(score / 3) * 3` 是跨方言分叉点（H2 整数除法 vs MySQL DECIMAL 除法），
+    /// 放进后端中立的矩阵会绑死方言，改由按方言分开的两条用例各钉一侧（见类注释）。
+    enum Chain {
+        ADD_THEN_MUL(Step.ADD, 5, Step.MUL, 2),
+        SUB_THEN_ADD(Step.SUB, 5, Step.ADD, 3),
+        MUL_THEN_SUB(Step.MUL, 2, Step.SUB, 7),
+        SUB_THEN_MUL(Step.SUB, 5, Step.MUL, 2),
+        MOD_THEN_ADD(Step.MOD, 3, Step.ADD, 10);
+
+        private final Step first;
+        private final int firstOperand;
+        private final Step second;
+        private final int secondOperand;
+
+        Chain(Step first, int firstOperand, Step second, int secondOperand) {
+            this.first = first;
+            this.firstOperand = firstOperand;
+            this.second = second;
+            this.secondOperand = secondOperand;
+        }
+
+        /// 内存语义：先算第一步，再把结果喂给第二步；任一步遇到 `null` 就整体为 `null`。
+        ///
+        /// @param value 列值或 `null`
+        /// @return 该行整条链算出来的值或 `null`
+        Integer apply(Integer value) {
+            return second.apply(first.apply(value, firstOperand), secondOperand);
+        }
+
+        /// 按内存语义算出期望的投影列。
+        ///
+        /// @param rows 夹具原始行，按 id 升序
+        /// @return 与夹具行一一对应的期望值
+        List<Integer> expectedScores(List<FixtureRow> rows) {
+            return rows.stream().map(row -> apply(row.score())).toList();
+        }
+    }
+
+    /// 链里的一步算术：`列 <算子> 字面量`。
+    enum Step {
+        ADD,
+        SUB,
+        MUL,
+        DIV,
+        MOD;
+
+        /// 内存语义：`null` 进 `null` 出（NULL 传播）；`/` 与 `%` 用 Java 语义，与后端实测一致。
+        ///
+        /// @param value 左操作数或 `null`
+        /// @param operand 右操作数字面量
+        /// @return 该步算出来的值或 `null`
+        Integer apply(Integer value, int operand) {
+            if (value == null) {
+                return null;
+            }
+            return switch (this) {
+                case ADD -> value + operand;
+                case SUB -> value - operand;
+                case MUL -> value * operand;
+                case DIV -> value / operand;
+                case MOD -> value % operand;
+            };
         }
     }
 }

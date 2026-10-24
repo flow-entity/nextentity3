@@ -11,7 +11,7 @@ import java.math.BigDecimal;
  * <p>
  * 关键设计：该实体<b>不包含</b> {@code @ManyToOne} 或 {@code @JoinColumn} 注解，
  * 仅通过 {@code customerId} 字段保存外键值。
- * 关联关系完全由投影 DTO 中的 {@link io.github.nextentity.core.annotation.Join} 注解声明。
+ * 关联关系完全由投影 DTO 中的 {@code @Join} 注解声明。
  */
 @Entity
 public class SalesOrder {

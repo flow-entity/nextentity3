@@ -128,10 +128,9 @@ class JpaEndToEndTest extends JpaTestSupport {
 
             assertThat(executor.exists(compiler.compile(query(null).forExists())))
                     .isTrue();
-            // 条件被整段跳过：语句里没有 WHERE，而不是渲染成一个恒真条件
-            assertThat(drainSql()).anySatisfy(sql -> assertThat(sql)
-                    .containsIgnoringCase("from shop_order")
-                    .doesNotContainIgnoringCase(" where "));
+            // 条件被整段跳过：语句里没有 WHERE，而不是渲染成一个恒真条件；整句钉住「取一行判定」
+            assertThat(normalized(drainSql()))
+                    .containsExactly("select true from shop_order so1_0 fetch first ? rows only");
 
             QuerySpec emptyTable = QuerySpec.of(VersionedEntry.class);
             assertThat(executor.count(compiler.compile(emptyTable.forCount()))).isZero();
@@ -277,8 +276,11 @@ class JpaEndToEndTest extends JpaTestSupport {
             ShopOrder stale = entityManager.find(ShopOrder.class, 100L);
             entityManager.detach(stale);
             stale.setVersion(0);
+            // 影响行数 0 时执行器抛的就是本库的文案（`:111` 拼 `, version=<旧版本值>`）；
+            // 只断异常类型分不清「版本条件生效」与「主键条件都没生效」这两条路径
             assertThatThrownBy(() -> persister(entityManager).update(stale))
-                    .isInstanceOf(OptimisticLockException.class);
+                    .isInstanceOf(OptimisticLockException.class)
+                    .hasMessageContaining("version=0");
             return null;
         });
     }

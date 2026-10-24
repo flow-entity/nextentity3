@@ -58,6 +58,18 @@ final class JpaAssetSupport implements AutoCloseable {
         harness.entityManager().clear();
     }
 
+    /// 取走已抓到的 SQL（关联用例的整句快照用得到）。
+    ///
+    /// @return 按执行顺序排列的 SQL；取走后账本清空
+    List<String> drainSql() {
+        return harness.drainSql();
+    }
+
+    /// 清空 SQL 账本。
+    void clearSql() {
+        harness.clearSql();
+    }
+
     @Override
     public void close() {
         harness.close();

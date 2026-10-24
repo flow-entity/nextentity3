@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.nextentity.api.LockMode;
 import io.github.nextentity.testing.ItemStatus;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -36,7 +38,13 @@ class ItemLockConsistencyTest {
                 .list());
 
         assertThat(rows).extracting(ItemEntity::id).containsExactly(1L);
-        assertThat(support.drainSql()).anySatisfy(sql -> assertThat(sql).containsIgnoringCase("for update"));
+        // 整句快照（H2 + 当前 Hibernate），不是 `containsIgnoringCase("for update")` 片段：
+        // 片段断言对「锁子句挂到别的语句上」「`for update` 出现在子查询里而主查询没加锁」
+        // 「锁子句在 join 上而不是在主表上」都可能假绿；整句比对把加锁对象（`item ie1_0`）
+        // 和锁子句位置（语句末尾）一并钉住。
+        assertThat(normalized(support.drainSql()))
+                .containsExactly("select ie1_0.id,ie1_0.name,ie1_0.note,ie1_0.score,ie1_0.score2,ie1_0.status"
+                        + " from item ie1_0 where ie1_0.id=? for update");
     }
 
     @Test
@@ -50,5 +58,66 @@ class ItemLockConsistencyTest {
                 .list());
 
         assertThat(rows).isEmpty();
+    }
+
+    /// 五种 `LockMode` 都要走一遍：后端要么按同名映射成 `LockModeType` 放行，要么当场拒绝。
+    ///
+    /// 生产代码是 `LockModeType.valueOf(spec.lock().name())`——名字映射，`api.LockMode` 与
+    /// jakarta 侧任何一侧改名，这里就必须红；只在 `PESSIMISTIC_WRITE` 一条上打转是钉不住的。
+    ///
+    /// 实测语义（Hibernate 6 + H2，`ItemEntity` 无 `@Version`）：三种悲观锁里
+    /// `READ` / `WRITE` 渲染 `for update`，`FORCE_INCREMENT` 与两种乐观锁要求版本字段，
+    /// 被 Hibernate 当场拒绝。拒绝也是契约的一部分，所以逐条钉住，不写成「跳过」。
+    @Test
+    void everyLockModeIsEitherHonouredOrRejected() {
+        List<String> outcomes = new ArrayList<>();
+        for (LockMode mode : LockMode.values()) {
+            outcomes.add(outcomeOf(mode));
+        }
+
+        assertThat(outcomes)
+                .containsExactly(
+                        "OPTIMISTIC rejected HibernateException"
+                                + " [OPTIMISTIC] not supported for non-versioned entities",
+                        "OPTIMISTIC_FORCE_INCREMENT rejected HibernateException"
+                                + " [OPTIMISTIC_FORCE_INCREMENT] not supported for non-versioned entities",
+                        "PESSIMISTIC_READ rows=1 forUpdate=true",
+                        "PESSIMISTIC_WRITE rows=1 forUpdate=true",
+                        "PESSIMISTIC_FORCE_INCREMENT rejected HibernateException"
+                                + " [PESSIMISTIC_FORCE_INCREMENT] not supported for non-versioned entities");
+    }
+
+    /// 跑一次加锁查询，把结果压成一行可比的文本：放行则记行数与是否渲染 `for update`，拒绝则记异常与原因。
+    ///
+    /// 每种模式单开一个 `JpaItemSupport`：被 Hibernate 拒绝的模式会污染 EntityManager，
+    /// 复用同一个会把后续模式一律变成 `IllegalStateException`（假红）。
+    private String outcomeOf(LockMode mode) {
+        try (JpaItemSupport fresh =
+                new JpaItemSupport("item_lock_" + mode.name().toLowerCase())) {
+            fresh.seedData(List.of(fresh.newItem(1L, "apple", 10, 10, null, ItemStatus.NEW)));
+            fresh.clearSql();
+            try {
+                List<ItemEntity> rows = fresh.inTransaction(() ->
+                        fresh.query().where(fresh.idRef()).eq(1L).lock(mode).list());
+                boolean forUpdate = fresh.drainSql().stream()
+                        .anyMatch(sql -> sql.toLowerCase().contains("for update"));
+                return mode + " rows=" + rows.size() + " forUpdate=" + forUpdate;
+            } catch (RuntimeException e) {
+                return mode + " rejected " + e.getClass().getSimpleName() + " " + withoutEntitySuffix(e);
+            }
+        }
+    }
+
+    /// 去掉 Hibernate 消息尾部的 `[实体全名]`，只留语义——换测试实体不该让这条用例红。
+    private static String withoutEntitySuffix(RuntimeException e) {
+        String message = String.valueOf(e.getMessage());
+        return message.replaceAll("\\s*\\[[\\w.$]+]$", "").trim();
+    }
+
+    /// 与 `ItemSqlSnapshotTest` 同一套归一化：转小写 + 连续空白压一个空格，其余字符原样比对。
+    private static List<String> normalized(List<String> sqls) {
+        return sqls.stream()
+                .map(sql -> sql.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim())
+                .toList();
     }
 }

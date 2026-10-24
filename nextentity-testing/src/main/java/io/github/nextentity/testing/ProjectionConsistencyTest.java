@@ -7,7 +7,6 @@ import io.github.nextentity.api.model.Tuple2;
 import io.github.nextentity.api.model.Tuple3;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
@@ -79,12 +78,14 @@ public abstract class ProjectionConsistencyTest<T extends Item> extends Consiste
     ///
     /// `DISTINCT` 把 `NULL` 当作一个分组（SQL 标准，H2/MySQL 一致），所以夹具的两个空 `note`
     /// 只会出现一次——这既是去重的证据，也解释了消费方为什么总在非空列上去重。
+    ///
+    /// 结果整体钉住 `{n1, n2, null}`，不是「行数 + 非空子集」：后者在「一个 `null` 被换成重复的
+    /// `n1`」时行数与非空集合都成立，而 `DISTINCT` 对 `NULL` 的归并恰恰是这条用例要证明的语义。
     @Test
     void distinctCollapsesDuplicateValues() {
         List<String> notes = query().distinct().select(noteRef()).list();
 
-        assertThat(notes).hasSize(3);
-        assertThat(notes.stream().filter(Objects::nonNull).toList()).containsExactlyInAnyOrder(NOTE_1, NOTE_2);
+        assertThat(notes).containsExactlyInAnyOrder(NOTE_1, NOTE_2, null);
     }
 
     /// `groupBy` + 聚合：point-mall 的 6 处分组查询都是 `select(key, count) … groupBy(key)` 这个形状，
@@ -127,6 +128,10 @@ public abstract class ProjectionConsistencyTest<T extends Item> extends Consiste
     }
 
     /// 三列投影返回 `Tuple3`：具名访问器带类型，按位置取值与之一致。
+    ///
+    /// 四行**逐行**钉住完整投影值（`orderBy(id)` 让顺序确定）：原先只断 `hasSize(4)` +
+    /// 首行/末行一个字段时，中间两行整行错掉（列错位、`score` 与 `score2` 互换、行被重复）
+    /// 都不会红。列错位正是多列投影最容易出的偏差，必须逐行钉住。
     @Test
     void selectThreeColumnsReturnsTuple() {
         List<Tuple3<Long, String, Integer>> rows = query().select(
@@ -135,12 +140,15 @@ public abstract class ProjectionConsistencyTest<T extends Item> extends Consiste
                 .asc()
                 .list();
 
-        assertThat(rows).hasSize(4);
+        assertThat(rows)
+                .containsExactly(
+                        new Tuple3<>(APPLE_ID, APPLE_NAME, 10),
+                        new Tuple3<>(BANANA_ID, BANANA_NAME, 20),
+                        new Tuple3<>(CHERRY_ID, CHERRY_NAME, 30),
+                        new Tuple3<>(APPLE_PIE_ID, APPLE_PIE_NAME, null));
         assertThat(rows.getFirst().size()).isEqualTo(3);
+        assertThat(rows.getFirst().get(2)).isEqualTo(rows.getFirst().get2());
         assertThat(rows.getFirst().get(0)).isEqualTo(APPLE_ID);
-        assertThat(rows.getFirst().get(1)).isEqualTo(APPLE_NAME);
-        assertThat(rows.getFirst().get(2)).isEqualTo(10);
-        assertThat(rows.getFirst().get2()).isEqualTo(10);
         assertThat(rows.getLast().get(2)).isNull();
     }
 

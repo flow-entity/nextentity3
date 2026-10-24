@@ -241,7 +241,16 @@ class Tier1CapabilitiesTest {
                 .having(Path.of(Order::getId).count().gt(1L))
                 .count();
 
-        assertThat(backend.last().having()).isNotNull();
+        // `isNotNull()` 只证明「having 这个槽被填过」：填的是哪条条件、挂在哪个聚合上、
+        // 算子对不对全都不在断言范围内——`having(count(id) >= 1)` 甚至 `having(TRUE)` 都能通过。
+        // 这里钉住整个节点，`count()` 构造 forCount 规格时只要改写了条件（换列、换算子、
+        // 把 having 挪进 where）就红。
+        assertThat(backend.last().having())
+                .isEqualTo(new Comparison(
+                        new AggregateOperand(AggregateFunction.COUNT, path("id")),
+                        ComparisonOperator.GT,
+                        Literal.of(1L)));
+        assertThat(backend.last().where()).isNull();
         assertThat(backend.last().orderBy()).isEmpty();
     }
 

@@ -199,6 +199,29 @@ class OpInterpreterTest {
         assertThat(OpInterpreter.toSpec(emptyAnd)).isEqualTo(Constant.TRUE);
     }
 
+    /// `NOT` 落在恒假节点上：`negate` 的 `Constant.FALSE → Constant.TRUE`（`:146`-`:147`）与
+    /// `Constant.TRUE → Constant.FALSE`（`:143`-`:144`）两条分支。
+    ///
+    /// 为什么要单独钉：这两条分支是「取反 + 空集合折叠」的交点。`NOT(or(空))` 必须恒真——
+    /// 若 `negate` 漏掉 `FALSE` 一侧而落到 `Logical.not(Constant.FALSE)`，渲染出的 SQL 就变成
+    /// `NOT (恒假)`，在 `where` 里等价于不过滤，**恰好反过来匹配全表**，而 `where() == null`
+    /// 与「有没有 where」这类断言完全看不出来。
+    ///
+    /// 这两条分支原先零覆盖：`nextentity-core` 自己的用例里没有一条对恒假/恒真节点取反，
+    /// 而 `pitest:mutationCoverage` 按模块跑、不会把 `nextentity-jpa` 的用例算进来，
+    /// 于是 `:147` 长期是 `NO_COVERAGE`（变异体存活、门禁却显示 99%）。
+    @Test
+    @DisplayName("取反恒假/恒真节点：NOT(空 OR) 恒真，NOT(空 AND) 恒假")
+    void negateConstantNodes() {
+        Op emptyOr = leaf(Operation.OR, List.of(), List.of(), null);
+        Op emptyAnd = leaf(Operation.AND, List.of(), List.of(), null);
+
+        assertThat(OpInterpreter.toSpec(leaf(Operation.NOT, List.of(), List.of(emptyOr), null)))
+                .isEqualTo(Constant.TRUE);
+        assertThat(OpInterpreter.toSpec(leaf(Operation.NOT, List.of(), List.of(emptyAnd), null)))
+                .isEqualTo(Constant.FALSE);
+    }
+
     /// 手工构造 api 的 `Op` 线格式：反射调用 `io.github.nextentity.api.Conditions.Leaf` 的规范构造器。
     ///
     /// `Leaf` 是包私有的 record，所在文件不可见；`Op` 的另外两个被允许的实现同理，

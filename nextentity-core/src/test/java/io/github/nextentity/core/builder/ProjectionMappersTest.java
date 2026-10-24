@@ -61,8 +61,14 @@ class ProjectionMappersTest {
     void outOfRangeIndexRejected() {
         Tuple3<Long, String, Integer> three = new Tuple3<>(1L, "PAID", 7);
 
-        assertThatThrownBy(() -> three.get(3)).isInstanceOf(IndexOutOfBoundsException.class);
-        assertThatThrownBy(() -> three.get(-1)).isInstanceOf(IndexOutOfBoundsException.class);
+        // 消息点名「三列」与越界下标本身：只断类型时，把某个元组类的拒绝分支抄错成别的元数
+        // （`两列元组没有下标` 一类 copy-paste）、或把下标信息丢掉，都照样通过。
+        assertThatThrownBy(() -> three.get(3))
+                .isInstanceOf(IndexOutOfBoundsException.class)
+                .hasMessage("三列元组没有下标 3");
+        assertThatThrownBy(() -> three.get(-1))
+                .isInstanceOf(IndexOutOfBoundsException.class)
+                .hasMessage("三列元组没有下标 -1");
     }
 
     @Test

@@ -18,7 +18,7 @@ import java.util.function.Function;
 /// 工厂方法的参数个数就是元组宽度，七列起没有合规写法。需要更多列时用自定义 [ProjectionMapper]，
 /// 由 `map(Tuple)` 自己转型（那一层无法静态检查）。
 ///
-/// 三列不走这里：`SelectStep#select(Expression, Expression, Expression)` 已给 [Tuple3]，避免两个入口。
+/// 三列不走这里：`SelectStep#select(Expression, Expression, Expression)` 已给 `Tuple3`，避免两个入口。
 ///
 /// 用法：`query().project(ProjectionMappers.select(e1, e2, e3, e4)).list()`，结果是
 /// `List<Tuple4<A, B, C, D>>`，列序即实参顺序。

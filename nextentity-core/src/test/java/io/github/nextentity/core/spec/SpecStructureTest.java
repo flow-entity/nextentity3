@@ -71,8 +71,12 @@ class SpecStructureTest {
     @Test
     @DisplayName("比较缺值时报错：有值/无值由节点类型区分，不靠运行期约定")
     void comparisonRequiresValue() {
+        // 只断类型时，把 `requireNonNull(value, "value")` 改成「静默存 null」或换成别的
+        // NPE 来源（比如 null 路径）都照样通过；消息点名 `value` 才能钉住是「字面量缺值」
+        // 这条契约被守住，而不是碰巧抛了个 NPE。
         assertThatThrownBy(() -> new Comparison(STATUS, ComparisonOperator.GT, Literal.of(null)))
-                .isInstanceOf(NullPointerException.class);
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("value");
     }
 
     @Test

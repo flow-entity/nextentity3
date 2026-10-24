@@ -3,16 +3,20 @@ package io.github.nextentity.tests.jpa;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.nextentity.api.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-/// 第一梯队能力的**下发语句**断言：只证明"能力确实落到了 SQL"，不锁死整条语句文本。
+/// 多列 `groupBy` 的**下发语句**断言：`GROUP BY` 子句里必须是两个不同的分组项，且顺序与调用顺序一致。
 ///
-/// 一致性别名用例（`nextentity-testing`）证明结果集对；本类补另外一半证据——渲染出口出现过
-/// `having` / `mod(` / `min(` / `avg(` / `not` / 两个分组列。断言一律 `containsIgnoringCase`，
-/// 避免把方言的引号、别名、大小写写进期望值。
+/// 其余第一梯队能力（`having` / `mod` / `min` / `avg` / `distinct` / `not`）的渲染证据已全部收进
+/// [ItemSqlSnapshotTest] 的整句快照——那里钉的是整条语句，片段断言抓不到的结构性错误
+/// （谓词顺序、括号位置、`limit` 落错层级）它能抓到，因此本类不再重复保留片段断言。
+///
+/// 本类留下的这一条不是整句快照能替代的形态：两列 `groupBy` 的语句文本取决于别名分配，
+/// 而这里要钉的恰恰是「两个分组项互不相同且按调用顺序排列」，按项拆开断言比整句更容易定位回归。
 class ItemTier1RenderingTest {
 
     private final JpaItemSupport support = new JpaItemSupport("item_tier1_rendering");
@@ -22,89 +26,12 @@ class ItemTier1RenderingTest {
         support.close();
     }
 
-    /// `distinct()` 必须落到 SQL 的 `select distinct`（不是应用侧去重）。
-    @Test
-    void distinctIsRendered() {
-        support.clearSql();
-
-        support.query()
-                .distinct()
-                .select(Path.of(support.statusRef()), Path.of(support.noteRef()))
-                .list();
-
-        assertThat(support.drainSql()).anySatisfy(sql -> assertThat(sql).containsIgnoringCase("select distinct"));
-    }
-
-    /// `having` 必须出现在语句里（不是被折进 `where`）。
-    @Test
-    void havingIsRendered() {
-        support.clearSql();
-
-        support.query()
-                .select(Path.of(support.noteRef()), Path.of(support.idRef()).count())
-                .groupBy(support.noteRef())
-                .having(Path.of(support.idRef()).count().gt(1L))
-                .list();
-
-        assertThat(support.drainSql()).anySatisfy(sql -> assertThat(sql).containsIgnoringCase("having"));
-    }
-
-    /// 取模渲染成 SQL 的 `mod(...)`，而不是在应用侧算。
-    @Test
-    void modIsRenderedAsSqlFunction() {
-        support.clearSql();
-
-        support.query().where(Path.of(support.scoreRef()).mod(3).eq(0)).list();
-
-        // Hibernate 把取模渲染成 `%` 运算符（`(score%3)`），部分方言是 `mod(...)`；两者都证明落到了 SQL 侧。
-        assertThat(support.drainSql()).anySatisfy(sql -> assertThat(sql)
-                .satisfiesAnyOf(
-                        withFunction -> assertThat(withFunction).containsIgnoringCase("mod("),
-                        withOperator -> assertThat(withOperator).contains("%3")));
-    }
-
-    /// `min` 聚合渲染成 `min(...)`。
-    @Test
-    void minIsRenderedAsAggregate() {
-        support.clearSql();
-
-        support.query().select(Path.of(support.scoreRef()).min()).list();
-
-        assertThat(support.drainSql()).anySatisfy(sql -> assertThat(sql).containsIgnoringCase("min("));
-    }
-
-    /// `avg` 聚合渲染成 `avg(...)`。
-    @Test
-    void avgIsRenderedAsAggregate() {
-        support.clearSql();
-
-        support.query().select(Path.of(support.scoreRef()).avg()).list();
-
-        assertThat(support.drainSql()).anySatisfy(sql -> assertThat(sql).containsIgnoringCase("avg("));
-    }
-
-    /// `not()` 必须真的下推到语句里。
+    /// 两列 `groupBy`：`GROUP BY` 子句必须按调用顺序列出两个**不同**的分组项。
     ///
-    /// 实测（H2 + Hibernate 7）：`eq(...).not()` 被**折成** `name<>?`，而不是 `not (name=?)`——
-    /// 否定在 SQL AST 里被吸收进比较运算符。所以断言接受两种形态，并把「折叠」这个事实写在这里，
-    /// 免得后人以为 `not (` 是唯一正确答案。
-    ///
-    /// 只投影主键：否则选择列表里的 `note` 列会让 `contains("not")` 假通过。
-    @Test
-    void notIsRendered() {
-        support.clearSql();
-
-        support.query()
-                .select(Path.of(support.idRef()))
-                .where(Path.of(support.nameRef()).eq("banana").not())
-                .list();
-
-        assertThat(support.drainSql()).anySatisfy(sql -> assertThat(sql)
-                .satisfiesAnyOf(folded -> assertThat(folded).contains("<>"), explicit -> assertThat(explicit)
-                        .containsIgnoringCase("not (")));
-    }
-
-    /// 两列 `groupBy` 必须在 `GROUP BY` 子句里同时出现两个列名。
+    /// 只数逗号个数（`split(",").hasSize(2)`）挡不住 `group by c0,c0`：分组列写重复时
+    /// 逗号仍是两个，语义却退化成单列分组（每组再按 `status` 拆开的行会被并成一行）。
+    /// 精确列表同时钉住顺序（`groupBy(a).groupBy(b)` 与 `groupBy(b).groupBy(a)` 的
+    /// 结果行顺序不同）与内容。
     @Test
     void bothGroupColumnsAppearInGroupByClause() {
         support.clearSql();
@@ -126,7 +53,9 @@ class ItemTier1RenderingTest {
 
         String grouped =
                 withGroupBy.substring(withGroupBy.toLowerCase(Locale.ROOT).indexOf("group by"));
-        // Hibernate 在部分方言上用选择列别名分组（`group by c0,c1`），所以数分组项而不是匹配列名。
-        assertThat(grouped.split(",")).as("GROUP BY 子句必须包含两个分组项：%s", grouped).hasSize(2);
+        // Hibernate 在部分方言上用选择列别名分组（`group by c0,c1`），所以按别名断而不是按列名断。
+        assertThat(Arrays.stream(grouped.split(",")).map(String::trim).toList())
+                .as("GROUP BY 子句必须按调用顺序列出两个不同的分组项：%s", grouped)
+                .containsExactly("group by c0", "c1");
     }
 }

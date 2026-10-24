@@ -11,11 +11,17 @@ import java.util.Locale;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-/// 显式投影映射器的**下发语句**断言：只证明 `expressions()` 真的变成了 SQL 的投影列，不锁死整条语句文本。
+/// 显式投影映射器的**下发语句**断言：整句快照，钉住 `expressions()` 到 SQL 投影列的完整映射。
 ///
 /// 一致性用例（`ProjectionMapperConsistencyTest`）证明结果集对；本类补另外一半证据——
-/// 列序在渲染出口与 `expressions()` 一致、聚合落成聚合函数。断言一律 `containsIgnoringCase`
-/// 或只比较投影段内的相对位置，避免把方言的引号、别名、表前缀写进期望值。
+/// 列序与别名在渲染出口与 `expressions()` 完全一致、聚合落成聚合函数而不是应用侧聚合。
+///
+/// 断言是**整句快照**（转小写 + 连续空白压一个空格后 `isEqualTo`），不是 `containsIgnoringCase`
+/// 片段：片段断言对「列序颠倒」「别名错位」「聚合被挪到应用侧」这类偏差都可能假绿——只要语句里
+/// 还残留 `sum(` 字样就通过，而那正是本类要抓的语义。
+///
+/// 快照只对 **H2 + 当前 Hibernate** 成立（表别名 `ie1_0`、列别名 `c0..c2` 都来自 Hibernate 渲染），
+/// 因此本类不进 MySQL 通道，与 `ItemSqlSnapshotTest` 同一口径。
 class ItemProjectionMapperRenderingTest {
 
     private final JpaItemSupport support = new JpaItemSupport("item_projection_mapper_rendering");
@@ -25,10 +31,11 @@ class ItemProjectionMapperRenderingTest {
         support.close();
     }
 
-    /// 三列映射器的投影子句按 `expressions()` 的顺序出现，聚合列渲染成聚合函数。
+    /// 三列映射器的投影子句按 `expressions()` 的顺序渲染成 `c0`/`c1`/`c2`，聚合列渲染成 `count(...)`。
     ///
-    /// 列序断言只比较投影段内的出现位置（`note` < `status` < `count(`）：这是"渲染顺序 = 声明顺序"
-    /// 在不锁死别名与表前缀的前提下能做到的最强断言；列序若颠倒，三段位置关系立刻失败。
+    /// 整句比对同时钉住：投影列顺序（`note` 在 `status` 前、聚合列最后）、列别名按声明顺序编号、
+    /// `group by` 复用同一批别名（`group by c0,c1`）。列序颠倒、别名编号错位、`group by` 改回
+    /// 重复表达式，这条都会红。
     @Test
     void projectionColumnsAppearInExpressionOrder() {
         support.clearSql();
@@ -39,39 +46,30 @@ class ItemProjectionMapperRenderingTest {
                 .groupBy(support.statusRef())
                 .list();
 
-        String projection = projectionClause(support.drainSql());
-        int noteAt = projection.toLowerCase(Locale.ROOT).indexOf("note");
-        int statusAt = projection.toLowerCase(Locale.ROOT).indexOf("status");
-        int countAt = projection.toLowerCase(Locale.ROOT).indexOf("count(");
-
-        assertThat(noteAt).as("投影段里必须有 note 列：%s", projection).isNotNegative();
-        assertThat(statusAt).as("note 必须排在 status 之前：%s", projection).isGreaterThan(noteAt);
-        assertThat(countAt).as("聚合列必须排在最后且渲染成 count(...)：%s", projection).isGreaterThan(statusAt);
+        assertThat(normalized(support.drainSql()))
+                .containsExactly(
+                        "select ie1_0.note c0,ie1_0.status c1,count(ie1_0.id) c2 from item ie1_0 group by c0,c1");
     }
 
-    /// 单列映射器（一个 `sum`）同样下发到 SQL，而不是在应用侧聚合。
+    /// 单列映射器（一个 `sum`）下发成 `select sum(ie1_0.score) from item ie1_0`，而不是在应用侧聚合。
+    ///
+    /// 整句比对钉住「聚合发生在数据库」：把 `sum` 退化成取列、或多套一层 `cast`/`distinct`、
+    /// 或改成应用侧聚合后下发裸列查询，都会红；只断 `containsIgnoringCase("sum(")` 时，
+    /// 语句里任何位置残留 `sum(` 都能蒙过去。
     @Test
     void sumIsRenderedAsAggregate() {
         support.clearSql();
 
         support.query().project(new ScoreSumMapper()).list();
 
-        assertThat(support.drainSql()).anySatisfy(sql -> assertThat(sql).containsIgnoringCase("sum("));
+        assertThat(normalized(support.drainSql())).containsExactly("select sum(ie1_0.score) from item ie1_0");
     }
 
-    /// 取第一条语句的投影段（`select` 与紧随其后的 ` from ` 之间）。
-    ///
-    /// 只解析这一段：整条语句的其余部分（表别名、`group by`、参数占位）都随方言变化，不参与断言。
-    private static String projectionClause(List<String> sqls) {
-        for (String sql : sqls) {
-            String lower = sql.toLowerCase(Locale.ROOT);
-            int selectAt = lower.indexOf("select");
-            int fromAt = lower.indexOf(" from ", selectAt + "select".length());
-            if (selectAt >= 0 && fromAt > selectAt) {
-                return sql.substring(selectAt + "select".length(), fromAt);
-            }
-        }
-        throw new AssertionError("没有抓到带投影子句的语句：" + sqls);
+    /// 与 `ItemSqlSnapshotTest` 同一套归一化：转小写 + 连续空白压一个空格，其余字符原样比对。
+    private static List<String> normalized(List<String> sqls) {
+        return sqls.stream()
+                .map(sql -> sql.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim())
+                .toList();
     }
 
     /// 三列（属性 + 属性 + 聚合）：钉住「列序在渲染出口与 `expressions()` 一致」。
