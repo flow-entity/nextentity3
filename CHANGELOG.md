@@ -51,6 +51,8 @@
 - `Path` / `NumberPath` / `StringPath` 不再继承 `PathRef`：`PathRef` 只表示用户写的方法引用，路径值由新增的 `where(Path)` / `where(StringPath)` / `orderBy(Path)` 承载。**为什么必须破**：继承会让后端的 `where(PathRef)` 把 api 值对象当 lambda 解析（`writeReplace()` 抛 `NoSuchMethodException`）。
 - `SelectStep` 增抽象方法 `project(ProjectionMapper)`：**接口的外部实现者需要补实现**（仓库内唯一实现是 `core.builder.QueryBuilder`）；调用方不受影响，既有 `select(...)` 重载的签名与语义未变。
 - 删掉 4 处**死类型参数**：`SelectStep.select(3 列及以上)` 的 `<A, B, C>`（返回的是按位置取值的 `Tuple`，三列类型不进返回类型），以及 `Conditions` 两个私有辅助方法 `operands(Collection)` / `checked(Collection)` 的 `<T>`（只在唯一那个参数里出现一次，不约束任何第二个参数）。判断标准：类型参数至少出现两次、或用进返回类型才有意义。它们是已被否决的 `Tuple3<A,B,C>` 方案的残留。擦除后方法描述符不变，**二进制兼容**、调用点零改动。
+- **条件位置的入参从「静默丢弃」改为「当场拒绝」**：`where(Expression)` / `having(Expression)` 收到既不是 `Op`、也不是 `*IfNotNull` 短路占位（`Conditions.AlwaysTrue`）的表达式时，原先整条条件被丢掉、查询退化成全表（`having` 那条连分组后的过滤一起没了）；`and`/`or` 的子条件里出现同类入参时，`or` 一侧还会被当成恒真、把前半条条件一起吃掉。现在四处统一抛 `IllegalArgumentException`，消息点名位置与正确写法（布尔字段请写 `.eq(true)`）；`lock(null)` 从"静默不加锁"改为 `NullPointerException`（`requireNonNull(mode)`）。**没有签名变更**，但这是行为收紧：靠"传错也能跑"的调用方会从拿到全表变成拿到异常——这正是目的，静默全表在租户/权限条件下是数据泄露级的错。
+- `LogicalOps.or(Collection)` 的 Javadoc 与实现对齐：原写「`or(空)` 恒假，匹配不到任何行」，而实现（`Conditions.Leaf#or` / `AlwaysTrue#or`）与三条既有用例一致地把空集合当「没有可组合的条件」→ 返回接收者本身（`a ∨ 空 = a`）。文档按实现改正，并补一句「集合元素若是恒真占位则按 `a ∨ TRUE = TRUE` 处理，与空集合不是一回事」——这两件事此前在文档上完全分不开。
 
 ### Fixed
 
@@ -66,6 +68,10 @@
 - 删除死代码：`Conditions.Leaf` 从未被调用的三参构造器、`PathValues.StringRoot`（无静态工厂可达，`StringPath` 没有 `of(...)`）、`Conditions.arithmetic` 恒为 `null` 的 `leftSubject` 形参。`Leaf` 与 `SimpleEntityOperationsFactory.Operations` 改为 record（组件名与 `Op` 的读取方法一一对应，不再手写 getter）。
 - `JpaEntityAttribute` 构造器对 `entityType` 做 `requireNonNull`：错误消息里 `entityType.getName()` 在入参为 `null` 时会先抛 NPE，把「找不到字段」的真实原因盖掉。
 - `nextentity-tests-legacy` 清理未使用 import / 未使用变量 / 未使用 logger 与指向已删除符号的 `@see`（该模块仍按「移植语料」保持与 2.2.3 同排版，仅清理无意义的死符号）。
+- **关联嵌套路径的 17 个谓词格曾是同义反复**：夹具只有 `alpha` / `beta` 两个非空取值，于是 `gt(alpha) ≡ ne(alpha)`、`le(alpha) ≡ eq(alpha)`、`between(alpha,beta) ≡ isNotNull`、`like("al%") ≡ like("_lpha")`——把 `gt` 渲染成 `<>`、把 `between` 渲染成 `is not null`、把 `_` 通配丢掉，整族照样全绿（每格原有的"期望非空 / 非全表"自检挡不住这种退化）。夹具扩到 7 行（新增 `aardvark` < `alpha` < `alps` < `amber` < `beta` 五个可区分取值），并新增 `AssociationDifferentialTest#predicateCellsAreMutuallyDistinguishable()` 逐对断言"该互相区分的格子期望集合确实不同"，夹具再退化就先在那里红。
+- **L2 的参数绑定盲区补上一格**：`ItemQueryEntrySnapshotTest` 的悲观锁快照只钉语句骨架，而 `where id = ? ... fetch first ? rows only` 的两个占位符都是 `Long`，绑反后语句逐字节相同（`StatementInspector` 原理上看不到绑定值）。新增 `pessimisticLockSingleReturnsTheFilteredRow` 用「取回的行就是 where 里那个 id」兜住这一格。
+- **`nextentity-api` 的 `Conditions#skip()` 少了半边断言**：`skip()` 在"没有 parent 且未被抑制"时返回恒真占位，而 `null` 在 `where(...)` 的 `instanceof Op` 判定下同样"不产生条件"，于是把返回值改成 `null` 没有任何用例会红。新增 `PredicateOrOperatorTest#standaloneSkipReturnsPlaceholderNotNull` 钉住单例身份与"链上追加条件仍短路"。
+- **`nextentity-jpa` 的 `update` 对关联列的行为此前无任何用例**：`JpaPersistExecutor#setValues` 跳过 `@ManyToOne` 列，改关联后 `update(entity)` 既不落库也不报错（SQL 里没有 `customer_id`）。新增 `JpaPersistAssociationTest` 同时钉两层：关联列不进 `SET`、同一行的基本属性照常更新（只钉前者时把 `update` 整个改成空实现也能过）。
 
 ### Removed
 

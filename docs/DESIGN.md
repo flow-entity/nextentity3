@@ -112,7 +112,7 @@ S  （后端语句）
 | 3. 一致性 | 能力而非 SQL 文本：条件/分页/聚合/投影/写入/乐观锁 | 真库执行结果 vs 独立算出的期望；用例不引用任何后端类型 | 仅 `api`+`core` 接口 | `nextentity-testing` 抽象基类，由 jpa 子类继承 |
 | 4. 集成 | 真实方言、`@Convert`、并发乐观锁 | 同一用例在各方言下结果集完全相同（载体：`nextentity-tests-jpa` 的 `*IntegrationTest`，跑真 MySQL 容器） | Docker | `nextentity-tests-jpa` |
 
-L2 只证明「语句下发正确」，不证明「参数绑定正确」：`SqlRecorder` 只记语句文本，绑定顺序与取值抓不到。这一半证据属于待补项，补上之前由 L3（真库执行结果）兜底。
+L2 只证明「语句下发正确」，不证明「参数绑定正确」：`SqlRecorder` 只记语句文本，绑定顺序与取值抓不到（`StatementInspector` 的接口上就没有绑定值）。这一半证据由 L3（真库执行结果）兜底；文本相同而结果唯一会变的那一处——`lock(...).single()` 里主键与 `fetch first ? rows only` 两个 `Long` 占位符——已由 `ItemQueryEntrySnapshotTest#pessimisticLockSingleReturnsTheFilteredRow` 用「取回的行就是 where 里那个 id」补上。剩余的"绑定顺序写反但结果仍相同"在语义上不可观测，不计为缺口。
 
 L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（`*IntegrationTest`）走 failsafe，两条通道按类名显式分开（见下「通道拆分」）。容器侧用 `org.testcontainers:mysql` 起一个 `mysql:8.0.18`，一个 JVM 一个容器、所有容器用例共享，接的是**同一批一致性基类**——所以「跨方言结果集相同」是逐行比出来的，不是另写一套 MySQL 专用断言。真 MySQL 的另一处出现是 `nextentity-tests-legacy`，需手动开 `-Ddbc=h2,mysql`，与 L4 无关。
 
@@ -235,7 +235,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 | 模块 | 变异范围 | 生成 | 杀死 | 分数 | 已知存活 |
 |---|---|---|---|---|---|
 | `api` | `io.github.nextentity.api.*` | 186 | 185 | 99% | 1 条等价变异 |
-| `core` | `io.github.nextentity.core.*` | 233 | 233 | 100% | — |
+| `core` | `io.github.nextentity.core.*` | 241 | 241 | 100% | — |
 | `jpa` | `io.github.nextentity.jpa.*`（全模块，约 28s） | 125 | 123 | 98% | 2 条等价变异 |
 | `spring` | `io.github.nextentity.spring.*` | 3 | 3 | 100% | — |
 
@@ -250,6 +250,14 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 `jpa` 的门禁原先只覆盖 `jpa.compile.*`（49 个变异），理由是「exec/meta 每个变异都要起 Hibernate，太慢」；实测全模块只需 28s，该理由不成立，已扩到全模块并把阈值从 90 提到 95。
 
+**变异组本身的强度也会骗人（`STRONGER` 组，一次性测量，不进流水线）**：默认 `DEFAULTS` 组只做条件取反、算术值替换、返回值常量替换三类，而「整条 `if (...)` 被换成恒真/恒假」与「操作符互换」都在 `STRONGER` 里——恰好是 fail-open 缺陷的形状。用 `-Dmutators=STRONGER -DmutationThreshold=0` 跑四个模块，比 `DEFAULTS` 多出 20 条存活体（api 3 / core 5 / jpa 13 / spring 0）。逐条核对后 **18 条是被语义套件杀死的**（模块级 PIT 只看本模块 `src/test`，见上「度量口径」），剩下的两条已判定为等价变异：
+
+- `api/Conditions:101` 的 `if (suppressed) return alwaysTrue();` 整个分支：`suppressed == true` 只由 `AlwaysTrue.or(PathRef)` 产生（`Conditions:196` 显式传 `parent = null`），而 `skip()` 的 `parent == null` 分支返回的是同一个 `ALWAYS_TRUE` 单例，两条路径的可观测结果完全相同。
+- `core/spec/Window.limited()` 的 `return limit != null` 被换成 `return offset != null`：该方法全仓库只在 `QueryBuilder#spec(Window)` 读一次，而到达那里的 `Window` 要么两字段皆 `null`（`Window.NONE`），要么两字段皆非 `null`（`first()` / `limit(n)` / `slice(offset, limit)`），两种写法对该判定等价。
+- `core/builder/ImmutableList.ofIterable` 的 `iterable instanceof Collection<?> sized` 同理（只影响新建 `ArrayList` 的初始容量）。
+
+所以「`STRONGER` 下还有存活体」不等于「还有盲区」：判定顺序永远是「先确认语义套件是否已覆盖（它不在任何变异分数里），再确认是否等价」，两步都不成立才是缺口。
+
 **故障注入（一次性实验，不是常驻门禁）**：变异测试度量「这一行有没有被跑到、断言够不够紧」，但不回答「**整套测试能不能抓住一个真实语义缺陷**」——这两件事不等价，因为一个缺陷可能被几十条用例执行到却一条都断言不到。验证后者的唯一办法是反向注入：把已知缺陷手工改进生产代码，看测试红不红。
 
 做法：两棵 `git worktree`，生产代码完全相同、只有测试不同——`h-baseline`（detached 在补测前的 `063e48a`，语义套件 166 条）与 `g-faults`（补测后的套件，362 条）。对每个缺陷：改生产代码 → 跑 `./mvnw -pl nextentity-jpa,nextentity-tests-jpa -am test -DskipITs -Dmaven.test.failure.ignore=true` → `git checkout -- .` 还原 → 换另一棵重跑。脚本是**一次性本地产物**（`tmp/` 不入库，要复现照上面五步手搓即可），唯一硬要求是「注入的字面量必须恰好命中 1 次」与「还原要 `git checkout -- <具体生产文件>`、绝不能用 `-- .`（会把还没提交的测试改动一起冲掉）」——否则注入没落盘或没还原，实验结论就是假的（第一次跑就踩过：`mvnw.cmd` 按 CWD 向上找 `.mvn` 定 basedir，脚本没先 `Push-Location` 到仓库根，结果编译的是另一棵工作树的 WIP，报了个假绿）。
@@ -262,11 +270,19 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 同时暴露一个门禁漏洞：**默认 `mvn test` 在第一个失败的模块就停**，12 个缺陷的「先红」全是既有 `core`/`jpa` 单测，`nextentity-tests-jpa` 的 L4 真库层在默认流水线里根本没跑；必须加 `-Dmaven.test.failure.ignore=true` 才看得到分层结果。这也说明「跑绿了」与「每一层都跑了」是两件事，夜间档要按层落日志、按层判读。
 
+**第二轮故障注入（36 条，覆盖面换成 api 短路语义 / 分页与投影的静默降级 / 写侧版本与影响行数）**：脚本 `tmp/scripts/fault-campaign.ps1`（一次性本地产物，不入库），单个 `git worktree add ../nextentity3-semantic-pit`，逐条「`Get-Content -Raw` 精确替换 → `mvnw -pl nextentity-api,nextentity-core,nextentity-jpa,nextentity-tests-jpa test -DskipITs -fae` → `git checkout -- .` 还原」，按退出码判 KILLED / SURVIVED，另按日志里的 `COMPILATION ERROR` 判 PATCH-BROKEN（注入本身把代码写坏，不算测试漏洞）。结果 **33 杀 / 2 等价 / 1 脚本自身编译失败**，唯二存活的是 api `Conditions#skip()` 的两条分支：一条是等价变异（`suppressed ⇒ parent == null`，见上「变异组本身的强度」），一条是**真盲区**——无 parent 时返回 `null` 而非恒真占位，此前没有任何用例区分「恒真占位」与 `null`（两者在 `where(null)` 与 `where(占位)` 下都不产生条件）。已补 `PredicateOrOperatorTest#standaloneSkipReturnsPlaceholderNotNull` 钉住单例身份与"链上追加条件仍短路"。
+
+这轮还确认了两件此前只有猜测的事：
+
+1. **夹具退化会把一整族用例变成同义反复**：关联嵌套路径的 17 个谓词格，在「只有 alpha / beta 两个非空取值」的夹具下只剩 4 个不同结果集——`gt(alpha) ≡ ne(alpha)`、`le(alpha) ≡ eq(alpha)`、`between(alpha, beta) ≡ isNotNull`、`like("al%") ≡ like("_lpha")`，于是把 `gt` 渲染成 `<>`、把 `between` 渲染成 `is not null`、把 `_` 通配丢掉都能全绿（每格原有的"期望非空 / 非全表"自检挡不住这种退化）。已把夹具扩到 7 行（`aardvark` < `alpha` < `alps` < `amber` < `beta` 五个可区分取值 + 一个 `null` 关联锚点），并新增 `AssociationDifferentialTest#predicateCellsAreMutuallyDistinguishable()` 逐对断言「该互相区分的格子，期望集合确实不同」——**夹具再退化就先在这里红**，而不是让 17 条谓词格继续假装在验证算子。
+2. **模块 PIT 的存活体不能直接当盲区清单**：20 条 `STRONGER` 存活体里 18 条已被语义套件覆盖（见上「变异组本身的强度也会骗人」）。
+
 **尚未实施**（方向，不是已有能力——写进这里的东西不得当成现状引用）：
 
 - H2 兼容模式矩阵：以 `MODE=MySQL` / `PostgreSQL` / `Oracle` 跑同一套一致性用例。
-- 故障注入常驻化：现在只是上面那次一次性实验（手工注入 12 个缺陷），还没进流水线；连接中断、锁超时、方言不支持路径这三类也还没注入过。
+- 故障注入常驻化：现在只是两次一次性实验（12 条 + 36 条手工注入），还没进流水线；连接中断、锁超时、方言不支持路径这三类也还没注入过。
 - 变异测试的历史文件（`historyInputFile` / `historyOutputFile`）：现在每次都全量重算，接上增量后夜间档可以更快。
+- L2 的参数绑定取值：`StatementInspector` 只拿得到语句文本，`where id = ?` 的两个占位符互换后 SQL 逐字节相同。唯一"文本相同而结果不同"的组合是 `single()` + `lock`，已补成同时断返回行（见上「L2 只证明…」一段）；其余位置由 L3 真库结果兜底。
 
 **与 §6 的关系**：L3 是第二后端的验收口——新后端必须原样通过同一套一致性用例，不得为它新增特例分支（见 §6 第 8 条）。
 
