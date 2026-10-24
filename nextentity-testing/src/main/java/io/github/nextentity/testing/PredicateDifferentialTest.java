@@ -11,12 +11,14 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 
 /// 谓词（条件）矩阵的**差分** oracle：`eq` / `ne` / `gt` / `ge` / `lt` / `le` / `between` /
 /// `notBetween` / `in` / `notIn` / `isNull` / `isNotNull` / `contains` / `like` / 枚举 `eq` /
 /// `and` / `or` / `not`，加上条件化算子 `eqIfNotNull` / `eqIfNotEmpty` / `containsIfNotNull` /
-/// `inIfNotNull`，共 33 格，每格一条动态用例。
+/// `inIfNotNull`、变长重载 `in(U...)` / `notIn(U...)`、以及短路占位谓词的逻辑组合，共 40 格，
+/// 每格一条动态用例。
 ///
 /// 差分分工（两条路径不相交）：
 /// - 真库一侧：`query().where(<后端谓词>).orderBy(id).asc()`，渲染走生产代码的谓词编译路径；
@@ -46,6 +48,15 @@ import org.junit.jupiter.api.TestFactory;
 /// `eqIfNotEmpty("")` / `containsIfNotNull(null)` / `inIfNotNull(null)` 都不产生谓词，
 /// 等价于不写这一条，因此命中全部 6 行——不是「匹配 null 行」，也不是「恒假」。
 ///
+/// **两种调用形态必须等价**：`in(10, 30)` 与 `in(List.of(10, 30))`、`notIn(10, 30)` 与
+/// `notIn(List.of(10, 30))`、以及空变长 `in()` / `notIn()` 与空集合形态，结果集必须逐元素相同。
+/// 矩阵里两种形态各有一格（期望值同源），另有 `varargsMembershipEqualsCollectionForm` 直接把两边
+/// 结果对起来——重载走的是两条不同的 api 代码路径，只有一格证据时改坏另一条不会被发现。
+///
+/// **短路占位谓词参与逻辑运算**：`eqIfNotNull(null)` 返回的占位谓词就是 `Conditions.alwaysTrue()`
+/// 的实例（该类是 package-private，公开入口只有 `*IfNotNull(null)` / `*IfNotEmpty("")`）。
+/// 它的三条代数性质单独成格：恒真 ∧ c = c、恒真 ∨ c = 恒真、¬恒真 = 恒假。
+///
 /// **`startsWith` / `endsWith` 用 `like` 表达**：3.x 不提供这两个算子（`docs/USAGE.md` §14
 /// 「不提供的能力」把替代写成 `like("v%")` / `like("%v")`），所以这两格的后端一侧是
 /// `like("app%")` / `like("%berry")`，内存一侧是前缀 / 后缀匹配。
@@ -65,7 +76,7 @@ public abstract class PredicateDifferentialTest<T extends Item> extends Consiste
         return Fixtures.OPERATOR_ROWS;
     }
 
-    /// 33 格各一条用例：真库谓词结果与内存三值逻辑结果逐元素比对。
+    /// 40 格各一条用例：真库谓词结果与内存三值逻辑结果逐元素比对。
     ///
     /// 用 `@TestFactory` 而不是 `@ParameterizedTest`：`junit-jupiter-params` 不在
     /// `nextentity-testing` 的编译类路径上（本模块只声明 `junit-jupiter-api`），改 pom 是红线；
@@ -75,6 +86,38 @@ public abstract class PredicateDifferentialTest<T extends Item> extends Consiste
     @TestFactory
     Stream<DynamicTest> everyPredicateMatchesMemoryOracle() {
         return Matrix.of(this).stream().map(cell -> DynamicTest.dynamicTest(cell.name(), () -> assertCell(cell)));
+    }
+
+    /// 变长重载与集合形态必须等价：四条查询各跑两遍，两边结果逐元素比对。
+    ///
+    /// 与矩阵里的成对格不同，这里比的是**两条 api 代码路径**（`in(U...)` 与 `in(Collection)`）
+    /// 在同一后端上的实际结果，任何一侧改了空集合 / 恒真的处理都会红。
+    @Test
+    void varargsMembershipEqualsCollectionForm() {
+        assertThat(orderedIds(query().where(Path.of(scoreRef()).in(10, 30))))
+                .as("in(10,30) 与 in(List.of(10,30)) 必须等价")
+                .containsExactlyElementsOf(
+                        orderedIds(query().where(Path.of(scoreRef()).in(List.of(10, 30)))));
+        assertThat(orderedIds(query().where(Path.of(scoreRef()).notIn(10, 30))))
+                .as("notIn(10,30) 与 notIn(List.of(10,30)) 必须等价")
+                .containsExactlyElementsOf(
+                        orderedIds(query().where(Path.of(scoreRef()).notIn(List.of(10, 30)))));
+        assertThat(orderedIds(query().where(Path.of(scoreRef()).in())))
+                .as("空变长 in() 与 in(空集合) 必须等价（两者都恒假）")
+                .containsExactlyElementsOf(
+                        orderedIds(query().where(Path.of(scoreRef()).in(List.of()))));
+        assertThat(orderedIds(query().where(Path.of(scoreRef()).notIn())))
+                .as("空变长 notIn() 与 notIn(空集合) 必须等价（两者都恒真，含 NULL 行）")
+                .containsExactlyElementsOf(
+                        orderedIds(query().where(Path.of(scoreRef()).notIn(List.of()))));
+    }
+
+    /// 按 id 升序取结果 id 列表——两条形态对比时必须同序，否则比的是排序不是形态。
+    ///
+    /// @param step 已挂好条件的查询步骤
+    /// @return id 列表
+    private List<Long> orderedIds(BaseWhereStep<T, T> step) {
+        return step.orderBy(idRef()).asc().list().stream().map(Item::id).toList();
     }
 
     private void assertCell(Case<T> cell) {
@@ -147,7 +190,7 @@ public abstract class PredicateDifferentialTest<T extends Item> extends Consiste
         /// 1 次），也把「为什么是这一串」的理由挂在名字旁边。
         private static final String MIDDLE_FRAGMENT = "nana";
 
-        /// 全表 33 格。
+        /// 全表 40 格。
         ///
         /// @param base 后端接线（只用来取属性引用，不读任何结果）
         /// @param <E>  后端实体类型
@@ -347,6 +390,56 @@ public abstract class PredicateDifferentialTest<T extends Item> extends Consiste
                     query -> query.where(base.nameRef()).containsIfNotNull("app"),
                     Texts.containsIfNotNull(FixtureRow::name, "app").keepsOnlyTrue(),
                     Shape.PARTIAL));
+
+            // ---- 变长重载 `in(U...)` / `notIn(U...)`：必须与同值集合形态等价 ----
+            // 语义依据是 `Membership` 的 javadoc 本身：「空变长等同于空集合」——`in()` 恒假、
+            // `notIn()` 恒真（恒真因此命中包括 `score` 为 `null` 的 id=4 在内的全部 6 行）。
+            // 这四格与上面的集合形态四格成对，任何一侧改了口径都会有一对红。
+            cells.add(new Case<>(
+                    "in(score,10,30)",
+                    query -> query.where(Path.of(base.scoreRef()).in(10, 30)),
+                    Numbers.in(FixtureRow::score, List.of(10, 30)).keepsOnlyTrue(),
+                    Shape.PARTIAL));
+            cells.add(new Case<>(
+                    "notIn(score,10,30)",
+                    query -> query.where(Path.of(base.scoreRef()).notIn(10, 30)),
+                    Numbers.notIn(FixtureRow::score, List.of(10, 30)).keepsOnlyTrue(),
+                    Shape.PARTIAL));
+            cells.add(new Case<>(
+                    "in(score,变长空)",
+                    query -> query.where(Path.of(base.scoreRef()).in()),
+                    Numbers.in(FixtureRow::score, List.of()).keepsOnlyTrue(),
+                    Shape.EMPTY));
+            cells.add(new Case<>(
+                    "notIn(score,变长空)",
+                    query -> query.where(Path.of(base.scoreRef()).notIn()),
+                    Numbers.notIn(FixtureRow::score, List.of()).keepsOnlyTrue(),
+                    Shape.ALL));
+
+            // ---- 短路占位谓词参与逻辑运算 ----
+            // `Conditions.alwaysTrue()` 本身是包内 API（`Conditions` 是 package-private 类），
+            // 公开可拿到的同一实例是 `*IfNotNull(null)` 的返回值；所以这里从公开入口取它，
+            // 钉住三条代数性质：恒真 ∧ c = c、恒真 ∨ c = 恒真、¬恒真 = 恒假。
+            cells.add(new Case<>(
+                    "alwaysTrue.and(score>5)",
+                    query -> query.where(Path.of(base.scoreRef())
+                            .eqIfNotNull(null)
+                            .and(Path.of(base.scoreRef()).gt(5))),
+                    Numbers.gt(FixtureRow::score, 5).keepsOnlyTrue(),
+                    Shape.PARTIAL));
+            cells.add(new Case<>(
+                    "alwaysTrue.or(score>5)",
+                    query -> query.where(Path.of(base.scoreRef())
+                            .eqIfNotNull(null)
+                            .or(Path.of(base.scoreRef()).gt(5))),
+                    row -> true,
+                    Shape.ALL));
+            cells.add(new Case<>(
+                    "alwaysTrue.not()",
+                    query -> query.where(
+                            Path.of(base.scoreRef()).eqIfNotNull(null).not()),
+                    row -> false,
+                    Shape.EMPTY));
 
             return cells;
         }

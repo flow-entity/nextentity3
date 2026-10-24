@@ -198,6 +198,48 @@ sealed interface Column {
             return nullable;
         }
     }
+
+    /// 夹具里全部列——生成器与覆盖守卫共用一份清单，避免两处各写一遍再漂移。
+    static List<Column> all() {
+        return List.of(Number.SCORE, Number.SCORE2, Text.NOTE, Text.NAME, Status.STATUS);
+    }
+
+    /// 叶算子种类——**「按列遍历」的唯一真源**。
+    ///
+    /// 早先每种叶子各自硬编码「本列能用哪几个算子」（数值 4 个、文本 4 个、枚举 2 个），结果是
+    /// `In` 在文本列上、`IsNull` 在枚举列上**永远生成不出来**，后端对应的两个渲染分支
+    /// （`PredicateFuzzBackend.in` 的 `Column.Text` 分支、`isNull` 的 `Column.Status` 分支）
+    /// 一次都没被执行过。算子可用性必须由列类型声明一次，生成器只遍历这张表。
+    enum Kind {
+        EQ,
+        RANGE,
+        IN,
+        CONTAINS,
+        LIKE,
+        IS_NULL;
+
+        /// 该算子能否作用在此列上（类型层面：`RANGE` 只吃数值列，`CONTAINS` / `LIKE` 只吃文本列）。
+        boolean appliesTo(Column column) {
+            return switch (this) {
+                case EQ, IN, IS_NULL -> true;
+                case RANGE -> column instanceof Number;
+                case CONTAINS, LIKE -> column instanceof Text;
+            };
+        }
+
+        /// 作用在此列上是否**恒为空集**（`IS NULL` 用在永不为空的列上）。
+        ///
+        /// 这类组合不进随机抽取：白烧一个 seed 的区分力（见 [Column#nullable()]）。但它仍是合法
+        /// 谓词、对应一个真实的后端渲染分支，所以由 [PredicateFuzzQuota] 的配额 seed 逐个点到。
+        boolean degenerateOn(Column column) {
+            return this == IS_NULL && !column.nullable();
+        }
+
+        /// 该算子产出的节点能否作为 `or` / `not` 的操作数（字符串算子不是 [Tree.Scalar]）。
+        boolean yieldsScalar() {
+            return this != CONTAINS && this != LIKE;
+        }
+    }
 }
 
 /// 概念树里的取值：类型跟着列走。
@@ -249,9 +291,9 @@ sealed interface Value {
 /// 设计指标，不是事后统计出来的装饰。
 ///
 /// 用 `seed % 4` 而不是从随机流里挑形状，是为了保证每种形状都恰好占四分之一：纯随机可能
-/// 整批都落在同一种形状上，那 fuzz 就退化了。叶算子再按列族细分（数值列 4 种、文本列 4 种、
-/// 枚举列 3 种），取值域在 [Generator] 的常量里列全，`IN` 取 1..3 个值且不生成空集合
-/// （空集合是常量折叠，已经在手算常量层钉过）。
+/// 整批都落在同一种形状上，那 fuzz 就退化了。叶算子**按列遍历**：种类由 [Column.Kind] 声明，
+/// 生成器只问「这个算子在这列上适用吗」，不再「某算子固定配某几列」；取值域在 [Generator]
+/// 的常量里列全，`IN` 取 1..3 个值且不生成空集合（空集合是常量折叠，已在手算常量层钉过）。
 final class Generator {
 
     /// 数值取值域按列分开，且**以夹具里真实出现的值为底**：这样 `Eq`/`In`/`Range` 大多能命中，
@@ -280,9 +322,7 @@ final class Generator {
 
     private static final String[] NOTE_FRAGMENTS = {"n", "1", "2", "n1", "zzz"};
 
-    private static final Column[] COLUMNS = {
-        Column.Number.SCORE, Column.Number.SCORE2, Column.Text.NOTE, Column.Text.NAME, Column.Status.STATUS
-    };
+    private static final List<Column> COLUMNS = Column.all();
 
     private Generator() {}
 
@@ -291,10 +331,10 @@ final class Generator {
     static Tree.And forSeed(long seed) {
         Rng rng = new Rng(seed);
         return switch ((int) Math.floorMod(seed, 4)) {
-            case 0 -> new Tree.And(List.of(leaf(rng, COLUMNS[rng.nextInt(COLUMNS.length)])));
-            case 1 -> new Tree.And(List.of(composite(rng, COLUMNS[rng.nextInt(COLUMNS.length)])));
+            case 0 -> new Tree.And(List.of(leaf(rng, COLUMNS.get(rng.nextInt(COLUMNS.size())))));
+            case 1 -> new Tree.And(List.of(composite(rng, COLUMNS.get(rng.nextInt(COLUMNS.size())))));
             case 2 -> {
-                Column first = COLUMNS[rng.nextInt(COLUMNS.length)];
+                Column first = COLUMNS.get(rng.nextInt(COLUMNS.size()));
                 yield new Tree.And(List.of(composite(rng, first), leaf(rng, other(rng, first))));
             }
             default -> stringSeed(seed);
@@ -341,58 +381,67 @@ final class Generator {
         };
     }
 
-    /// 指定列的叶子（可含字符串匹配）。
+    /// 指定列的叶子（可含字符串匹配）：算子从**该列适用的全部种类**里抽。
     private static Tree leaf(Rng rng, Column column) {
-        return switch (column) {
-            case Column.Number number -> numberLeaf(rng, number);
-            case Column.Text text -> textLeaf(rng, text);
-            case Column.Status status -> statusLeaf(rng, status);
-        };
+        return node(rng, column, pick(rng, column, false));
     }
 
-    /// 指定列的标量叶子——供 `or`/`not` 使用。
+    /// 指定列的标量叶子——供 `or`/`not` 使用：滤掉产不出 [Tree.Scalar] 的字符串算子。
     private static Tree.Scalar scalar(Rng rng, Column column) {
-        return switch (column) {
-            case Column.Number number -> numberLeaf(rng, number);
-            case Column.Text text ->
-                switch (rng.nextInt(text.nullable() ? 2 : 1)) {
-                    case 0 -> new Tree.Eq(text, new Value.Text(pickText(rng, text, false)));
-                    default -> new Tree.IsNull(text);
-                };
-            case Column.Status status -> statusLeaf(rng, status);
-        };
+        return (Tree.Scalar) node(rng, column, pick(rng, column, true));
     }
 
-    private static Tree.Scalar numberLeaf(Rng rng, Column.Number column) {
-        int first = pickNumber(rng, column);
-        int second = pickNumber(rng, column);
-        return switch (rng.nextInt(4)) {
-            case 0 -> new Tree.Eq(column, new Value.Number(first));
-            case 1 -> new Tree.Range(column, Math.min(first, second), Math.max(first, second));
-            case 2 -> {
-                // `IN` 取 1..3 个值；取法是内联的，因为 `Generator` 的方法数卡在 PMD `TooManyMethods`
+    /// 从「此列适用且不会退化」的算子表里抽一个；`scalarOnly` 时再滤掉字符串算子。
+    ///
+    /// 按列遍历的落点就在这三行：可用算子不再由「叶子种类」硬编码，而是问 [Column.Kind]。
+    private static Column.Kind pick(Rng rng, Column column, boolean scalarOnly) {
+        List<Column.Kind> kinds = new ArrayList<>();
+        for (Column.Kind kind : Column.Kind.values()) {
+            if (kind.appliesTo(column) && !kind.degenerateOn(column) && (!scalarOnly || kind.yieldsScalar())) {
+                kinds.add(kind);
+            }
+        }
+        return kinds.get(rng.nextInt(kinds.size()));
+    }
+
+    /// 按算子种类构造节点——**每种算子都在它适用的每一列上生成**，不再「某算子固定配某几列」。
+    ///
+    /// 类型不匹配的组合在这里靠 `Column.Kind#appliesTo` 已经排除，所以转型是安全的；用 `switch`
+    /// 穷尽算子种类，新增一种算子会编译报错，逼着这里补分支。
+    private static Tree node(Rng rng, Column column, Column.Kind kind) {
+        return switch (kind) {
+            case EQ -> new Tree.Eq(column, value(rng, column));
+            case RANGE -> {
+                Column.Number number = (Column.Number) column;
+                int first = pickNumber(rng, number);
+                int second = pickNumber(rng, number);
+                yield new Tree.Range(number, Math.min(first, second), Math.max(first, second));
+            }
+            case IN -> {
+                // `IN` 取 1..3 个值；构造内联，因为 `Generator` 的方法数卡在 PMD `TooManyMethods`
                 // 的 12 上，多一个只被调用一次的私有方法就要挤掉别的东西。
+                List<Value> values = new ArrayList<>();
                 int count = 1 + rng.nextInt(3);
-                List<Value> values = new ArrayList<>(count);
                 for (int index = 0; index < count; index++) {
-                    values.add(new Value.Number(pickNumber(rng, column)));
+                    values.add(value(rng, column));
                 }
                 yield new Tree.In(column, List.copyOf(values));
             }
-            default -> new Tree.IsNull(column);
+            case CONTAINS -> new Tree.Contains((Column.Text) column, pickText(rng, (Column.Text) column, true));
+            case LIKE ->
+                new Tree.Like(
+                        (Column.Text) column, likePattern(pickText(rng, (Column.Text) column, true), rng.nextInt(3)));
+            case IS_NULL -> new Tree.IsNull(column);
         };
     }
 
-    /// 文本叶子：`Eq` 取完整取值域，`Contains` / `Like` 取**子串**取值域（见 `pickText`）。
-    ///
-    /// 取值域必须跟着算子走，不能先抽值再挑算子：先抽的话，一半 seed 会拿完整取值去做
-    /// `Contains`，命中与否取决于该取值是否是前缀——区分力只能靠运气。
-    private static Tree textLeaf(Rng rng, Column.Text column) {
-        return switch (rng.nextInt(column.nullable() ? 4 : 3)) {
-            case 0 -> new Tree.Eq(column, new Value.Text(pickText(rng, column, false)));
-            case 1 -> new Tree.Contains(column, pickText(rng, column, true));
-            case 2 -> new Tree.Like(column, likePattern(rng, pickText(rng, column, true)));
-            default -> new Tree.IsNull(column);
+    /// 单个取值：类型跟着列走。`Eq` / `In` 用**完整取值域**（`Contains` / `Like` 用子串域，见 `pickText`）。
+    private static Value value(Rng rng, Column column) {
+        ItemStatus[] statuses = ItemStatus.values();
+        return switch (column) {
+            case Column.Number number -> new Value.Number(pickNumber(rng, number));
+            case Column.Text text -> new Value.Text(pickText(rng, text, false));
+            case Column.Status status -> new Value.Status(statuses[rng.nextInt(statuses.length)]);
         };
     }
 
@@ -425,20 +474,13 @@ final class Generator {
         return domain[rng.nextInt(domain.length)];
     }
 
-    private static Tree.Scalar statusLeaf(Rng rng, Column.Status column) {
-        ItemStatus[] all = ItemStatus.values();
-        ItemStatus first = all[rng.nextInt(all.length)];
-        ItemStatus second = all[rng.nextInt(all.length)];
-        return switch (rng.nextInt(column.nullable() ? 3 : 2)) {
-            case 0 -> new Tree.Eq(column, new Value.Status(first));
-            case 1 -> new Tree.In(column, List.of(new Value.Status(first), new Value.Status(second)));
-            default -> new Tree.IsNull(column);
-        };
-    }
-
     /// `LIKE` 只生成前缀 / 后缀 / 包含三种形态，内存侧因此不必引正则。
-    private static String likePattern(Rng rng, String text) {
-        return switch (rng.nextInt(3)) {
+    ///
+    /// 形态由 `form` 显式传入而不是内部抽签：随机路径传 `rng.nextInt(3)`，
+    /// [PredicateFuzzQuota] 的配额 seed 固定传 0 / 1 / 2 各一次——三个分支的**代码覆盖**
+    /// 因此是确定性的，不靠运气（早先这一个 `switch` 有两个分支从没被执行过）。
+    static String likePattern(String text, int form) {
+        return switch (Math.floorMod(form, 3)) {
             case 0 -> text + "%";
             case 1 -> "%" + text;
             default -> "%" + text + "%";
@@ -447,9 +489,9 @@ final class Generator {
 
     /// 换一个与当前列不同的列（试 4 次仍相同就放弃，不影响正确性）。
     private static Column other(Rng rng, Column current) {
-        Column other = COLUMNS[rng.nextInt(COLUMNS.length)];
+        Column other = COLUMNS.get(rng.nextInt(COLUMNS.size()));
         for (int attempt = 0; attempt < 4 && other == current; attempt++) {
-            other = COLUMNS[rng.nextInt(COLUMNS.length)];
+            other = COLUMNS.get(rng.nextInt(COLUMNS.size()));
         }
         return other;
     }
