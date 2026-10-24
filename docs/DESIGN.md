@@ -199,7 +199,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 **镜像源**：容器镜像走 `docker.xuanyuan.run`（`docker.xuanyuan.run/library/mysql:8.0.18` 与 `docker.xuanyuan.run/testcontainers/ryuk:0.11.0`），不走 `registry-1.docker.io`——受限网络下直连 Docker Hub 会 `EOF`，而容器用例是 L4 的唯一载体，镜像拉不到就等于这层没跑。两处细节：`MySQLContainer` 会校验镜像仓库名，用镜像站前缀必须显式 `asCompatibleSubstituteFor("mysql")`，否则被判「不兼容」拒启；Ryuk 是 Testcontainers 另起的回收容器，默认也从 Docker Hub 拉，所以它要单独用 `ryuk.container.image` 属性（同时给 `TESTCONTAINERS_RYUK_CONTAINER_IMAGE` 环境变量，防版本差异只认其中一条）指到同一个源。换源或换版本用 `-Dnextentity.mysql.image=` / `-Dnextentity.ryuk.image=` 覆盖，不必改 pom。实测确认：运行期 `docker ps` 里出现的就是这两个镜像站的引用，跑完由镜像站的 Ryuk 回收干净。
 
-**变异测试（PIT，已接入四个模块）**：`mvn -pl nextentity-api pitest:mutationCoverage`、`-pl nextentity-core`、`-pl nextentity-jpa`、`-pl nextentity-spring`。它只出分数、不新增用例形态，所以是**度量层**而不是五层防线之一。四处阈值都是 **95%**，写在各模块 pom，低于阈值构建失败；都不绑生命周期，只在显式执行时校验。`spring` 只有两个类（`AbstractRepository` 纯委派、`NextEntityAutoConfiguration` 纯条件装配），但「漏委托一个方法」「漏一个 `@ConditionalOnMissingBean`」正好是编译过、测试假绿的典型形态，所以也纳入。
+**变异测试（PIT，已接入四个模块）**：`mvn -pl nextentity-api pitest:mutationCoverage`、`-pl nextentity-core`、`-pl nextentity-jpa`、`-pl nextentity-spring`。它只出分数、不新增用例形态，所以是**度量层**而不是五层防线之一。四处阈值都是 **95%**，写在各模块 pom，低于阈值构建失败；都不绑生命周期，只在显式执行时校验。`spring` 只有两个类（`AbstractRepository` 纯委派、`NextEntityAutoConfiguration` 纯条件装配），但「漏委托一个方法」（把某个 `query()`/写方法漏换成直通）与「开关条件写错」（`@ConditionalOnProperty` 的前缀/名字/`havingValue` 打错）正是编译过、测试假绿的典型形态，所以也纳入。**注意 PIT 不变异注解**，所以开关条件那一格由 `NextEntityAutoConfigurationTest` 的四条用例（缺失/`false`/`1` 不注册、`true` 注册且能解析真元模型）兜，不由变异分数兜。
 
 当前实测：
 

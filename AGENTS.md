@@ -26,6 +26,7 @@
 | `nextentity-testing`（一致性基类、夹具、`ConsistencySupport`） | `mvn -q spotless:apply` → `mvn -pl nextentity-tests-jpa -am verify`（含 MySQL 容器通道；无 Docker 时自动跳过，见 DESIGN §5「通道拆分」） |
 | `nextentity-tests-legacy` | `mvn -pl nextentity-tests-legacy test`（默认 H2，无容器）；动到方言相关再跑 `-Ddbc=h2,mysql` |
 | `core` / `jpa` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-<模块> pitest:mutationCoverage`，变异分数不得低于模块 pom 的阈值 |
+| `spring` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-spring pitest:mutationCoverage`（阈值 95）。注意 PIT 不变异注解，`@ConditionalOnProperty` 的开关语义由 `NextEntityAutoConfigurationTest` 的用例兜，不看分数 |
 | `api` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-api pitest:mutationCoverage`（api 有自己的线格式用例，门禁自足，阈值 95）。api 的语义同时被 `core` 的用例执行，所以 `core` 的 PIT 也要跑；**跑它之前必须先 `mvn -pl nextentity-api install -DskipTests`**——`pitest:mutationCoverage` 不带 `-am`，它从 `~/.m2` 解析 `nextentity-api`，陈旧快照会让依赖新语义的用例集体报「未变异就不通过」，看着像测试坏了，其实是产物旧了 |
 | 公开签名变更 | 额外 `mvn -Papi-compat -Djapicmp.oldVersion=<上一发布版> -pl nextentity-api verify` |
 | 发版前 | `mvn clean verify`（格式 + 静态检查 + 单测 + 覆盖率门槛），更新 CHANGELOG |
