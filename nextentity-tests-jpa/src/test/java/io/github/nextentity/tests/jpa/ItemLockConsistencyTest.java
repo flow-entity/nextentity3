@@ -6,6 +6,7 @@ import io.github.nextentity.api.LockMode;
 import io.github.nextentity.testing.ItemStatus;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -37,7 +38,13 @@ class ItemLockConsistencyTest {
                 .list());
 
         assertThat(rows).extracting(ItemEntity::id).containsExactly(1L);
-        assertThat(support.drainSql()).anySatisfy(sql -> assertThat(sql).containsIgnoringCase("for update"));
+        // 整句快照（H2 + 当前 Hibernate），不是 `containsIgnoringCase("for update")` 片段：
+        // 片段断言对「锁子句挂到别的语句上」「`for update` 出现在子查询里而主查询没加锁」
+        // 「锁子句在 join 上而不是在主表上」都可能假绿；整句比对把加锁对象（`item ie1_0`）
+        // 和锁子句位置（语句末尾）一并钉住。
+        assertThat(normalized(support.drainSql()))
+                .containsExactly("select ie1_0.id,ie1_0.name,ie1_0.note,ie1_0.score,ie1_0.score2,ie1_0.status"
+                        + " from item ie1_0 where ie1_0.id=? for update");
     }
 
     @Test
@@ -105,5 +112,12 @@ class ItemLockConsistencyTest {
     private static String withoutEntitySuffix(RuntimeException e) {
         String message = String.valueOf(e.getMessage());
         return message.replaceAll("\\s*\\[[\\w.$]+]$", "").trim();
+    }
+
+    /// 与 `ItemSqlSnapshotTest` 同一套归一化：转小写 + 连续空白压一个空格，其余字符原样比对。
+    private static List<String> normalized(List<String> sqls) {
+        return sqls.stream()
+                .map(sql -> sql.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim())
+                .toList();
     }
 }

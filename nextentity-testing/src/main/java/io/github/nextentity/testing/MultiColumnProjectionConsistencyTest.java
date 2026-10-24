@@ -18,6 +18,9 @@ import org.junit.jupiter.api.Test;
 public abstract class MultiColumnProjectionConsistencyTest<T extends Item> extends ConsistencyTestBase<T> {
 
     /// 四列：列序、`size()` 与各具名访问器对位；末行的 `score` 是 `null`（夹具 id=4）。
+    ///
+    /// 四行**逐行**钉住（`orderBy(id)` 让顺序确定）：只断 `hasSize(4)` + 首行全字段 + 末行 `score`
+    /// 为 `null` 时，中间两行整行错掉（列错位、`score` 与 `score2` 互换、行被重复）都不会红。
     @Test
     void fourColumnsKeepOrderAndTypes() {
         List<Tuple4<Long, String, Integer, ItemStatus>> rows = query().project(ProjectionMappers.select(
@@ -26,11 +29,13 @@ public abstract class MultiColumnProjectionConsistencyTest<T extends Item> exten
                 .asc()
                 .list();
 
-        assertThat(rows).hasSize(4);
+        assertThat(rows)
+                .containsExactly(
+                        new Tuple4<>(APPLE_ID, APPLE_NAME, 10, ItemStatus.NEW),
+                        new Tuple4<>(BANANA_ID, BANANA_NAME, 20, ItemStatus.ACTIVE),
+                        new Tuple4<>(CHERRY_ID, CHERRY_NAME, 30, ItemStatus.DONE),
+                        new Tuple4<>(APPLE_PIE_ID, APPLE_PIE_NAME, null, ItemStatus.NEW));
         assertThat(rows.getFirst().size()).isEqualTo(4);
-        assertThat(rows.getFirst().get0()).isEqualTo(APPLE_ID);
-        assertThat(rows.getFirst().get1()).isEqualTo(APPLE_NAME);
-        assertThat(rows.getFirst().get2()).isEqualTo(10);
         assertThat(rows.getFirst().get3()).isEqualTo(ItemStatus.NEW);
         assertThat(rows.getLast().get2()).isNull();
     }
@@ -59,6 +64,10 @@ public abstract class MultiColumnProjectionConsistencyTest<T extends Item> exten
     }
 
     /// `andThen`：列集不变，结果换成调用方类型；类型由 lambda 的返回值推断。
+    ///
+    /// 四行逐行钉住映射结果（`orderBy(id)` 让顺序确定）：原先只断 `hasSize(4)` + 首末两行时，
+    /// 中间两行的 `id`/`name` 配错（例如错位取 `get0`/`get2`）不会被发现；`andThen` 的入参
+    /// 是 4 列元组，取错列恰恰是这个 API 最容易犯的错。
     @Test
     void andThenMapsToCallerType() {
         record Row(Long id, String name) {}
@@ -70,8 +79,11 @@ public abstract class MultiColumnProjectionConsistencyTest<T extends Item> exten
                 .asc()
                 .list();
 
-        assertThat(rows).hasSize(4);
-        assertThat(rows.getFirst()).isEqualTo(new Row(APPLE_ID, APPLE_NAME));
-        assertThat(rows.getLast()).isEqualTo(new Row(APPLE_PIE_ID, APPLE_PIE_NAME));
+        assertThat(rows)
+                .containsExactly(
+                        new Row(APPLE_ID, APPLE_NAME),
+                        new Row(BANANA_ID, BANANA_NAME),
+                        new Row(CHERRY_ID, CHERRY_NAME),
+                        new Row(APPLE_PIE_ID, APPLE_PIE_NAME));
     }
 }

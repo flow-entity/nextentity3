@@ -117,6 +117,11 @@ public abstract class AssociationConsistencyTest<T extends Asset> {
     }
 
     /// 嵌套条件 + 分页：`total` 是实体行数，不因 join 放大；`data` 取一页。
+    ///
+    /// `data` 也钉主键集合，不只断 `hasSize(2)`：这一页是「按 owner 升序」的前两行，
+    /// 而 alpha 只有 anvil/axe 两行、beta 只有 bolt 一行，所以前两行**必然是** anvil+axe
+    /// （alpha 组内部相对顺序不定，故用 `containsExactlyInAnyOrder`）。若 join 把行放大、
+    /// 或分页在放大后的结果集上切片，这一页会混进 bolt 或重复行，`hasSize(2)` 照样通过。
     @Test
     void nestedSliceCountsRowsNotJoinPairs() {
         Slice<T> slice = query().where(ownerNamePath())
@@ -126,7 +131,7 @@ public abstract class AssociationConsistencyTest<T extends Asset> {
                 .slice(0, 2);
 
         assertThat(slice.total()).isEqualTo(3L);
-        assertThat(slice.data()).hasSize(2);
+        assertThat(ids(slice.data())).containsExactlyInAnyOrder(ANVIL_ID, AXE_ID);
     }
 
     /// 嵌套路径 `orderBy`：按 join 出来的列排序（`null` 关联行的位置由数据库决定，故只断言非空部分）。

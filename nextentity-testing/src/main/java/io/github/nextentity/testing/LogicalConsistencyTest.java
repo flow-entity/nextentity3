@@ -118,6 +118,9 @@ public abstract class LogicalConsistencyTest<T extends Item> extends Consistency
     }
 
     /// `or` 里混入 `eqIfNotNull(null)`（短路成恒真的占位条件）：`TRUE ∨ x = TRUE` → 整条恒真。
+    ///
+    /// 恒真必须钉**具体 id 集合**而不是 `hasSize(4)`：夹具恰好 4 行，任何恒真条件（含把短路占位
+    /// 静默丢掉的实现）都得到 4 行，行数对内容错时 `hasSize` 一律假绿。
     @Test
     void orWithShortCircuitedConditionIsTautology() {
         Predicate<T> either =
@@ -125,7 +128,7 @@ public abstract class LogicalConsistencyTest<T extends Item> extends Consistency
 
         List<T> rows = query().where(either).list();
 
-        assertThat(rows).hasSize(4);
+        assertThat(rows).extracting(Item::id).containsExactlyInAnyOrder(APPLE_ID, BANANA_ID, CHERRY_ID, APPLE_PIE_ID);
     }
 
     /// `and` 里混入 `eqIfNotNull(null)`（恒真占位）：`a ∧ TRUE = a` → 仍是 receiver。

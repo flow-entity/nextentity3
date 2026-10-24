@@ -26,12 +26,17 @@ public abstract class ComparisonConsistencyTest<T extends Item> extends Consiste
         assertThat(rows).extracting(Item::id).containsExactlyInAnyOrder(APPLE_ID, CHERRY_ID, APPLE_PIE_ID);
     }
 
-    /// `eqIfNotNull(null)` 是**跳过条件**，不是「永不匹配」。
+    /// `eqIfNotNull(null)` 是**跳过条件**，不是「永不匹配」：命中全表 4 行。
+    ///
+    /// 钉具体 id 集合而不是 `hasSize(4)`：只数个数时，「跳过写成恒假再兜成全部行」之外的
+    /// 大量偏差都能蒙过去——重复行凑够 4 条、丢掉一行又重复另一行、把条件错写成
+    /// `name <> null` 却恰好 4 行（全表就 4 行，任何恒真条件都得到 4）。改成 id 集合后，
+    /// 少一行、多一行、换成别的行都会红。
     @Test
     void eqIfNotNullWithNullSkipsCondition() {
         List<T> rows = query().where(nameRef()).eqIfNotNull(null).list();
 
-        assertThat(rows).hasSize(4);
+        assertThat(rows).extracting(Item::id).containsExactlyInAnyOrder(APPLE_ID, BANANA_ID, CHERRY_ID, APPLE_PIE_ID);
     }
 
     /// `eqIfNotNull(值)` 与 `eq` 同义。
@@ -74,7 +79,7 @@ public abstract class ComparisonConsistencyTest<T extends Item> extends Consiste
         assertThat(rows).extracting(Item::id).containsExactly(BANANA_ID);
     }
 
-    /// `geIfNotNull(null)` / `leIfNotNull(null)` 都跳过条件。
+    /// `geIfNotNull(null)` / `leIfNotNull(null)` 都跳过条件：命中全表 4 行（id 集合钉死）。
     @Test
     void rangeIfNotNullWithNullSkipsCondition() {
         List<T> rows = query().where(scoreRef())
@@ -83,7 +88,7 @@ public abstract class ComparisonConsistencyTest<T extends Item> extends Consiste
                 .leIfNotNull(null)
                 .list();
 
-        assertThat(rows).hasSize(4);
+        assertThat(rows).extracting(Item::id).containsExactlyInAnyOrder(APPLE_ID, BANANA_ID, CHERRY_ID, APPLE_PIE_ID);
     }
 
     /// `between` 是闭区间（含两端）。
@@ -94,7 +99,7 @@ public abstract class ComparisonConsistencyTest<T extends Item> extends Consiste
         assertThat(rows).extracting(Item::id).containsExactlyInAnyOrder(APPLE_ID, BANANA_ID);
     }
 
-    /// `gtIfNotNull(null)` / `ltIfNotNull(null)` 都跳过条件。
+    /// `gtIfNotNull(null)` / `ltIfNotNull(null)` 都跳过条件：命中全表 4 行（id 集合钉死）。
     @Test
     void rangeIfNotNullWithNullOnBothSidesSkipsCondition() {
         List<T> rows = query().where(scoreRef())
@@ -103,7 +108,7 @@ public abstract class ComparisonConsistencyTest<T extends Item> extends Consiste
                 .ltIfNotNull(null)
                 .list();
 
-        assertThat(rows).hasSize(4);
+        assertThat(rows).extracting(Item::id).containsExactlyInAnyOrder(APPLE_ID, BANANA_ID, CHERRY_ID, APPLE_PIE_ID);
     }
 
     /// `notBetween` 与 `between` 互补：两者命中集合的并集是「两端都非空」的行，NULL 行两边都不在。

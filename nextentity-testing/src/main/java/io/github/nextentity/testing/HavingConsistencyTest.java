@@ -49,6 +49,10 @@ public abstract class HavingConsistencyTest<T extends Item> extends ConsistencyT
     }
 
     /// `having` 之后可以继续 `orderBy`：按 note 升序时非空部分依次是 n1、n2（NULL 的位置由数据库决定）。
+    ///
+    /// 分组内容钉**完整三元组集合**（分组值 + 计数），不只是行数与非空分组值：原先只断
+    /// `hasSize(3)` + 非空部分 `[n1, n2]` 时，`count` 投影整列错掉（数错列、恒返回 1、
+    /// 把 2 写成 0）完全不在断言范围内——而「组内行数」正是 `having` 唯一依赖的聚合值。
     @Test
     void havingCanBeFollowedByOrderBy() {
         List<Tuple2<String, Long>> rows = query().select(
@@ -59,7 +63,8 @@ public abstract class HavingConsistencyTest<T extends Item> extends ConsistencyT
                 .asc()
                 .list();
 
-        assertThat(rows).hasSize(3);
+        assertThat(rows)
+                .containsExactlyInAnyOrder(new Tuple2<>(null, 2L), new Tuple2<>(NOTE_1, 1L), new Tuple2<>(NOTE_2, 1L));
         assertThat(rows.stream().map(Tuple2::get0).filter(Objects::nonNull).toList())
                 .containsExactly(NOTE_1, NOTE_2);
     }
