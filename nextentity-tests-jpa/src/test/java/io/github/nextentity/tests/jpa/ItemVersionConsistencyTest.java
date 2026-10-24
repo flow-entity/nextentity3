@@ -31,7 +31,13 @@ class ItemVersionConsistencyTest {
         harness.close();
     }
 
-    /// 插入 → 一次更新使版本号自增 → 用旧版本号再更新则冲突。
+    /// 插入 → 一次更新使版本号自增 → 用旧版本号再更新则冲突，且冲突**没有副作用**。
+    ///
+    /// 只断 `isInstanceOf(OptimisticLockException.class)` 时，「版本条件丢了」（`WHERE` 只剩 id）
+    /// 与「版本条件在」两种实现都能过：前者影响 1 行、根本不抛异常——所以真正区分它们的是
+    /// **消息里的陈旧版本值**。冲突后的两处副作用也逐项钉住：
+    /// - 调用方对象的 `@Version` 不被回写（否则调用方拿着一个从未落库的版本号去重试，永远撞锁）；
+    /// - 库里那一行既没改名也没改版本号（0 行的 UPDATE 若被误判成功，`published` 会变成 `stale`）。
     @Test
     void updateBumpsVersionAndStaleUpdateFails() {
         inTransaction(_ -> operations.insert(new VersionedEntity(1L, "draft")));
@@ -41,9 +47,19 @@ class ItemVersionConsistencyTest {
         long versionAfterUpdate = currentVersion(1L);
 
         assertThat(versionAfterUpdate).isGreaterThan(versionAfterInsert);
-        assertThatThrownBy(() ->
-                        inTransaction(_ -> operations.update(new VersionedEntity(1L, "stale", versionAfterInsert))))
-                .isInstanceOf(OptimisticLockException.class);
+
+        VersionedEntity stale = new VersionedEntity(1L, "stale", versionAfterInsert);
+        assertThatThrownBy(() -> inTransaction(_ -> operations.update(stale)))
+                .isInstanceOf(OptimisticLockException.class)
+                .hasMessageContaining("不存在: id=1")
+                .hasMessageContaining("version=" + versionAfterInsert);
+
+        assertThat(stale.version()).describedAs("冲突时不许把新版本号回写到调用方对象").isEqualTo(versionAfterInsert);
+
+        rollbackActiveTransaction();
+        harness.entityManager().clear();
+        assertThat(row(1L).name()).describedAs("冲突的更新不许落库").isEqualTo("published");
+        assertThat(row(1L).version()).isEqualTo(versionAfterUpdate);
     }
 
     /// 成功更新后，调用方手里的对象拿到新版本号（`@Version` 回写契约）。
@@ -60,6 +76,20 @@ class ItemVersionConsistencyTest {
     private void inTransaction(Consumer<EntityManager> work) {
         harness.inTransaction(work);
         harness.entityManager().clear();
+    }
+
+    /// `HibernateHarness.inTransaction` 异常时不回滚（只是不提交），冲突用例得自己收尾。
+    private void rollbackActiveTransaction() {
+        if (harness.entityManager().getTransaction().isActive()) {
+            harness.entityManager().getTransaction().rollback();
+        }
+    }
+
+    private VersionedEntity row(long id) {
+        return harness.entityManager()
+                .createQuery("select v from VersionedEntity v where v.id = :id", VersionedEntity.class)
+                .setParameter("id", id)
+                .getSingleResult();
     }
 
     private long currentVersion(long id) {
