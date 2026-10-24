@@ -90,6 +90,7 @@ query().where(Order::getStatus)
 ```
 
 - `contains(v)` → `%v%`（通配符由本库加）。
+- **值里的 `%` / `_` 不转义**：`contains("50%")` 实际下发 `%50%%`，`%` 仍按 LIKE 通配符解释；要匹配字面 `%` / `_`，请改用 `like(...)` 并自己写转义（`like("%50\\%%")`）。`contains` 只做拼接，不做转义。
 - `like(pattern)` / `likeIfNotNull(pattern)` → LIKE，**模式自带通配符**（`%` 由调用方掌握）；`likeIfNotNull(null)` 整条条件跳过。
 - 布尔字段请写 `.eq(true)`，不支持「把字段本身当条件」。
 
