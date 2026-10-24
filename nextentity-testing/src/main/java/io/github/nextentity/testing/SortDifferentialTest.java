@@ -20,7 +20,7 @@ import org.junit.jupiter.api.TestFactory;
 ///
 /// 差分分工（两条路径不相交）：
 /// - 真库一侧：`select(idRef()).orderBy(...).asc()/desc()` 累积成 `ORDER BY`；
-/// - 内存一侧：{@link Key#ascending()} 直接读 {@link Fixtures#ITEM_ROWS} 的原始值自己排，
+/// - 内存一侧：{@link Key#ascending()} 直接读 {@link ConsistencyTestBase#fixtureRows()} 的原始值自己排，
 ///   不经过 nextentity 的任何生产代码，也不读后端返回顺序。
 ///
 /// **`null` 的排序位置（本基类钉的口径）**：`null` 视为最小值，即升序在前、降序在后。
@@ -62,7 +62,7 @@ public abstract class SortDifferentialTest<T extends Item> extends ConsistencyTe
 
     private void assertSpec(SortSpec spec) {
         List<FixtureRow> expectedRows =
-                Fixtures.ITEM_ROWS.stream().sorted(comparator(spec)).toList();
+                fixtureRows().stream().sorted(comparator(spec)).toList();
         assertTotalOrder(spec, expectedRows);
         List<Long> expected = expectedRows.stream().map(FixtureRow::id).toList();
 

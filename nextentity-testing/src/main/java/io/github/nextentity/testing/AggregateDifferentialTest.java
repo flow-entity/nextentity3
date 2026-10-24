@@ -27,7 +27,7 @@ import org.junit.jupiter.api.TestFactory;
 ///
 /// 差分分工（两条路径不相交）：
 /// - 真库一侧：`select(分组键…, 聚合表达式).groupBy(键…)`，渲染走 jpa 的聚合分支；
-/// - 内存一侧：{@link Memory#expected} 直接读 {@link Fixtures#ITEM_ROWS} 的原始值自己算，
+/// - 内存一侧：{@link Memory#expected} 直接读 {@link ConsistencyTestBase#fixtureRows()} 的原始值自己算，
 ///   不经过 nextentity 的任何生产代码，也不读后端结果。
 ///
 /// **内存一侧按 SQL 语义写，不按「方便」写**（这几条正是聚合的坑）：
@@ -97,7 +97,7 @@ public abstract class AggregateDifferentialTest<T extends Item> extends Consiste
     }
 
     private void assertCell(Grouping grouping, Column column, Measure measure) {
-        Map<Object, Object> expected = Memory.expected(grouping, column, measure);
+        Map<Object, Object> expected = Memory.expected(fixtureRows(), grouping, column, measure);
         Map<Object, Object> actual = actualBy(grouping, column, measure);
 
         assertThat(expected).as("内存 oracle 必须至少算出一组").isNotEmpty();
@@ -311,8 +311,8 @@ public abstract class AggregateDifferentialTest<T extends Item> extends Consiste
     /// ```
     @Test
     void countStarCountsEveryRowWhileCountOfColumnSkipsNulls() {
-        long rows = Fixtures.ITEM_ROWS.size();
-        long nonNullScores = Fixtures.ITEM_ROWS.stream()
+        long rows = fixtureRows().size();
+        long nonNullScores = fixtureRows().stream()
                 .map(FixtureRow::score)
                 .filter(Objects::nonNull)
                 .count();
@@ -466,7 +466,10 @@ public abstract class AggregateDifferentialTest<T extends Item> extends Consiste
         }
     }
 
-    /// 内存一侧：期望值只由 {@link Fixtures#ITEM_ROWS} 算出，不碰后端、不碰生产代码。
+    /// 内存一侧：期望值只由 {@link ConsistencyTestBase#fixtureRows()} 算出，不碰后端、不碰生产代码。
+    ///
+    /// 行数据以参数传入而不是读常量：夹具的唯一出处是 {@link ConsistencyTestBase#fixtureRows()}（`seed()` 灌进后端的
+    /// 也是它），子类覆写它时内存侧必须跟着变，否则会变成「灌的是 A、算的是 B」的静默假绿。
     private static final class Memory {
 
         private Memory() {}
@@ -476,13 +479,14 @@ public abstract class AggregateDifferentialTest<T extends Item> extends Consiste
         /// 用 `LinkedHashMap` 手工分组而不是 `Collectors.groupingBy`：后者对 `null` 键直接抛
         /// `NullPointerException`，而 `note` 的 `null` 组正是本矩阵的关键格。
         ///
+        /// @param rows 夹具行（来自 {@link ConsistencyTestBase#fixtureRows()}，与灌进后端的是同一份）
         /// @param grouping 分组方式
         /// @param column 聚合列
         /// @param measure 聚合函数
         /// @return 键 → 期望值
-        static Map<Object, Object> expected(Grouping grouping, Column column, Measure measure) {
+        static Map<Object, Object> expected(List<FixtureRow> rows, Grouping grouping, Column column, Measure measure) {
             Map<Object, List<FixtureRow>> groups = new LinkedHashMap<>();
-            for (FixtureRow row : Fixtures.ITEM_ROWS) {
+            for (FixtureRow row : rows) {
                 groups.computeIfAbsent(grouping.keyOf(row), key -> new ArrayList<>())
                         .add(row);
             }
