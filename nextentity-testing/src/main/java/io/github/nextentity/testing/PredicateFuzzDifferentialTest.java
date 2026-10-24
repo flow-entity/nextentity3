@@ -34,11 +34,35 @@ public abstract class PredicateFuzzDifferentialTest<T extends Item> extends Cons
 
     /// 落在「中间态」的 seed 数下限——期望值是空集或全表时这条用例没有区分力。
     ///
-    /// 实测 60 个 seed 里有 46 个落在中间态（12 个空集、2 个全表）：三种形状各 20 个，
+    /// 实测 60 个 seed 里有 46 个落在中间态（12 个空集、2 个全表）：四种形状各 15 个，
     /// 空集主要来自「组合子 + 另一列叶子」这种合取形状——6 行夹具上两个条件不相交是常态。
     /// 下限钉在实测值上（46，不是打折后的数）：生成器、取值域或夹具任何一处变动都会让它红，
     /// 逼着改动者重新确认区分力，而不是让 fuzz 悄悄退化成纸面覆盖。
     private static final int MIDDLE_SEED_FLOOR = 46;
+
+    /// 字符串算子叶子（`Contains` / `Like`）在 60 棵树里出现次数的下限。
+    ///
+    /// 这两种叶子是**唯一**能钉住「`contains(v)` 渲染成 `%v%` 还是 `v%`」的节点，抽不到就等于没测。
+    /// 上一轮的取值域几乎全是前缀（`app`、`n`），60 个 seed 恰好没抽到非前缀子串，故障注入实验 #10
+    /// 因此从 fuzz 里漏了过去——靠抽签不算覆盖。现在形状 3 用固定配额保证每轮都抽到（见
+    /// `Generator#stringSeed`），这条下限守的是「配额还在」。
+    ///
+    /// 实测 12 个 `Contains`（形状 3 的 8 个专用 seed + 4 个随机形状）、8 个 `Like`（7 个专用 + 1 个）。
+    /// 下限钉在**实测值**上：生成器、取值域或形状分布任何一处变动都会让它红，逼着改动者重新确认。
+    private static final int CONTAINS_NODE_FLOOR = 12;
+
+    /// 同上，`Like` 叶子的出现次数下限：实测 8 个。
+    private static final int LIKE_NODE_FLOOR = 8;
+
+    /// 能被「把 `contains` 退化成前缀匹配」区分出来的 seed 数下限。
+    ///
+    /// 比「节点出现次数」更硬的守卫：光抽到字符串叶子还不够，还要抽到**非前缀**取值
+    /// （`ppl` / `pie` / `nana` 之类），否则 `%v%` 与 `v%` 在夹具上同解，差分看不见缺陷。
+    /// 实现是把同一棵树里每个 `Contains(c,v)` 换成 `Like(c,v + "%")` 再算一遍期望值，两边不同的
+    /// seed 才算有区分力——两次求值都只走 [Memory]，不碰后端，也不碰生产代码。
+    ///
+    /// 实测 8 个（`seed=[6,7,11,15,19,23,27,40]`）；取值域换成非前缀子串之前只有 2 个。
+    private static final int PREFIX_BLIND_SEED_FLOOR = 8;
 
     @Override
     protected List<FixtureRow> fixtureRows() {
@@ -68,6 +92,76 @@ public abstract class PredicateFuzzDifferentialTest<T extends Item> extends Cons
         assertThat(middle)
                 .as("中间态 seed 数（下限 %s/%s）；各 seed 命中行数=%s", MIDDLE_SEED_FLOOR, SEED_COUNT, hits)
                 .isGreaterThanOrEqualTo(MIDDLE_SEED_FLOOR);
+    }
+
+    /// 字符串算子的配额守卫：`Contains` / `Like` 每轮都必须被抽到足够多次。
+    ///
+    /// 只数合取链的**直接**元素就够了：`Contains` / `Like` 实现的是 [Tree] 而不是 `Tree.Scalar`，
+    /// 而 `Or` / `Not` 只吃 `Scalar`，所以字符串叶子在结构上只可能挂在合取链顶层，
+    /// 不会被组合子藏起来。
+    @Test
+    void stringOperatorNodesAreDrawnOftenEnough() {
+        long contains = 0;
+        long like = 0;
+        for (long seed = 0; seed < SEED_COUNT; seed++) {
+            for (Tree part : Generator.forSeed(seed).parts()) {
+                if (part instanceof Tree.Contains) {
+                    contains++;
+                } else if (part instanceof Tree.Like) {
+                    like++;
+                }
+            }
+        }
+        assertThat(contains)
+                .as("Contains 叶子出现次数（下限 %s；seed 总数 %s）", CONTAINS_NODE_FLOOR, SEED_COUNT)
+                .isGreaterThanOrEqualTo(CONTAINS_NODE_FLOOR);
+        assertThat(like)
+                .as("Like 叶子出现次数（下限 %s；seed 总数 %s）", LIKE_NODE_FLOOR, SEED_COUNT)
+                .isGreaterThanOrEqualTo(LIKE_NODE_FLOOR);
+    }
+
+    /// 「非前缀取值真的被抽到了」的守卫：把 `contains` 当成前缀匹配之后，期望值必须变。
+    ///
+    /// 这条是故障注入实验 #10 的直接产物：当时 60 个 seed 全绿，但把 `contains` 的通配符改错也
+    /// 全绿——因为夹具里所有名字都以 `app` 开头，`%app%` 与 `app%` 同解。现在要求**至少
+    /// [PREFIX_BLIND_SEED_FLOOR] 个 seed 在退化前后给出不同的期望值**，靠运气通过就不可能。
+    @Test
+    void containsPatternsAreDiscriminatedByFixedSeeds() {
+        List<FixtureRow> rows = fixtureRows();
+        List<Long> discriminating = LongStream.range(0, SEED_COUNT)
+                .filter(seed -> {
+                    Tree.And tree = Generator.forSeed(seed);
+                    return !Memory.matchedIds(tree, rows).equals(Memory.matchedIds(prefixBlind(tree), rows));
+                })
+                .boxed()
+                .toList();
+        assertThat(discriminating.size())
+                .as(
+                        "能区分「contains 退化成前缀匹配」的 seed 数（下限 %s；seed 总数 %s）；这些 seed=%s",
+                        PREFIX_BLIND_SEED_FLOOR, SEED_COUNT, discriminating)
+                .isGreaterThanOrEqualTo(PREFIX_BLIND_SEED_FLOOR);
+    }
+
+    /// 把每个 `Contains(c,v)` 换成 `Like(c, v + "%")`，模拟「`contains` 被写成前缀匹配」的退化。
+    ///
+    /// @param tree 原始概念树
+    /// @return 退化后的概念树
+    private static Tree.And prefixBlind(Tree.And tree) {
+        return new Tree.And(tree.parts().stream()
+                .map(PredicateFuzzDifferentialTest::asPrefix)
+                .toList());
+    }
+
+    /// 单个节点退化：`Contains` → 前缀 `Like`，其余原样（`Or` / `Not` 里不可能有字符串叶子）。
+    ///
+    /// @param node 概念树节点
+    /// @return 退化后的节点
+    private static Tree asPrefix(Tree node) {
+        return switch (node) {
+            case Tree.Contains contains -> new Tree.Like(contains.column(), contains.text() + "%");
+            case Tree.Scalar scalar -> scalar;
+            case Tree.Like like -> like;
+        };
     }
 
     /// 逐元素比对，不是集合比对：排序错了也要红。

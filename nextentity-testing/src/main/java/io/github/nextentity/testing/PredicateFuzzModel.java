@@ -235,17 +235,20 @@ sealed interface Value {
 }
 /// 概念树生成器：**只依赖 seed**，不看任何一侧的渲染器。
 ///
-/// 形状由 `seed % 3` 决定，60 个 seed 因此恰好 20/20/20：
+/// 形状由 `seed % 4` 决定，60 个 seed 因此恰好 15/15/15/15：
 ///
 /// - 形状 0：单叶——纯谓词，把每种叶算子单独钉一遍；
 /// - 形状 1：整棵树就是一个组合子——`Or(叶,叶)` / `Not(叶)` / `Or(叶,Not(叶))`，两片叶子强制不同列；
-/// - 形状 2：组合 + 合取——`And(组合子,叶)`，第二片叶子避开组合子的主列。
+/// - 形状 2：组合 + 合取——`And(组合子,叶)`，第二片叶子避开组合子的主列；
+/// - 形状 3：字符串算子固定配额——8 个 seed 是 `Contains`、7 个是 `Like`，子串轮转整个取值域
+///   （见 `stringSeed`）。这一种形状是**结构保证**而不是抽签：`Contains` / `Like` 是唯一能钉住
+///   「`contains(v)` 渲染成 `%v%` 还是 `v%`」的节点，靠随机形状去撞可能整批都撞不到非前缀子串。
 ///
 /// 早先的形状 1 是「两片不同列的叶直接合取」，实测只有 37/60 落在中间态：6 行夹具上随机两个
 /// 独立条件极少相交，大批 seed 白烧成空集。改成「析取为主」之后是 46/60——区分力是生成器的
 /// 设计指标，不是事后统计出来的装饰。
 ///
-/// 用 `seed % 3` 而不是从随机流里挑形状，是为了保证每种形状都恰好占三分之一：纯随机可能
+/// 用 `seed % 4` 而不是从随机流里挑形状，是为了保证每种形状都恰好占四分之一：纯随机可能
 /// 整批都落在同一种形状上，那 fuzz 就退化了。叶算子再按列族细分（数值列 4 种、文本列 4 种、
 /// 枚举列 3 种），取值域在 [Generator] 的常量里列全，`IN` 取 1..3 个值且不生成空集合
 /// （空集合是常量折叠，已经在手算常量层钉过）。
@@ -261,9 +264,21 @@ final class Generator {
     /// 文本取值域同样按列分开：`name` 是英文名、`note` 是短标记，混用会让一半 seed 落在空集上
     /// （`Eq(note,'apple')` 永远不命中），fuzz 的区分力就被浪费了。全小写是刻意的：
     /// MySQL 默认排序规则大小写不敏感、H2 大小写敏感，用大小写混合的取值会造出方言差异。
-    private static final String[] NAME_TEXTS = {"apple", "app", "banana", "berry", "apple pie", "damson", "zzz"};
+    /// 同一串同时出现在「完整取值域」与「子串取值域」里，抽成常量让字面量在文件里只出现一次
+    /// （PMD `AvoidDuplicateLiterals` 的上限是 1 次）。
+    private static final String BERRY = "berry";
+
+    private static final String[] NAME_TEXTS = {"apple", "app", "banana", BERRY, "apple pie", "damson", "zzz"};
 
     private static final String[] NOTE_TEXTS = {"n1", "n2", "n", "1", "zzz", ""};
+
+    /// `Contains` / `Like` 专用的**子串**取值域：不能复用上面的完整取值，因为那里几乎全是前缀
+    /// （`apple`、`app`、`n`），把 `contains` 误写成前缀匹配时 `%v%` 与 `v%` 在夹具上同解，差分
+    /// 看不见缺陷（故障注入实验 #10 就漏在这一格）。这里刻意放入中间命中（`ppl`、`nana`、`ana`）、
+    /// 后缀命中（`pie`、`berr`）与零命中（`zzz`）三类样本。
+    private static final String[] NAME_FRAGMENTS = {"app", "ppl", "pie", "nana", "ana", BERRY, "berr", "zzz"};
+
+    private static final String[] NOTE_FRAGMENTS = {"n", "1", "2", "n1", "zzz"};
 
     private static final Column[] COLUMNS = {
         Column.Number.SCORE, Column.Number.SCORE2, Column.Text.NOTE, Column.Text.NAME, Column.Status.STATUS
@@ -271,18 +286,45 @@ final class Generator {
 
     private Generator() {}
 
-    /// 三种形状各占 1/3：单叶、整棵树就是一个组合子、组合子 + 另一列上的叶子。
+    /// 四种形状各占 1/4：单叶、整棵树就是一个组合子、组合子 + 另一列上的叶子、字符串算子固定配额。
     /// 组合子内部两片叶子落在不同列上（见 [composite]），形状 2 的第二个叶子也避开组合子的主列。
     static Tree.And forSeed(long seed) {
         Rng rng = new Rng(seed);
-        return switch ((int) Math.floorMod(seed, 3)) {
+        return switch ((int) Math.floorMod(seed, 4)) {
             case 0 -> new Tree.And(List.of(leaf(rng, COLUMNS[rng.nextInt(COLUMNS.length)])));
             case 1 -> new Tree.And(List.of(composite(rng, COLUMNS[rng.nextInt(COLUMNS.length)])));
-            default -> {
+            case 2 -> {
                 Column first = COLUMNS[rng.nextInt(COLUMNS.length)];
                 yield new Tree.And(List.of(composite(rng, first), leaf(rng, other(rng, first))));
             }
+            default -> stringSeed(seed);
         };
+    }
+
+    /// 形状 3：字符串算子的固定配额——15 个 seed 里 8 个是 `Contains`、7 个是 `Like`。
+    ///
+    /// 单列这一种形状的理由与叶算子无关，与**覆盖的确定性**有关：`Contains` / `Like` 是唯一能钉住
+    /// 「`contains(v)` 渲染成 `%v%` 还是 `v%`」的节点，而靠随机形状去撞，可能整批 seed 都只抽到
+    /// 前缀子串（上一轮就是这样漏过了故障注入实验 #10）。配额把「每个字符串算子被抽到几次」从
+    /// 抽签变成结构保证：8 个 `Contains` 逐个吃掉 [NAME_FRAGMENTS] 的全部片段，7 个 `Like` 把
+    /// 「前缀 / 后缀 / 包含」三种模式轮一遍。
+    ///
+    /// @param seed 种子
+    /// @return 单元素的合取链（等价于该字符串条件本身）
+    private static Tree.And stringSeed(long seed) {
+        int index = (int) Math.floorMod(seed / 4, 15);
+        String fragment = NAME_FRAGMENTS[Math.floorMod(index, NAME_FRAGMENTS.length)];
+        if (index < 8) {
+            return new Tree.And(List.of(new Tree.Contains(Column.Text.NAME, fragment)));
+        }
+        // 只出 `v%` 一种模式的话，非前缀子串（`ppl`、`nana`）会整齐地落成空集，白占 seed 的区分力。
+        String pattern =
+                switch (Math.floorMod(index, 3)) {
+                    case 0 -> fragment + "%";
+                    case 1 -> "%" + fragment;
+                    default -> "%" + fragment + "%";
+                };
+        return new Tree.And(List.of(new Tree.Like(Column.Text.NAME, pattern)));
     }
 
     /// 组合子：`Or` / `Not` / `Or(·,Not(·))`，两片标量叶子落在不同列上。
@@ -314,7 +356,7 @@ final class Generator {
             case Column.Number number -> numberLeaf(rng, number);
             case Column.Text text ->
                 switch (rng.nextInt(text.nullable() ? 2 : 1)) {
-                    case 0 -> new Tree.Eq(text, new Value.Text(pickText(rng, text)));
+                    case 0 -> new Tree.Eq(text, new Value.Text(pickText(rng, text, false)));
                     default -> new Tree.IsNull(text);
                 };
             case Column.Status status -> statusLeaf(rng, status);
@@ -327,17 +369,29 @@ final class Generator {
         return switch (rng.nextInt(4)) {
             case 0 -> new Tree.Eq(column, new Value.Number(first));
             case 1 -> new Tree.Range(column, Math.min(first, second), Math.max(first, second));
-            case 2 -> new Tree.In(column, numbers(rng, column));
+            case 2 -> {
+                // `IN` 取 1..3 个值；取法是内联的，因为 `Generator` 的方法数卡在 PMD `TooManyMethods`
+                // 的 12 上，多一个只被调用一次的私有方法就要挤掉别的东西。
+                int count = 1 + rng.nextInt(3);
+                List<Value> values = new ArrayList<>(count);
+                for (int index = 0; index < count; index++) {
+                    values.add(new Value.Number(pickNumber(rng, column)));
+                }
+                yield new Tree.In(column, List.copyOf(values));
+            }
             default -> new Tree.IsNull(column);
         };
     }
 
+    /// 文本叶子：`Eq` 取完整取值域，`Contains` / `Like` 取**子串**取值域（见 `pickText`）。
+    ///
+    /// 取值域必须跟着算子走，不能先抽值再挑算子：先抽的话，一半 seed 会拿完整取值去做
+    /// `Contains`，命中与否取决于该取值是否是前缀——区分力只能靠运气。
     private static Tree textLeaf(Rng rng, Column.Text column) {
-        String text = pickText(rng, column);
         return switch (rng.nextInt(column.nullable() ? 4 : 3)) {
-            case 0 -> new Tree.Eq(column, new Value.Text(text));
-            case 1 -> new Tree.Contains(column, text);
-            case 2 -> new Tree.Like(column, likePattern(rng, text));
+            case 0 -> new Tree.Eq(column, new Value.Text(pickText(rng, column, false)));
+            case 1 -> new Tree.Contains(column, pickText(rng, column, true));
+            case 2 -> new Tree.Like(column, likePattern(rng, pickText(rng, column, true)));
             default -> new Tree.IsNull(column);
         };
     }
@@ -353,11 +407,20 @@ final class Generator {
     }
 
     /// 文本取值域跟着列走：`note` 与 `name` 的取值集合不同，见 [NOTE_TEXTS] / [NAME_TEXTS]。
-    private static String pickText(Rng rng, Column.Text column) {
+    ///
+    /// `fragments` 为 `true` 时改用子串取值域（[NAME_FRAGMENTS] / [NOTE_FRAGMENTS]）：`Contains` /
+    /// `Like` 要的是「能从串中间命中的片段」，`Eq` 要的是「夹具里真实存在的完整取值」，混用会让
+    /// 一半 seed 白烧（`Eq(name, 'ppl')` 永远不命中，`Contains(name, 'apple')` 又退化成前缀）。
+    ///
+    /// @param rng       随机源
+    /// @param column    列
+    /// @param fragments 是否取子串片段而非完整取值
+    /// @return 抽中的文本
+    private static String pickText(Rng rng, Column.Text column, boolean fragments) {
         String[] domain =
                 switch (column) {
-                    case NOTE -> NOTE_TEXTS;
-                    case NAME -> NAME_TEXTS;
+                    case NOTE -> fragments ? NOTE_FRAGMENTS : NOTE_TEXTS;
+                    case NAME -> fragments ? NAME_FRAGMENTS : NAME_TEXTS;
                 };
         return domain[rng.nextInt(domain.length)];
     }
@@ -371,15 +434,6 @@ final class Generator {
             case 1 -> new Tree.In(column, List.of(new Value.Status(first), new Value.Status(second)));
             default -> new Tree.IsNull(column);
         };
-    }
-
-    private static List<Value> numbers(Rng rng, Column.Number column) {
-        int count = 1 + rng.nextInt(3);
-        List<Value> values = new ArrayList<>(count);
-        for (int index = 0; index < count; index++) {
-            values.add(new Value.Number(pickNumber(rng, column)));
-        }
-        return List.copyOf(values);
     }
 
     /// `LIKE` 只生成前缀 / 后缀 / 包含三种形态，内存侧因此不必引正则。
