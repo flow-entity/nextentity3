@@ -27,11 +27,14 @@ import io.github.nextentity.jpa.exec.JpaExecutor;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Locale;
 import org.junit.jupiter.api.Test;
 
-/// 渲染形态断言：只断言「生成的是不是那个形状」（`containsIgnoringCase` 级别），
-/// 不写死整条 SQL——整条 SQL 的快照归 `nextentity-tests-jpa`。
+/// 渲染形态断言：把 Hibernate 实际下发的语句归一化后**整句**钉住（{@link JpaTestSupport#normalized}）。
+///
+/// 早先这里只断言「语句里出现了 `not` / `having` / `min(` 这样的片段」，病根是片段会撞到无关
+/// 文本（`so1_0.note` 里就有 `not`，`having` 一测把整个子句写错也能过）；整句之后，列序、别名、
+/// 聚合位置、条件是否真的进 SQL 全都在断言里。整句只对 H2 + 当前 Hibernate 成立，因此不进
+/// MySQL 通道。
 ///
 /// 覆盖第一梯队落到 jpa 的六项：列对列比较、算术、`min`/`avg`、`having`、`not`、多列分组。
 class JpaRenderingTest extends JpaTestSupport {
@@ -47,9 +50,13 @@ class JpaRenderingTest extends JpaTestSupport {
                 executor(entityManager).list(compiler(entityManager).compile(spec)));
 
         assertThat(orders).extracting(ShopOrder::getId).containsExactly(100L);
-        assertThat(drainSql())
-                .anySatisfy(
-                        sql -> assertThat(sql).containsIgnoringCase("org_id=").doesNotContain("?"));
+        // 整句里一个占位符都没有：两侧都是列（c1_0.org_id 与 o1_0.id），不是把右侧当参数绑进去
+        assertThat(normalized(drainSql()))
+                .containsExactly(
+                        "select so1_0.id,so1_0.amount,so1_0.customer_id,so1_0.note,so1_0.status,so1_0.version from shop_order so1_0"
+                                + " left join customer c1_0 on c1_0.id=so1_0.customer_id"
+                                + " left join organization o1_0 on o1_0.id=c1_0.organization_id"
+                                + " where c1_0.org_id=o1_0.id");
     }
 
     @Test
@@ -70,9 +77,9 @@ class JpaRenderingTest extends JpaTestSupport {
                 executor(entityManager).list(compiler(entityManager).compile(spec)));
 
         assertThat(remainders).containsExactlyInAnyOrder(0L, 1L);
-        // Hibernate 7 在 H2/MySQL 方言下把 `cb.mod` 渲染成 `%` 运算符（不是 `mod(...)` 函数）:
-        // 断言「id 对 2 取模」这一形态，不绑定具体函数名
-        assertThat(drainSql()).anySatisfy(sql -> assertThat(sql).containsIgnoringCase("id%2"));
+        // Hibernate 7 在 H2/MySQL 方言下把 `cb.mod` 渲染成 `%` 运算符（不是 `mod(...)` 函数），
+        // 且右侧常量内联成 `2` 而不是绑定参数；整句把「哪一列取模、模几」一起钉住
+        assertThat(normalized(drainSql())).containsExactly("select (so1_0.id%2) from shop_order so1_0");
     }
 
     @Test
@@ -97,8 +104,9 @@ class JpaRenderingTest extends JpaTestSupport {
         assertThat(rows).hasSize(1);
         assertThat(rows.getFirst()[0]).isEqualTo(new BigDecimal("5.00"));
         assertThat(rows.getFirst()[1]).isEqualTo(8.65d);
-        assertThat(drainSql())
-                .anySatisfy(sql -> assertThat(sql).containsIgnoringCase("min(").containsIgnoringCase("avg("));
+        // 整句：两个聚合都在 SQL 侧、顺序与投影顺序一致、聚合的是 amount 这一列
+        assertThat(normalized(drainSql()))
+                .containsExactly("select min(so1_0.amount),avg(so1_0.amount) from shop_order so1_0");
     }
 
     @Test
@@ -126,7 +134,10 @@ class JpaRenderingTest extends JpaTestSupport {
 
         assertThat(rows).hasSize(2);
         assertThat(rows).allSatisfy(row -> assertThat(row[1]).isEqualTo(1L));
-        assertThat(drainSql()).anySatisfy(sql -> assertThat(sql).containsIgnoringCase("having"));
+        // 整句：分组列有别名 c0、`having` 上的是 count 聚合而不是别的列、阈值是绑定参数
+        assertThat(normalized(drainSql()))
+                .containsExactly("select so1_0.status c0,count(so1_0.id) c1 from shop_order so1_0"
+                        + " group by c0 having count(so1_0.id)>=?");
     }
 
     @Test
@@ -141,7 +152,11 @@ class JpaRenderingTest extends JpaTestSupport {
                 executor(entityManager).list(compiler(entityManager).compile(spec)));
 
         assertThat(orders).extracting(ShopOrder::getId).containsExactly(101L);
-        assertThat(drainSql()).anySatisfy(sql -> assertThat(sql).containsIgnoringCase("not"));
+        // 整句：`not(eq(status, PAID))` 被规约成 `status<>?`（不是 `not(so1_0.status=?)`）。
+        // 旧片段 `containsIgnoringCase("not")` 一直是假绿——它命中的是列名 `so1_0.note`。
+        assertThat(normalized(drainSql()))
+                .containsExactly("select so1_0.id,so1_0.amount,so1_0.customer_id,so1_0.note,so1_0.status,so1_0.version"
+                        + " from shop_order so1_0 where so1_0.status<>?");
     }
 
     @Test
@@ -161,12 +176,9 @@ class JpaRenderingTest extends JpaTestSupport {
                 executor(entityManager).list(compiler(entityManager).compile(spec)));
 
         assertThat(rows).hasSize(2);
-        assertThat(drainSql()).anySatisfy(sql -> {
-            String lower = sql.toLowerCase(Locale.ROOT);
-            int groupBy = lower.indexOf("group by");
-            assertThat(groupBy).isGreaterThanOrEqualTo(0);
-            assertThat(lower.substring(groupBy)).contains(",");
-        });
+        // 整句：两列都进了 `group by`，且顺序与投影一致（`group by c0,c1` 而不是只剩 c0）
+        assertThat(normalized(drainSql()))
+                .containsExactly("select so1_0.status c0,so1_0.amount c1 from shop_order so1_0 group by c0,c1");
     }
 
     private static QuerySpec query(Spec where) {

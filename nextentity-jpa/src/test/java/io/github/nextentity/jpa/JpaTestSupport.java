@@ -17,6 +17,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.Function;
 import org.hibernate.SessionFactory;
 import org.hibernate.cfg.Configuration;
@@ -27,9 +28,12 @@ import org.junit.jupiter.api.TestInstance;
 
 /// 模块内测试的公共底座：H2 + 真实 Hibernate（版本对齐 point-mall 的 Boot 4.0.0）。
 ///
-/// 只管「起库 / 灌固定数据 / 事务 / 抓 SQL」，不是第二套快照框架：整条 SQL 的快照归
-/// `nextentity-tests-jpa`（spring-harness 拥有），这里只用 {@link #drainSql()} 做
-/// 「渲染形态」断言（`containsIgnoringCase` 级别，不写死整条 SQL）。
+/// 只管「起库 / 灌固定数据 / 事务 / 抓 SQL」，并用 {@link #normalized(List)} 把抓到的语句
+/// 归一化后做**整句**断言。
+///
+/// 这里也写死整条 SQL：本模块只跑 H2 + 当前 Hibernate 一条通道，语句文本是确定的。片段断言
+/// （`containsIgnoringCase("not")`）会把 `so1_0.note` 这类列名当成命中，本轮已全部换成整句；
+/// 跨方言稳定的语句另由 `nextentity-tests-jpa` 的快照钉住（那边跑 H2 与真 MySQL 两条通道）。
 ///
 /// `PER_CLASS` + 实例字段是刻意的：每个测试类拿**自己的 SessionFactory 和自己的内存库**
 /// （库名取自类名）。共用 `static` 字段时两个子类的 `@BeforeAll` 会互相覆盖
@@ -115,6 +119,16 @@ abstract class JpaTestSupport {
             sql.clear();
             return drained;
         }
+    }
+
+    /// 归一化抓到的语句：转小写 + 连续空白压成一个空格，用于整句快照断言。
+    ///
+    /// @param sqls {@link #drainSql()} 的返回值
+    /// @return 归一化后的语句，顺序不变
+    static List<String> normalized(List<String> sqls) {
+        return sqls.stream()
+                .map(sql -> sql.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim())
+                .toList();
     }
 
     /// 在事务里执行并提交，返回结果。
