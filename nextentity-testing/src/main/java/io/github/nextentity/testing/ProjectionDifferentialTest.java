@@ -1,18 +1,24 @@
 package io.github.nextentity.testing;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.DynamicTest.dynamicTest;
 
 import io.github.nextentity.api.Expression;
 import io.github.nextentity.api.Path;
 import io.github.nextentity.api.ProjectionMapper;
 import io.github.nextentity.api.ProjectionMappers;
+import io.github.nextentity.api.model.Slice;
 import io.github.nextentity.api.model.Tuple;
 import io.github.nextentity.api.model.Tuple2;
 import io.github.nextentity.api.model.Tuple3;
 import io.github.nextentity.api.model.Tuple4;
 import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestFactory;
 
 /// 投影的**差分** oracle：真库按调用方给的列序取列，内存按同一份夹具原始字段自己拼出期望值，逐元素比对。
 ///
@@ -38,10 +44,20 @@ import org.junit.jupiter.api.Test;
 /// - 投影 + `where`：行取舍由内存按夹具字段独立判断（含 SQL 三值逻辑：`null` 不满足 `>=`）；
 /// - 投影 + `orderBy` + `list(n)`：截断发生在排序之后，且不改变列序；
 /// - 映射器家族（`ProjectionMappers.select(...)` 四列、自定义五列映射器）：**每个字段**都对位，
-///   而不是只断言对象非空。
+///   而不是只断言对象非空；
+/// - `distinct()` 修饰投影（单列 / 两列 / 三列 / 映射器四条路径）：去重后的值域与顺序由内存
+///   用 `LinkedHashSet` 独立算出，见 [DistinctOracle]；
+/// - `distinct()` + `slice` / `count` / 聚合：`total` 与 `count` 的口径是 `COUNT(DISTINCT 列)`，
+///   **不计 `NULL`**，而去重后的行里 `NULL` 算一组——两者在含 `NULL` 的列上必然差 1，
+///   这一格专治「`total` 用未去重行数」；多列去重的 `count` / `slice` 是被拒绝的形态，单独钉住。
 ///
 /// @param <T> 后端实体类型
+@SuppressWarnings("PMD.CouplingBetweenObjects") // 差分套件天然要把整个投影 API 表面（Tuple2~4 / 映射器 / Slice / distinct）
+// 收在一处逐列比对：按耦合度拆开就失去「一处看全列序对应关系」的唯一好处（同 api 的 ProjectionMappers）
 public abstract class ProjectionDifferentialTest<T extends Item> extends ConsistencyTestBase<T> {
+
+    /// 多列 `distinct` 的 `count()` 拒绝消息前缀。只断前缀与列数，不断实体类型名（那是后端特有的）。
+    private static final String MULTI_COLUMN_DISTINCT_COUNT_REJECTED = "多列 distinct 规格的 count 未实现";
 
     /// 两列投影：`select(id, name)` 的列序即期望值的列序；实参换个位置必须换来不同的结果集。
     ///
@@ -190,6 +206,174 @@ public abstract class ProjectionDifferentialTest<T extends Item> extends Consist
         assertThat(rows).containsExactlyElementsOf(expected);
     }
 
+    /// `distinct()` 单列 / 多列 / 映射器四条路径的差分格：期望值全部由 [DistinctOracle] 从夹具原始字段
+    /// 自己算出（`LinkedHashSet` 去重），真库一侧只负责渲染 `SELECT DISTINCT`。
+    ///
+    /// 为什么不用 `@ParameterizedTest`：`nextentity-testing` 的编译类路径上没有 `junit-jupiter-params`，
+    /// 参数化只能走 `@TestFactory` + `DynamicTest`（与 `ArithmeticDifferentialTest` 同一写法）。
+    ///
+    /// 覆盖的语义：
+    /// - 单列 `note`：夹具里 `null` 出现两次（id=1、id=4），`SELECT DISTINCT` 把 `null` 算**一组**，
+    ///   所以去重后必须含 `null` 且只出现一次；
+    /// - 单列 `status`：`NEW` 出现两次（id=1、id=4），去重后按列值升序（`@Enumerated(STRING)` 的字典序）；
+    /// - 两列 / 三列：去重作用于**整元组**。夹具里 `score2` 有两行相同（id=1、id=2 都是 10）、`status`
+    ///   有两行相同，所以「只按第一列去重」的实现会少行，逐元素比对立刻红；
+    /// - 映射器：`distinct()` 对 `project(...)` 路径同样生效（旗标被紧随其后的投影消费，不区分投影形态）。
+    @TestFactory
+    Stream<DynamicTest> everyDistinctProjectionMatchesMemoryOracle() {
+        return Stream.of(
+                dynamicTest("单列 note 去重后 NULL 只出现一次", () -> {
+                    List<String> expected = DistinctOracle.distinctNotes(fixtureRows());
+                    List<String> notes = query().distinct().select(noteRef()).list();
+
+                    // oracle 自检：夹具里 null 出现两次，去重前必然比期望长，这条才测得出「去重没生效」
+                    assertThat(DistinctOracle.notes(fixtureRows())).hasSizeGreaterThan(expected.size());
+                    assertThat(expected).containsNull().doesNotHaveDuplicates();
+                    assertThat(notes).containsExactlyInAnyOrderElementsOf(expected);
+                }),
+                dynamicTest("单列 status 去重后按列值升序", () -> {
+                    List<ItemStatus> expected = DistinctOracle.distinctStatuses(fixtureRows());
+                    List<ItemStatus> statuses = query().distinct()
+                            .select(statusRef())
+                            .orderBy(statusRef())
+                            .asc()
+                            .list();
+
+                    // oracle 自检：默认夹具的 NEW 出现两次，去重后是这三个值且顺序唯一
+                    assertThat(expected).containsExactly(ItemStatus.ACTIVE, ItemStatus.DONE, ItemStatus.NEW);
+                    assertThat(statuses).containsExactlyElementsOf(expected);
+                }),
+                dynamicTest("两列去重作用于整元组", () -> {
+                    List<Tuple2<Integer, String>> expected = DistinctOracle.distinctScore2ThenName(fixtureRows());
+                    List<Tuple2<Integer, String>> rows = query().distinct()
+                            .select(Path.of(score2Ref()), Path.of(nameRef()))
+                            .orderBy(nameRef())
+                            .asc()
+                            .list();
+
+                    // oracle 自检：score2 有重复但整元组不重复，所以期望仍是全表行数
+                    assertThat(expected).hasSize(fixtureRows().size()).doesNotHaveDuplicates();
+                    assertThat(rows).containsExactlyElementsOf(expected);
+                }),
+                dynamicTest("三列去重作用于整元组", () -> {
+                    List<Tuple3<ItemStatus, String, Integer>> expected =
+                            DistinctOracle.distinctStatusNameScore(fixtureRows());
+                    List<Tuple3<ItemStatus, String, Integer>> rows = query().distinct()
+                            .select(Path.of(statusRef()), Path.of(nameRef()), Path.of(scoreRef()))
+                            .orderBy(nameRef())
+                            .asc()
+                            .list();
+
+                    assertThat(expected).hasSize(fixtureRows().size()).doesNotHaveDuplicates();
+                    assertThat(rows).containsExactlyElementsOf(expected);
+                }),
+                dynamicTest("映射器路径同样去重", () -> {
+                    List<String> expected = DistinctOracle.distinctNotes(fixtureRows());
+                    List<String> notes =
+                            query().distinct().project(new NoteMapper()).list();
+
+                    assertThat(expected).containsNull().doesNotHaveDuplicates();
+                    assertThat(notes).containsExactlyInAnyOrderElementsOf(expected);
+                }));
+    }
+
+    /// `distinct()` 的窗口、计数与聚合：三个口径必须分清，混用任何一个都会红。
+    ///
+    /// - `SELECT DISTINCT note` 把 `NULL` 算一组 → `data()` 里 `NULL` 占一行；
+    /// - `COUNT(DISTINCT note)` **不计** `NULL` → `total()` / `count()` 比去重行数少 1
+    ///   （`Slice#total` 明写「可能比 `data()` 少 1 行」）；
+    /// - 未去重的 `count()` 是夹具行数。
+    ///
+    /// 夹具 `note` 去重后 3 行（`null` / `n1` / `n2`）、`COUNT(DISTINCT note)` = 2、未去重 4 行：
+    /// 三个数互不相同，所以「`total` 用了未去重行数」与「`total` 用了 `SELECT DISTINCT` 行数」都会红。
+    /// `status` 列没有 `NULL`，因此它上面两种口径相同，用来单独钉「窗口切片本身」。
+    @TestFactory
+    Stream<DynamicTest> everyDistinctWindowAndCountMatchesMemoryOracle() {
+        return Stream.of(
+                dynamicTest("去重后按列排序的窗口与 total", () -> {
+                    List<ItemStatus> ordered = DistinctOracle.distinctStatuses(fixtureRows());
+                    Slice<ItemStatus> firstPage = query().distinct()
+                            .select(statusRef())
+                            .orderBy(statusRef())
+                            .asc()
+                            .slice(0, 2);
+                    Slice<ItemStatus> tailPage = query().distinct()
+                            .select(statusRef())
+                            .orderBy(statusRef())
+                            .asc()
+                            .slice(1, 5);
+                    Slice<ItemStatus> pastEnd = query().distinct()
+                            .select(statusRef())
+                            .orderBy(statusRef())
+                            .asc()
+                            .slice(3, 0);
+
+                    assertThat(ordered).containsExactly(ItemStatus.ACTIVE, ItemStatus.DONE, ItemStatus.NEW);
+                    assertThat(firstPage.data()).containsExactlyElementsOf(DistinctOracle.window(ordered, 0, 2));
+                    assertThat(tailPage.data()).containsExactlyElementsOf(DistinctOracle.window(ordered, 1, 5));
+                    assertThat(pastEnd.data()).isEmpty();
+                    assertThat(firstPage.total()).isEqualTo(ordered.size());
+                    assertThat(tailPage.total()).isEqualTo(ordered.size());
+                    assertThat(pastEnd.total()).isEqualTo(ordered.size());
+                }),
+                dynamicTest("含 NULL 的列上 total 是 COUNT(DISTINCT) 口径", () -> {
+                    List<String> distinctNotes = DistinctOracle.distinctNotes(fixtureRows());
+                    Slice<String> page = query().distinct().select(noteRef()).slice(0, 0);
+
+                    // oracle 自检：去重后 3 行（含 1 个 null）、去重前 4 行，三个数互不相同
+                    assertThat(distinctNotes).hasSize(3).containsNull();
+                    assertThat(DistinctOracle.notes(fixtureRows())).hasSize(4);
+                    assertThat(page.data()).containsExactlyInAnyOrderElementsOf(distinctNotes);
+                    assertThat(page.total()).isEqualTo(distinctNotes.size() - 1);
+                }),
+                dynamicTest("count 与 countDistinct 聚合都不计 NULL", () -> {
+                    long expectedDistinct = DistinctOracle.distinctNonNullScoreCount(fixtureRows());
+                    long expectedNewDistinct = DistinctOracle.distinctNonNullScoreCount(
+                            DistinctOracle.withStatus(fixtureRows(), ItemStatus.NEW));
+                    long distinctScores = query().distinct().select(scoreRef()).count();
+                    long distinctNewScores = query().distinct()
+                            .select(scoreRef())
+                            .where(statusRef())
+                            .eq(ItemStatus.NEW)
+                            .count();
+                    List<Long> aggregated =
+                            query().select(Path.of(scoreRef()).countDistinct()).list();
+
+                    // oracle 自检：score 有一个 null 被排除、且没有重复值，所以去重计数严格少于行数
+                    assertThat(expectedDistinct).isLessThan(fixtureRows().size());
+                    assertThat(expectedNewDistinct).isEqualTo(1L);
+                    assertThat(distinctScores).isEqualTo(expectedDistinct);
+                    assertThat(distinctNewScores).isEqualTo(expectedNewDistinct);
+                    assertThat(aggregated).containsExactly(expectedDistinct);
+                }));
+    }
+
+    /// 多列 `distinct()` 上的 `count()` / `slice()` 必须**拒绝**，不能给一个「只数第一列」的错数：
+    /// `COUNT(DISTINCT a, b)` 在 MySQL 与 PostgreSQL 形态不同（后者要 `COUNT(DISTINCT (a, b))`）。
+    ///
+    /// 这里钉的是拒绝分支本身——契约要求任何 `UnsupportedOperationException` 分支都有用例；
+    /// 消息只断前缀与列数，不断实体类型名（那是后端特有的）。
+    @Test
+    void multiColumnDistinctCountAndSliceAreRejected() {
+        assertThatThrownBy(() -> query().distinct()
+                        .select(Path.of(score2Ref()), Path.of(nameRef()))
+                        .count())
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining(MULTI_COLUMN_DISTINCT_COUNT_REJECTED)
+                .hasMessageContaining("列数 2");
+        assertThatThrownBy(() -> query().distinct()
+                        .select(Path.of(statusRef()), Path.of(nameRef()), Path.of(scoreRef()))
+                        .count())
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining("列数 3");
+        // slice 的 total 依赖 count()，因此同样被拒绝，而不是悄悄按未去重行数给 total
+        assertThatThrownBy(() -> query().distinct()
+                        .select(Path.of(score2Ref()), Path.of(nameRef()))
+                        .slice(0, 1))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining(MULTI_COLUMN_DISTINCT_COUNT_REJECTED);
+    }
+
     /// 自定义映射器的结果：字段与 [ItemViewMapper#expressions()] 的列一一对应。
     ///
     /// @param id     主键
@@ -240,6 +424,23 @@ public abstract class ProjectionDifferentialTest<T extends Item> extends Consist
                     (Integer) row.get(IDX_SCORE),
                     (String) row.get(IDX_NOTE),
                     (ItemStatus) row.get(IDX_STATUS));
+        }
+    }
+
+    /// 单列映射器：`expressions()` 只有 `note` 一列，`map` 取第 0 列。
+    ///
+    /// 用单列映射器是为了让「`distinct()` 在 `project(...)` 路径上是否生效」与列序无关：
+    /// 旗标一旦丢了，夹具里重复的 `null` 就会多出一行，`containsExactlyInAnyOrderElementsOf` 立刻红。
+    private final class NoteMapper implements ProjectionMapper<T, String> {
+
+        @Override
+        public List<Expression<T, ?>> expressions() {
+            return List.of(noteRef());
+        }
+
+        @Override
+        public String map(Tuple row) {
+            return (String) row.get(0);
         }
     }
 
@@ -314,6 +515,105 @@ public abstract class ProjectionDifferentialTest<T extends Item> extends Consist
         /// @return 前 `count` 行（不足时返回全部）
         static <R> List<R> first(List<R> values, int count) {
             return values.subList(0, Math.min(count, values.size()));
+        }
+    }
+
+    /// `distinct()` 一族的内存实现：只读 [FixtureRow] 的原始字段，用 `LinkedHashSet` 做去重。
+    ///
+    /// 与 [Oracle] 分开是为了让「去重语义」与「列序语义」各自独立演进：改一处不会顺手改到另一处，
+    /// 也避免单个嵌套类堆到 PMD `TooManyMethods` 上限。
+    ///
+    /// 两处 SQL 语义在这里显式建模，而不是交给调用方随手 `.distinct()`：
+    /// - `SELECT DISTINCT` 把 `NULL` 算**一组**（[#distinctNotes] 保留 `null`）；
+    /// - `COUNT(DISTINCT 列)` **不计** `NULL`（[#distinctNonNullScoreCount] 先滤掉 `null`）。
+    private static final class DistinctOracle {
+
+        private DistinctOracle() {}
+
+        /// 未去重的 `note` 列：`null` 原样保留，用于自检「去重前确实更长」。
+        ///
+        /// @param rows 夹具原始行
+        /// @return 与行一一对应的 `note` 值
+        static List<String> notes(List<FixtureRow> rows) {
+            return rows.stream().map(FixtureRow::note).toList();
+        }
+
+        /// `SELECT DISTINCT note` 的内存实现：`null` 算一组，保留首次出现的顺序。
+        ///
+        /// @param rows 夹具原始行
+        /// @return 去重后的值（可能含一个 `null`）
+        static List<String> distinctNotes(List<FixtureRow> rows) {
+            return notes(rows).stream().distinct().toList();
+        }
+
+        /// `SELECT DISTINCT status ORDER BY status` 的内存实现：枚举按 `@Enumerated(STRING)` 的字典序。
+        ///
+        /// @param rows 夹具原始行
+        /// @return 去重后按枚举名升序的状态
+        static List<ItemStatus> distinctStatuses(List<FixtureRow> rows) {
+            return rows.stream()
+                    .map(FixtureRow::status)
+                    .distinct()
+                    .sorted(Comparator.comparing(ItemStatus::name))
+                    .toList();
+        }
+
+        /// `SELECT DISTINCT score2, name ORDER BY name` 的内存实现：去重作用于整元组。
+        ///
+        /// @param rows 夹具原始行
+        /// @return 去重后的元组，按名称升序
+        static List<Tuple2<Integer, String>> distinctScore2ThenName(List<FixtureRow> rows) {
+            return rows.stream()
+                    .map(row -> new Tuple2<>(row.score2(), row.name()))
+                    .distinct()
+                    .sorted(Comparator.comparing(tuple -> tuple.get1()))
+                    .toList();
+        }
+
+        /// `SELECT DISTINCT status, name, score ORDER BY name` 的内存实现。
+        ///
+        /// @param rows 夹具原始行
+        /// @return 去重后的三元组，按名称升序
+        static List<Tuple3<ItemStatus, String, Integer>> distinctStatusNameScore(List<FixtureRow> rows) {
+            return rows.stream()
+                    .map(row -> new Tuple3<>(row.status(), row.name(), row.score()))
+                    .distinct()
+                    .sorted(Comparator.comparing(tuple -> tuple.get1()))
+                    .toList();
+        }
+
+        /// `COUNT(DISTINCT score)` 的内存实现：`null` 不计入。
+        ///
+        /// @param rows 夹具原始行
+        /// @return 去重后的非空 `score` 个数
+        static long distinctNonNullScoreCount(List<FixtureRow> rows) {
+            return rows.stream()
+                    .map(FixtureRow::score)
+                    .filter(score -> score != null)
+                    .distinct()
+                    .count();
+        }
+
+        /// `where status = ...` 的内存实现。
+        ///
+        /// @param rows   夹具原始行
+        /// @param status 目标状态
+        /// @return 命中的行，保持夹具顺序
+        static List<FixtureRow> withStatus(List<FixtureRow> rows, ItemStatus status) {
+            return rows.stream().filter(row -> row.status() == status).toList();
+        }
+
+        /// `slice(offset, limit)` 的内存实现：在已排序的期望值上切片。
+        ///
+        /// @param values 已排序的期望值
+        /// @param offset 0 基偏移
+        /// @param limit  页大小，`0` 表示从 `offset` 起不限行
+        /// @param <R>    期望值类型
+        /// @return 对应的窗口
+        static <R> List<R> window(List<R> values, int offset, int limit) {
+            int from = Math.min(offset, values.size());
+            int to = limit == 0 ? values.size() : Math.min(from + limit, values.size());
+            return values.subList(from, to);
         }
     }
 }
