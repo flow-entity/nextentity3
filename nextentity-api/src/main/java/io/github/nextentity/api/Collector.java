@@ -6,7 +6,7 @@ import java.util.List;
 ///
 /// 取行的方法（`list(int)` / `first()`）在调用方没有显式 `orderBy` 时自动按主键升序
 /// （`distinct()` 投影除外，见 [SliceStep#slice]），
-/// 因此「前 N 条」「第一条」取到的行是确定的（证据：`core/builder/QueryBuilder.java:266-275`）。
+/// 因此「前 N 条」「第一条」取到的行是确定的（证据：`core/builder/QueryBuilder.java:326-337`）。
 /// `count()` / `exists()` 反过来不排序、不分页，也不应用 `lock(...)` 指定的锁——锁随窗口一起被清掉，
 /// 只有真正取行的方法才有锁语义。
 ///

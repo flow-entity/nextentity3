@@ -90,6 +90,24 @@ public abstract class PaginationConsistencyTest<T extends Item> extends Consiste
                 .hasMessageContaining(LIMIT);
     }
 
+    /// 负数校验**先于** `total <= offset` 的短路：`slice(4, -1)` 在夹具上正好落在短路分支里
+    /// （`total = 4`），校验若留在短路之后，非法参数会被当成「空页」静默吞掉。
+    ///
+    /// 这是契约（`SliceStep#slice` 无条件承诺 `IllegalArgumentException`）与实际实现之间
+    /// 唯一的缝：只测 `slice(0, -1)` 的用例永远踩不到它。
+    @Test
+    void sliceRejectsNegativeArgsEvenWhenOffsetIsBeyondLastRow() {
+        assertThatThrownBy(() -> query().slice(4, -1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(LIMIT);
+        assertThatThrownBy(() -> query().slice(100, -1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(LIMIT);
+        assertThatThrownBy(() -> query().slice(-1, 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(OFFSET);
+    }
+
     /// `list(0)` 表示「不限行」，不是「取 0 行」（`Collector#list(int)` 的公开契约）。
     ///
     /// 渲染成 `LIMIT 0` 的实现在这里立刻露出来：夹具四行会变成空列表。

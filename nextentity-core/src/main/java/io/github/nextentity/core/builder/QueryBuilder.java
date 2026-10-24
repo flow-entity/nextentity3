@@ -229,11 +229,14 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
 
     @Override
     public Slice<T> slice(int offset, int limit) {
+        // 窗口必须在 count() 之前构造：`offset >= total` 的短路会跳过列表查询，校验若留在后面，
+        // `slice(4, -1)` 就静默返回空页，而契约（`SliceStep#slice`）无条件承诺 IAE。
+        Window window = new Window(offset, limit);
         long total = count();
         if (total <= offset) {
             return new SliceResult<>(List.of(), total);
         }
-        return new SliceResult<>(fetch(new Window(offset, limit)), total);
+        return new SliceResult<>(fetch(window), total);
     }
 
     // -------------------------------------------------------------- internal
