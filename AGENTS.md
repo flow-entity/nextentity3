@@ -22,8 +22,8 @@
 |---|---|
 | 仅文档/注释（`*.md`、Javadoc） | 跳过构建 |
 | `api` / `core` / `spec` / `compile` / `exec` | `mvn -q spotless:apply` → `mvn -pl nextentity-core,nextentity-arch -am test` |
-| `jpa` / `spring` | `mvn -q spotless:apply` → `mvn -pl nextentity-arch -am test` → `mvn -pl nextentity-tests-jpa -am verify`（无容器；容器用例待加，见 DESIGN §5） |
-| `nextentity-testing`（一致性基类、夹具、`ConsistencySupport`） | `mvn -q spotless:apply` → `mvn -pl nextentity-tests-jpa -am verify`（无容器；容器用例待加，见 DESIGN §5） |
+| `jpa` / `spring` | `mvn -q spotless:apply` → `mvn -pl nextentity-arch -am test` → `mvn -pl nextentity-tests-jpa -am verify`（含 MySQL 容器通道；无 Docker 时自动跳过，见 DESIGN §5「通道拆分」） |
+| `nextentity-testing`（一致性基类、夹具、`ConsistencySupport`） | `mvn -q spotless:apply` → `mvn -pl nextentity-tests-jpa -am verify`（含 MySQL 容器通道；无 Docker 时自动跳过，见 DESIGN §5「通道拆分」） |
 | `nextentity-tests-legacy` | `mvn -pl nextentity-tests-legacy test`（默认 H2，无容器）；动到方言相关再跑 `-Ddbc=h2,mysql` |
 | `core` / `jpa` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-<模块> pitest:mutationCoverage`，变异分数不得低于模块 pom 的阈值 |
 | `api` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-api pitest:mutationCoverage`（api 有自己的线格式用例，门禁自足，阈值 95）。api 的语义同时被 `core` 的用例执行，所以 `core` 的 PIT 也要跑；**跑它之前必须先 `mvn -pl nextentity-api install -DskipTests`**——`pitest:mutationCoverage` 不带 `-am`，它从 `~/.m2` 解析 `nextentity-api`，陈旧快照会让依赖新语义的用例集体报「未变异就不通过」，看着像测试坏了，其实是产物旧了 |
@@ -35,7 +35,7 @@
 - **不读陈旧产物**：跨模块验证前先 `mvn install`（或一律 `-am` 反应堆构建）；`~/.m2` 里的 `-SNAPSHOT` 可能落后于当前 HEAD，用它跑出的结论只能证明"旧产物能跑"。
 - **构建要独占工作树**：并行跑多个 `mvn` 会共用同一个 `target/`，造出「jar/classes 里缺刚写好的类」这类假红，也会让下一次构建静默复用被写坏的产物（`-am` 与 `-Dmaven.repo.local` 都挡不住，冲突在 `target/` 不在本地仓库）。要并行就各开一个 `git worktree`，或串行排队；看到「明明存在的类找不到」先怀疑产物被覆盖，**不要改代码去凑绿**；日志里出现 `Nothing to compile - all classes are up to date` 时，要意识到本次复用的是前序产物。
 - **测试只跑一遍**：一律 `mvn ... > tmp/test-output/<场景>.log 2>&1`，从落盘日志（及 surefire-reports）看全结论；结论得出后删除日志，**禁止为补看日志重跑**。
-- **分层跑测试**：`api`/`core` 单测无需容器；`nextentity-arch` 只跑架构规则（无容器，改任何模块都要跑）；`nextentity-tests-jpa` 是落库测试，**当前全部跑 H2**（`testcontainers:mysql` 已声明但尚无容器用例，见 [docs/DESIGN.md](docs/DESIGN.md) §5「待整改」），只在改动 `jpa`/`spring`/`nextentity-testing` 或发版前跑。
+- **分层跑测试**：`api`/`core` 单测无需容器；`nextentity-arch` 只跑架构规则（无容器，改任何模块都要跑）；`nextentity-tests-jpa` 是落库测试，H2 用例走 surefire、`*IntegrationTest` 走 failsafe 跑真 MySQL 容器（`testcontainers:mysql`，无可用 Docker 时整通道计为 skip，见 [docs/DESIGN.md](docs/DESIGN.md) §5「通道拆分」），只在改动 `jpa`/`spring`/`nextentity-testing` 或发版前跑。
 - **测试命名**：快测试 `*Test`，落库场景 `*IntegrationTest`；集成测试启动容器后须在 `@AfterEach` 复位被改状态。
 - **提交信息**：Conventional Commits（`feat:` / `fix:` / `refactor:` / `test:` / `docs:`），一行一件事；PR 说明受影响模块 + 本地实际跑过的命令。
 
@@ -56,7 +56,7 @@
 ./mvnw clean verify                      # 全量门禁：Spotless + Checkstyle + PMD + SpotBugs + 单测 + 覆盖率
 ./mvnw -q spotless:apply                 # 一键格式化（提交前必跑）
 ./mvnw -pl nextentity-core,nextentity-arch -am test   # 快速回归 + 架构门禁，无需容器
-./mvnw -pl nextentity-tests-jpa verify   # 落库测试：当前全部跑 H2，无容器（容器用例待加，见 DESIGN §5）
+./mvnw -pl nextentity-tests-jpa verify   # 落库测试：H2 走 surefire + MySQL 容器走 failsafe（-DskipITs 只跳容器通道）
 ./mvnw -pl nextentity-tests-legacy test  # 2.2.3 遗留语义回归：H2，无容器
 ./mvnw -pl nextentity-tests-legacy test -Ddbc=h2,mysql   # 同上，加真 MySQL（需 Docker 或外部实例，见模块 README）
 ./mvnw -Papi-compat -Djapicmp.oldVersion=3.0.0 -pl nextentity-api verify   # API 兼容检查

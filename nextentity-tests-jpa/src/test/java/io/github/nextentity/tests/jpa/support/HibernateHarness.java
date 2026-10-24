@@ -8,12 +8,14 @@ import java.util.function.Supplier;
 import org.hibernate.SessionFactory;
 import org.hibernate.cfg.Configuration;
 
-/// H2 + Hibernate 测试装置：建表、给 `EntityManager`、抓 SQL。
+/// Hibernate 测试装置：建表、给 `EntityManager`、抓 SQL。
 ///
 /// 只为测试服务，不引入 Spring，也不依赖 nextentity 的任何实现类——这样 SQL 快照用例
 /// 既能独立证明工具本身可用，也能被 `nextentity-jpa` 的执行器直接复用。
 ///
-/// H2 使用 MySQL 兼容模式，与 point-mall 集成测试（`application-integration-tests.yml`）同款。
+/// 两种连接：默认的 H2 内存库（MySQL 兼容模式，与 point-mall 集成测试
+/// `application-integration-tests.yml` 同款），或调用方给的 JDBC 连接（真方言，见
+/// [MySqlL4Container]）。方言由 Hibernate 按 JDBC 元数据自选，装置本身不含方言分支。
 public final class HibernateHarness implements AutoCloseable {
 
     private final SessionFactory sessionFactory;
@@ -32,13 +34,36 @@ public final class HibernateHarness implements AutoCloseable {
     /// @param entityClasses 参与映射的实体类
     /// @return 测试装置：用完必须 `close()`，否则内存库与 SessionFactory 都留着
     public static HibernateHarness start(String databaseName, Class<?>... entityClasses) {
+        return build("jdbc:h2:mem:" + databaseName + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", null, entityClasses);
+    }
+
+    /// 启动一套只含给定实体的 Hibernate，连到调用方给的库（真方言，例如容器起的 MySQL）。
+    ///
+    /// 方言**不**硬编码：Hibernate 按 JDBC 元数据自动选，所以同一个装置既能连 H2 也能连 MySQL，
+    /// L4 的「同一套用例换方言」才不需要两套接线。
+    ///
+    /// 建表仍走 `hbm2ddl`（`create-drop`），与 H2 侧由同一份实体元数据生成——手写 DDL 会把
+    /// 「方言差异」和「DDL 写错」混在一起，对拍就说不清是谁的问题。
+    ///
+    /// @param jdbcUrl       JDBC 连接串，非 `null`
+    /// @param username      数据库账号，非 `null`
+    /// @param password      数据库口令，非 `null`（无口令传空串）
+    /// @param entityClasses 参与映射的实体类
+    /// @return 测试装置：用完必须 `close()`
+    public static HibernateHarness start(String jdbcUrl, String username, String password, Class<?>... entityClasses) {
+        return build(jdbcUrl, username, password, entityClasses);
+    }
+
+    private static HibernateHarness build(String jdbcUrl, String username, String password, Class<?>... entityClasses) {
         SqlRecorder recorder = new SqlRecorder();
         Configuration configuration = new Configuration()
-                .setProperty(
-                        "hibernate.connection.url", "jdbc:h2:mem:" + databaseName + ";MODE=MySQL;DB_CLOSE_DELAY=-1")
-                .setProperty("hibernate.connection.username", "sa")
+                .setProperty("hibernate.connection.url", jdbcUrl)
+                .setProperty("hibernate.connection.username", username)
                 .setProperty("hibernate.hbm2ddl.auto", "create-drop")
                 .setStatementInspector(recorder);
+        if (password != null) {
+            configuration.setProperty("hibernate.connection.password", password);
+        }
         for (Class<?> entityClass : entityClasses) {
             configuration.addAnnotatedClass(entityClass);
         }

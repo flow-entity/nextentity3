@@ -110,11 +110,11 @@ S  （后端语句）
 | 1. Spec 单测 | builder 调用 → AST 结构（对象断言） | 结构等价：断言节点类型与字段值，不看 SQL | 无 | `core` 的 `src/test`（含 `api` 的组装层断言，落点理由见下「api 值层断言的落点」） |
 | 2. 编译快照 | Spec → SQL（H2 + `StatementInspector` 抓取） | 语句文本的确定性片段必须出现；期望值不得写进方言的引号、别名、大小写 | H2 | `nextentity-tests-jpa` |
 | 3. 一致性 | 能力而非 SQL 文本：条件/分页/聚合/投影/写入/乐观锁 | 真库执行结果 vs 独立算出的期望；用例不引用任何后端类型 | 仅 `api`+`core` 接口 | `nextentity-testing` 抽象基类，由 jpa 子类继承 |
-| 4. 集成 | 真实方言、`@Convert`、并发乐观锁 | 同一用例在各方言下结果集完全相同（**当前无载体**，见下「待整改」） | Docker | `nextentity-tests-jpa` |
+| 4. 集成 | 真实方言、`@Convert`、并发乐观锁 | 同一用例在各方言下结果集完全相同（载体：`nextentity-tests-jpa` 的 `*IntegrationTest`，跑真 MySQL 容器） | Docker | `nextentity-tests-jpa` |
 
 L2 只证明「语句下发正确」，不证明「参数绑定正确」：`SqlRecorder` 只记语句文本，绑定顺序与取值抓不到。这一半证据属于待补项，补上之前由 L3（真库执行结果）兜底。
 
-L4 同样只有口径没有载体：`nextentity-tests-jpa` 里目前**没有任何容器用例**（模块 pom 声明了 `testcontainers:mysql`，但全模块无一处引用），该模块用例全部跑 H2。真 MySQL 只出现在 `nextentity-tests-legacy`，且需手动开 `-Ddbc=h2,mysql`。所以「跨方言结果集相同」现在是方向，不是现状。
+L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（`*IntegrationTest`）走 failsafe，两条通道按类名显式分开（见下「通道拆分」）。容器侧用 `org.testcontainers:mysql` 起一个 `mysql:8.0.18`，一个 JVM 一个容器、所有容器用例共享，接的是**同一批一致性基类**——所以「跨方言结果集相同」是逐行比出来的，不是另写一套 MySQL 专用断言。真 MySQL 的另一处出现是 `nextentity-tests-legacy`，需手动开 `-Ddbc=h2,mysql`，与 L4 无关。
 
 **api 值层断言的落点**：`nextentity-api` 不能有自己的 `src/test`。该模块的 enforcer 规则 `enforce-api-is-dependency-free` 用 `<exclude>*:*</exclude>` 禁掉**一切**依赖，test 作用域也在内（加 `junit-jupiter` 会让 `validate` 直接失败），这不是疏漏而是「api 零三方依赖」这条红线的直接后果。而 api 的实现类全是包私有的值对象，可观察入口只有 `Path#refs()` / `Op#operation()` 这组线格式。因此 api 的组装层断言住在**第一个消费者** `nextentity-core` 的测试树：用 api 的公开入口构造，用同包可见的 `OpInterpreter` 读成 `core.spec` 节点。oracle 是**节点结构整体相等**（record 相等），因为 api 的职责就是「只拼值不求值」，结构即契约。代价是 api 的覆盖率由 `core` 的执行数据贡献，单模块 `jacoco:report` 看不到——统计口径见下「覆盖率口径」。
 
@@ -130,7 +130,7 @@ L4 同样只有口径没有载体：`nextentity-tests-jpa` 里目前**没有任�
 |---|---|---|
 | 手算常量（固定夹具 + `containsExactlyInAnyOrder(APPLE_ID, CHERRY_ID)`） | 只钉**已知语义**：`between` 是闭区间、`notBetween` 与 `between` 互补且两侧都不含 NULL 行、`a = b` 与 `a <> b` 都不命中 NULL 行 | 语义细节、边界、容易被「优化」掉的坑 |
 | 差分（真库执行 vs 内存独立计算） | 组合正确性：同一份 Spec 在两条独立实现路径上算出的行集必须一致 | 条件/排序/分页/聚合的组合面积 |
-| 跨方言对拍 | 方言无关性：同一用例在 H2 与真实 MySQL 上结果集逐行相同 | L4（待容器用例，当前无载体） |
+| 跨方言对拍 | 方言无关性：同一用例在 H2 与真实 MySQL 上结果集逐行相同 | L4（`*IntegrationTest`，同一批一致性基类接两套装置） |
 
 为什么手算不能当主力：4 行固定夹具下手算可行，组合面积一扩大就不可维护——每个新能力只能挑一个最顺的例子手算一条，边界组合没人算，最终结果是测试只覆盖 happy path，而 oracle 本身成了又一份需要维护的「实现」。所以手算常量只用来钉已知语义，正确性证据必须来自差分或跨方言对拍。
 
@@ -140,7 +140,7 @@ L4 同样只有口径没有载体：`nextentity-tests-jpa` 里目前**没有任�
 |---|---|---|
 | 变异分数（PIT） | 主指标 | `core` ≥ 95%、`jpa` ≥ 90%；当前实测均 **100%**（见下「变异测试」，阈值写在各模块 pom） |
 | 语义等价律条数 | 辅助 | 每条律至少 1 条差分用例，条数只增不减 |
-| 方言矩阵通过率 | 辅助 | 100% 通过；skip 数单独报表，只许降不许升（矩阵与报表均待建，见上「待整改」） |
+| 方言矩阵通过率 | 辅助 | 100% 通过；skip 数单独报表，只许降不许升（矩阵目前是 H2 + MySQL 8.0.18 两列；skip 报表待建，见上「通道拆分」） |
 | 缺陷逃逸率 | 辅助 | 发版后发现的语义缺陷数 / 版本，趋势必须向下 |
 | 行/分支覆盖率（聚合口径） | **不作门禁**，仅诊断报表 | 不设百分比门槛；判据是「新增的未覆盖行必须落在下文『已判定不可达与度量限制』清单里」，落在清单外就按缺口处理 |
 
@@ -180,11 +180,18 @@ java -jar <同上> report tmp/cov/merged.exec \
 | 档 | 何时跑 | 跑哪些层 | 预算 |
 |---|---|---|---|
 | 快 | 保存 / 提交 | L0 + L1 | < 60s |
-| PR | push / PR | L0–L2 | < 10min |
-| 夜间 | 每晚 | L0–L3 + 变异测试（MySQL 方言矩阵待容器用例加入后才成立） | 不限 |
-| 发版前 | 发版 | L0–L3 + 全量门禁（L4 待容器用例） | 不限 |
+| PR | push / PR | L0–L2（跑 `nextentity-tests-jpa` 时加 `-DskipITs`，只跳容器通道） | < 10min |
+| 夜间 | 每晚 | L0–L4 + 变异测试（L4 需 Docker） | 不限 |
+| 发版前 | 发版 | L0–L4 + 全量门禁 | 不限 |
 
-待整改：`nextentity-tests-jpa` 目前把 H2 场景与容器场景混在 surefire 一个通道里。failsafe 已在模块 pom 声明，但其默认 includes 是 `**/IT*`、`**/*IT`、`**/*ITCase`，与 `*IntegrationTest` 命名不匹配——容器用例一旦加入，会被 surefire 跑掉、failsafe 一条也不收。目标是拆成 surefire（H2，无容器）+ failsafe（`*IntegrationTest`，需 Docker，含显式 includes 配置）。本轮未执行。
+**通道拆分**（surefire 与 failsafe 各管一半，靠类名分流）：
+
+| 通道 | 收哪些类 | 依赖 | 跳过方式 |
+|---|---|---|---|
+| surefire | 除 `*IntegrationTest` 外的全部（H2） | 无 | — |
+| failsafe | `**/*IntegrationTest.java`（显式 `<includes>`） | Docker + `mysql:8.0.18` | `-DskipITs` |
+
+两个方向都写死：surefire `<excludes>` 排掉 `*IntegrationTest`，failsafe `<includes>` 收这些类。failsafe 的默认 includes 是 `**/IT*`、`**/*IT`、`**/*ITCase`，与项目约定的 `*IntegrationTest` 一个都不匹配——不显式配置时容器用例会被 surefire 跑掉、failsafe 一条也收不到。容器用例统一 `@Tag("container")` + `@Testcontainers(disabledWithoutDocker = true)`：没有可用 Docker 的机器上它们计为 skip 而不是失败，构建仍然成功。改完后的实测条数：surefire 130 条（全 H2，与拆分前一致）、failsafe 110 条（真 MySQL，含 `@Version` 乐观锁、`@Convert`、批量写、悲观锁四类写路径场景）、无可用 Docker 时 failsafe 110 条全部 skip。
 
 **变异测试（PIT，已接入）**：`mvn -pl nextentity-core pitest:mutationCoverage`、`mvn -pl nextentity-jpa pitest:mutationCoverage`。它只出分数、不新增用例形态，所以是**度量层**而不是五层防线之一。阈值（95% / 90%）写在各模块 pom，低于阈值构建失败。
 
