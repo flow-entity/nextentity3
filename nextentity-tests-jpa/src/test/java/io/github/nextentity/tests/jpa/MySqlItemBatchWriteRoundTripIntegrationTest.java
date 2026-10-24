@@ -9,10 +9,12 @@ import io.github.nextentity.testing.ItemStatus;
 import io.github.nextentity.tests.jpa.support.MySqlL4Gate;
 import io.github.nextentity.tests.jpa.support.WriteRoundTripSupport;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Predicate;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -36,6 +38,13 @@ class MySqlItemBatchWriteRoundTripIntegrationTest {
 
     private static final String LONG_NOTE = "y".repeat(200);
 
+    /// 实际下发的整句（归一化后）：列清单与占位符个数、别名、主键谓词都在里面，改一处就红。
+    private static final String INSERT_ITEM =
+            "insert into item (name,note,score,score2,status,id) values (?,?,?,?,?,?)";
+
+    private static final String UPDATE_ITEM =
+            "update item ie1_0 set name=?,note=?,score=?,score2=?,status=? where ie1_0.id=?";
+
     private static final List<Row> DECLARED = List.of(
             new Row(1, "plain", 0, 0, "note-1", ItemStatus.ACTIVE),
             new Row(2, "optional-nulls", null, null, null, null),
@@ -51,6 +60,16 @@ class MySqlItemBatchWriteRoundTripIntegrationTest {
     /// 容器是同一个 JVM 共享的，一个用例留下的行会漏到下一个：每个用例前清表并丢掉受管状态。
     @BeforeEach
     void truncateAndClear() {
+        support.truncate("ItemEntity");
+        support.clear();
+        support.clearSql();
+    }
+
+    /// 复位（AGENTS.md：集成测试启动容器后须在 `@AfterEach` 复位被改状态）：删掉本轮写入的行，
+    /// 丢掉受管状态与语句账本，容器里的库回到空表。`@BeforeEach` 那条留作兜底——上一条用例
+    /// 若崩在复位之前，它保证这一条仍从空表开始。
+    @AfterEach
+    void resetState() {
         support.truncate("ItemEntity");
         support.clear();
         support.clearSql();
@@ -92,14 +111,7 @@ class MySqlItemBatchWriteRoundTripIntegrationTest {
 
         List<String> inserts = statements(support.drainSql(), "insert into item");
 
-        assertThat(inserts).hasSize(DECLARED.size());
-        assertThat(inserts).allSatisfy(sql -> assertThat(sql)
-                .contains("name")
-                .contains("score")
-                .contains("score2")
-                .contains("note")
-                .contains("status")
-                .contains("values ("));
+        assertThat(inserts).containsExactlyElementsOf(Collections.nCopies(DECLARED.size(), INSERT_ITEM));
     }
 
     @Test
@@ -138,12 +150,7 @@ class MySqlItemBatchWriteRoundTripIntegrationTest {
 
         List<String> updates = statements(support.drainSql(), "update item");
 
-        assertThat(updates).hasSize(changed.size());
-        assertThat(updates).allSatisfy(sql -> assertThat(sql)
-                .contains("where ")
-                .contains("id=?")
-                .contains("name=")
-                .contains("score="));
+        assertThat(updates).containsExactlyElementsOf(Collections.nCopies(changed.size(), UPDATE_ITEM));
     }
 
     @Test
@@ -199,10 +206,12 @@ class MySqlItemBatchWriteRoundTripIntegrationTest {
         return rows.stream().filter(condition).map(Row::id).toList();
     }
 
+    /// 归一化成一句话（小写 + 空白压缩）后按前缀筛，断言侧就能整句比对。
     private static List<String> statements(List<String> sql, String prefix) {
         String lowered = prefix.toLowerCase(Locale.ROOT);
         return sql.stream()
-                .filter(statement -> statement.toLowerCase(Locale.ROOT).startsWith(lowered))
+                .map(WriteRoundTripSupport::normalized)
+                .filter(statement -> statement.startsWith(lowered))
                 .toList();
     }
 

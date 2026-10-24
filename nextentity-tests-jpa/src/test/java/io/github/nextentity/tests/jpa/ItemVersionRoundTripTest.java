@@ -23,6 +23,10 @@ class ItemVersionRoundTripTest {
     /// `short` 版本的上界：JPA 允许，Hibernate 也支持，但本库的自增只实现了 Integer / Long。
     private static final int SHORT_UPPER_BOUND = Short.MAX_VALUE;
 
+    /// 实际下发的整句（归一化后）：版本列既在 SET 里自增，也在 WHERE 里做乐观锁谓词。
+    private static final String UPDATE_VERSIONED =
+            "update versioned ve1_0 set version=?,name=? where ve1_0.id=? and ve1_0.version=?";
+
     private final WriteRoundTripSupport<VersionedEntity> support =
             WriteRoundTripSupport.onH2("item_version_round_trip", VersionedEntity.class, ShortVersionedEntity.class);
 
@@ -83,13 +87,7 @@ class ItemVersionRoundTripTest {
         update(new VersionedEntity(ID, "v1", current));
 
         List<String> updates = statements(support.drainSql(), "update versioned");
-        assertThat(updates).hasSize(1);
-        assertThat(updates.get(0))
-                .contains("name=")
-                .contains("where ")
-                .contains("id=?")
-                .contains("and ")
-                .contains("version=?");
+        assertThat(updates).containsExactly(UPDATE_VERSIONED);
     }
 
     /// 版本号顶到 `short` 上界时，自增必须显式拒绝，且**一条语句都不下发**。
@@ -165,10 +163,12 @@ class ItemVersionRoundTripTest {
                 .getSingleResult();
     }
 
+    /// 归一化成一句话（小写 + 空白压缩）后按前缀筛，断言侧就能整句比对。
     private static List<String> statements(List<String> sql, String prefix) {
         String lowered = prefix.toLowerCase(Locale.ROOT);
         return sql.stream()
-                .filter(statement -> statement.toLowerCase(Locale.ROOT).startsWith(lowered))
+                .map(WriteRoundTripSupport::normalized)
+                .filter(statement -> statement.startsWith(lowered))
                 .toList();
     }
 }
