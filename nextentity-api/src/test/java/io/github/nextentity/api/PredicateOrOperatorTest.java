@@ -109,6 +109,24 @@ class PredicateOrOperatorTest {
         assertThat(alwaysTrue.or(Order::getScore).eqIfNotNull(5)).isSameAs(alwaysTrue);
     }
 
+    /// 短路占位必须是**非 null 的恒真占位**，不能是 `null`：
+    /// `skip()` 有三个语义分支（整链已恒真 / 无 parent / 有 parent），前两支都返回恒真占位。
+    /// 返回 `null` 时，`where(...)` 那一层碰巧也"看不到条件"，但调用方一旦继续链式组合
+    /// （`Path.of(X).eqIfNotNull(null).or(Y::getScore)`）就会 NPE——这是纯 api 侧就能钉住的契约。
+    @Test
+    @DisplayName("无 parent 的短路：返回恒真占位而非 null，且仍可继续链式组合")
+    void standaloneSkipReturnsPlaceholderNotNull() {
+        Predicate<Order> skipped = Path.of(Order::getAge).eqIfNotNull(null);
+
+        assertThat(skipped).isNotNull();
+        assertThat(skipped).isNotInstanceOf(Op.class);
+        // 所有短路条件共用同一个单例
+        assertThat(skipped).isSameAs(Path.of(Order::getAge).ltIfNotNull(null));
+        // TRUE ∨ x = TRUE：继续组合不抛 NPE，且不为 x 建节点
+        assertThat(skipped.or(Order::getScore).eq(5)).isSameAs(skipped);
+        assertThat(skipped.or(Order::getScore).eqIfNotNull(null)).isSameAs(skipped);
+    }
+
     private static Predicate<Order> parent() {
         return Path.of(Order::getAge).eq(3);
     }
