@@ -472,7 +472,7 @@ operations.updateAll(orders);
 
 ## 11. 事务
 
-本库不自己开事务，边界由调用方的 `@Transactional` 决定：
+本库不自己开事务，边界由调用方的 `@Transactional` 决定。**写操作必须在调用方事务里执行**：没有事务时 `update(...)` 抛 `TransactionRequiredException`（JPA 对 `executeUpdate` 的契约），而 `insertAll(...)` **既不落库也不报错**，读回是 0 行。这不是缺陷，是「边界归调用方」的直接后果，但它会静默丢数据——写路径务必挂在 `@Transactional` 上（证据见 `ItemNoTransactionContextTest` 与 `MySqlItemNoTransactionIntegrationTest`）：
 
 ```java
 @Transactional
