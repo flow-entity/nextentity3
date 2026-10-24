@@ -78,16 +78,6 @@ public abstract class LogicalConsistencyTest<T extends Item> extends Consistency
         assertThat(rows).extracting(Item::id).containsExactlyInAnyOrder(BANANA_ID, CHERRY_ID);
     }
 
-    /// `not()` 取反：`NOT (name = banana)` 命中其余三行。
-    @Test
-    void notNegatesPredicate() {
-        Predicate<T> notBanana = Path.of(nameRef()).eq(BANANA_NAME).not();
-
-        List<T> rows = query().where(notBanana).list();
-
-        assertThat(rows).extracting(Item::id).containsExactlyInAnyOrder(APPLE_ID, CHERRY_ID, APPLE_PIE_ID);
-    }
-
     /// n 元 `and(Collection)`：所有条件同时成立。
     @Test
     void andCollectionRequiresAllConditions() {

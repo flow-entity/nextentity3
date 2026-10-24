@@ -131,8 +131,26 @@ final class OpInterpreter {
     }
 
     /// 逻辑取反：非 `Op` 实参是"恒真占位"，取反即恒假。
+    ///
+    /// 双重否定在这里消去（`NOT(NOT(x))` = `x`）：Hibernate 的 `Predicate.not()` 对「最内层是比较谓词」
+    /// 的嵌套取反只生效一次（H2 与 MySQL 都能复现，见 `AndOrPredicateIntegrationTest` 的
+    /// `shouldHandleChainedNotOperations`），把 `NOT(NOT(x))` 原样下推会得到 `NOT(x)` 的结果。
+    /// 消去是纯语法重写，三值逻辑下等价（`NOT NOT UNKNOWN` 仍是 `UNKNOWN`）。
     private static Spec negate(Object argument) {
-        return argument instanceof Op op ? Logical.not(toSpec(op)) : Constant.FALSE;
+        if (!(argument instanceof Op op)) {
+            return Constant.FALSE;
+        }
+        Spec spec = toSpec(op);
+        if (spec == Constant.TRUE) {
+            return Constant.FALSE;
+        }
+        if (spec == Constant.FALSE) {
+            return Constant.TRUE;
+        }
+        if (spec instanceof Logical logical && logical.operator() == LogicalOperator.NOT) {
+            return logical.operands().getFirst();
+        }
+        return Logical.not(spec);
     }
 
     /// 逻辑组合：`AND`/`OR` 的子条件放在 `arguments()` 里。

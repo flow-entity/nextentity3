@@ -98,7 +98,7 @@ class OpInterpreterTest {
     }
 
     @Test
-    @DisplayName("and 的子条件全是恒真占位：折成恒真，取反后是 NOT TRUE")
+    @DisplayName("and 的子条件全是恒真占位：折成恒真，取反后是恒假")
     void foldAllPlaceholderAnd() {
         Predicate<Order> allShortCircuited = Path.of(Order::getStatus)
                 .eqIfNotNull(null)
@@ -108,7 +108,35 @@ class OpInterpreterTest {
         assertThat(where()).isNull();
 
         query().where(allShortCircuited.not()).list();
-        assertThat(where()).isEqualTo(Logical.not(Constant.TRUE));
+        assertThat(where()).isEqualTo(Constant.FALSE);
+    }
+
+    /// 双重否定在解释层消去：`NOT(NOT(x))` 落成 `x`，不再拼两层 `NOT`。
+    ///
+    /// Hibernate 的 `Predicate.not()` 对「最内层是比较谓词」的嵌套取反只生效一次
+    /// （H2 与 MySQL 都可复现，见 `AndOrPredicateIntegrationTest#shouldHandleChainedNotOperations`），
+    /// 原样下推会让 `not().not()` 静默退化成 `not()`。
+    @Test
+    @DisplayName("双重否定消去：not().not() 落成原条件")
+    void doubleNotCancelsOut() {
+        query().where(Path.of(Order::getStatus).eq("PAID")).list();
+        Spec once = where();
+
+        query().where(Path.of(Order::getStatus).eq("PAID").not()).list();
+        assertThat(where()).isNotEqualTo(once);
+
+        query().where(Path.of(Order::getStatus).eq("PAID").not().not()).list();
+        assertThat(where()).isEqualTo(once);
+    }
+
+    @Test
+    @DisplayName("三重否定落成一层 NOT")
+    void tripleNotKeepsOneNot() {
+        query().where(Path.of(Order::getStatus).eq("PAID")).list();
+        Spec once = where();
+
+        query().where(Path.of(Order::getStatus).eq("PAID").not().not().not()).list();
+        assertThat(where()).isEqualTo(Logical.not(once));
     }
 
     // ----------------------------------------- 穷尽性检查带来的拒绝分支（:62 `:81` `:124` `:155`）
