@@ -6,7 +6,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/// 终止符与排序的一致性：`list` / `list(limit)` / `first` / `single` / `count` / `exists`。
+/// 终止符与排序的一致性：`list` / `first` / `single` / `count` / `exists`。
+///
+/// 窗口参数的契约（`list(0)` 不限行、`list(负数)` 拒绝）见 {@link PaginationConsistencyTest}，
+/// 零行聚合见 {@link EmptyResultConsistencyTest}。
 ///
 /// @param <T> 后端实体类型
 public abstract class TerminalConsistencyTest<T extends Item> extends ConsistencyTestBase<T> {
@@ -65,6 +68,17 @@ public abstract class TerminalConsistencyTest<T extends Item> extends Consistenc
         long count = query().where(scoreRef()).ge(20).count();
 
         assertThat(count).isEqualTo(2L);
+    }
+
+    /// `count()` 无命中返回 `0`（不是抛异常、不是 `null`）。
+    ///
+    /// 与 `first()` 无命中返回 `null` 是一对：`count()` 的返回类型是 `long`，
+    /// 「没有行」只能表达成 `0`，实现若把无结果当成错误就与契约相反。
+    @Test
+    void countReturnsZeroWhenNothingMatches() {
+        long count = query().where(nameRef()).eq(MISSING_NAME).count();
+
+        assertThat(count).isZero();
     }
 
     /// `exists()` 命中为真。
