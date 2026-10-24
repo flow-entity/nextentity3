@@ -148,7 +148,7 @@ class JpaPersistVersionTest extends JpaTestSupport {
     }
 
     @Test
-    @DisplayName("已在持久化上下文的实体：执行器早退，交给脏检查（不发 UPDATE、不推进版本）")
+    @DisplayName("已在持久化上下文的实体：执行器早退，变更只由脏检查写一次（版本 +1，不 +2）")
     void updateOnManagedEntityIsDelegatedToDirtyChecking() {
         inTx(entityManager -> {
             VersionedLedger ledger = entityManager.find(VersionedLedger.class, 1L);
@@ -156,8 +156,17 @@ class JpaPersistVersionTest extends JpaTestSupport {
 
             persister(entityManager).update(ledger);
 
+            // `:76` 早退分支的可观测契约：执行器自己一条 UPDATE 都不发，版本也不推进
             assertThat(drainSql()).noneMatch(sql -> sql.toLowerCase().startsWith("update"));
-            assertThat(ledger.getVersion()).isEqualTo(0L);
+            assertThat(ledger.getVersion()).isZero();
+
+            // flush 之后只能有脏检查自己发的那**一条整句** UPDATE（WHERE 用旧版本 0）：
+            // 执行器若不早退，会先发 `SET version=1` 的 UPDATE，flush 再按版本 1 发第二条，
+            // 版本号被推到 2——整句集合与最终版本号两边都对不上
+            entityManager.flush();
+            assertThat(drainSql())
+                    .containsExactly("update versioned_ledger set name=?,version=? where id=? and version=?");
+            assertThat(ledger.getVersion()).isEqualTo(1L);
             return null;
         });
         inTx(entityManager -> {
@@ -174,6 +183,11 @@ class JpaPersistVersionTest extends JpaTestSupport {
     /// 走到 `:89` 时 `entityManager.contains(entity)` 刚在 `:76` 判过为 `false`，而 JPA 规定
     /// 「对未与持久化上下文关联的实体调用 `detach` 会被忽略」，因此该调用与它的条件都不改变
     /// 任何可观测状态。这里只把「更新完仍然是 detached」这个契约钉住，不假装覆盖了那两条变异体。
+    ///
+    /// 等价性是**实测**的，不是推的：把 `:90` 整条删掉、把 `:89` 改成 `if (version == null)` 各跑一遍
+    /// `-pl nextentity-jpa -am test` 与 `-pl nextentity-tests-jpa -am verify`（H2 + MySQL 两条通道），
+    /// 两次都是零新增失败、零新增错误。要真让这两条变异体可杀，只能改生产代码（例如把 `detach`
+    /// 挪到 `:76` 的早退之前），那属于 src/main 的语义变更，不在测试分支里做。
     @Test
     @DisplayName("update 之后入参对象仍然是 detached")
     void updateLeavesEntityDetached() {
