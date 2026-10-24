@@ -18,7 +18,12 @@ public interface Slice<T> {
 
     /// 满足条件的总行数。
     ///
-    /// @return 总行数；`distinct()` 时是去重后的投影值个数（与 `Collector#count()` 同口径）
+    /// 与 `Collector#count()` 同口径。`distinct()` 时是去重后的**非空**投影值个数：SQL 的
+    /// `COUNT(DISTINCT 列)` 不计 `NULL`，而 `SELECT DISTINCT` 把 `NULL` 算作一组——因此
+    /// 「去重 + 可空列」的 `total()` 会比实际返回的行数少 1（`data()` 里仍会有 `NULL` 那一行）。
+    /// 需要精确行数时请不要依赖 `distinct()` 投影的分页元数据。
+    ///
+    /// @return 总行数
     long total();
 
     /// 把整个分页结果映射成另一种类型（例如消费方自己的 `Page`）。

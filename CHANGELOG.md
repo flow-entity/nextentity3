@@ -54,6 +54,8 @@
 
 ### Fixed
 
+- `slice()` 遇到 NULL 投影值抛 `NullPointerException`：`select(可空列).slice(0, n)` 的每一行就是一个可能为 `null` 的值，而 `SliceResult` 用 `List.copyOf` 拷贝（`List.copyOf` 拒绝 `null` 元素）。2.2.3 的 `SliceImpl` 是纯 record、允许 `null`；`SliceResult` 改用 `Stream.toList()`（不可变且允许 `null`），`SliceResultTest` 与一致性用例钉住。
+- `Slice#total()` 的口径写明：与 `Collector#count()` 同口径，`distinct()` 时是去重后的**非空**投影值个数——SQL 的 `COUNT(DISTINCT 列)` 不计 `NULL`，而 `SELECT DISTINCT` 把 `NULL` 算一组，因此「去重 + 可空列」的 `total()` 会比实际返回行数少 1。要精确行数请不要依赖去重投影的分页元数据。
 - 去重投影 + 分页在真 MySQL 上必炸：`distinct().select(col).list(n)` / `first()` / `slice(o,l)` 会生成 `SELECT DISTINCT col ... ORDER BY 主键`，MySQL 报 `Expression #1 of ORDER BY clause is not in SELECT list`，而 H2 容忍——`QueryBuilder#spec(Window)` 自动补的主键排序没考虑去重投影。现在去重投影上不再补排序（稳定分页需显式 `orderBy`），`DistinctConsistencyTest#distinctSurvivesPaginationWithoutExplicitOrder` 钉住。
 - 双重否定只生效一次：`not().not()` 的结果等于 `not()`。根因是 Hibernate 的 `Predicate.not()` 对「最内层是比较谓词」的嵌套取反**幂等**（纯 JPA 即可复现，H2 与 MySQL 同错），而 core 把 `NOT(NOT(x))` 原样下推。`OpInterpreter#negate` 现在消去双重否定（`NOT(NOT(x))` → `x`，三重 → 一层 `NOT`，`NOT(TRUE)`/`NOT(FALSE)` 折成常量），`NegationConsistencyTest` 在 H2 与真 MySQL 两条通道上钉住。
 - `rules/checkstyle.xml` 的 FQN 规则把**合法的静态导入**判成违规：豁免正则只写了 `(?:import|package)\s+<前缀>`，漏了 `import static`，于是 `import static io.github.nextentity.api.WireFormatFixture.SALARY` 被报「禁止使用全类名」。四条规则（`io.github.nextentity` / `java` / `jakarta` / `org.springframework`）统一改成 `(?:import|package)\s+(?:static\s+)?<前缀>`。规则本意是拦「在代码里内联写全类名」，静态导入不属于这一类。
