@@ -11,7 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 
 /// 把零行终止符语义的一致性用例接到真实 MySQL 上：L4 的载体，用例本体仍是 `nextentity-testing` 的基类。
 ///
-/// 夹具、期望值、装配路径都与 H2 侧（`MySqlItemEmptyTerminalIntegrationTest`）完全相同，差别只有连接。
+/// 夹具、期望值、装配路径都与 H2 侧（`ItemEmptyTerminalConsistencyTest`）完全相同，差别只有连接。
 @ExtendWith(MySqlL4Gate.class)
 @Tag("container")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)

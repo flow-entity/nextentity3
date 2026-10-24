@@ -106,6 +106,18 @@ public abstract class EmptyAggregateConsistencyTest<T extends Item> extends Cons
         assertThat(row).hasSize(1);
         assertThat(row.getFirst().get0()).isEqualTo(1L);
         assertThat(row.getFirst().get1()).isNull();
+
+        // count(被聚合列) 走的是 COUNT(列) 而不是 COUNT(*)：全 null 的列必须是 0。
+        // 只断 count(主键) = 1 的用例看不出实现把两者写反。
+        List<Tuple2<Long, Integer>> columnCount = query().select(
+                        Path.of(scoreRef()).count(), Path.of(scoreRef()).sum())
+                .where(nameRef())
+                .eq(APPLE_PIE_NAME)
+                .list();
+
+        assertThat(columnCount).hasSize(1);
+        assertThat(columnCount.getFirst().get0()).isZero();
+        assertThat(columnCount.getFirst().get1()).isNull();
     }
 
     /// `groupBy` 无行时是**零行**，与「无分组聚合返回一行」正好相反：分组的结果集行数跟着组数走，
