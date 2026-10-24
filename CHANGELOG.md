@@ -31,6 +31,7 @@
 - `nextentity-api` 有了自己的测试源码（`src/test`，140 条执行条目）：断言 `Op` 的四件套线格式（`operation()` / `arguments()` / `subject()` / `refs()` 逐级 `apply`），不依赖任何后端。此前该模块零测试，覆盖率全靠 `core` 的用例顺带贡献，而 PIT 有条硬门槛「模块没有测试源码就跳过」，所以 api 的变异门禁一直开不了。
 - 新增两个**差分**一致性基类：`ColumnComparisonDifferentialTest`（列对列 6 个算子）与 `ArithmeticDifferentialTest`（`add`/`sub`/`mul`/`div`/`mod` 5 个算子）。oracle 是内存独立实现读同一份夹具原始值、按算子语义自己算期望行集，与真库执行结果逐行比对——补上了原先只有手算常量的那批用例缺的正确性证据。夹具抽出 `FixtureRow` / `Fixtures`（`ConsistencyTestBase.seed()` 改为从 `fixtureRows()` 映射，保证后端与内存 oracle 读同一份数据）。
 - **L4（跨方言对拍）落地**：`nextentity-tests-jpa` 用 `testcontainers:mysql` 起一个 `mysql:8.0.18`（一个 JVM 一个容器，所有容器用例共享），把**同一批一致性基类**（14 个）加 4 类写路径场景接到真 MySQL 上，共 110 条。H2 用例走 surefire、`*IntegrationTest` 走 failsafe，两条通道按类名显式分流（failsafe 默认 includes 是 `**/IT*`/`**/*IT`/`**/*ITCase`，与项目约定的 `*IntegrationTest` 一个都不匹配，不显式配就会「surefire 全跑掉、failsafe 一条不收」）。实测 H2 与 MySQL 结果**零不一致**。
+- 容器通道的开关 `-Dnextentity.requireContainer=true`：默认没有 Docker 就跳过（本地开发宽进），加上后 Docker 缺失会直接构建失败。`@Testcontainers(disabledWithoutDocker = true)` 只会跳过，让 110 条真方言对拍在无 Docker 的 CI 上悄悄退化成 110 条 skip 而构建照绿——这个开关就是用来堵这条静默降级路径的。
 
 ### Changed
 

@@ -193,7 +193,9 @@ java -jar <同上> report tmp/cov/merged.exec \
 | surefire | 除 `*IntegrationTest` 外的全部（H2） | 无 | — |
 | failsafe | `**/*IntegrationTest.java`（显式 `<includes>`） | Docker + `mysql:8.0.18` | `-DskipITs` |
 
-两个方向都写死：surefire `<excludes>` 排掉 `*IntegrationTest`，failsafe `<includes>` 收这些类。failsafe 的默认 includes 是 `**/IT*`、`**/*IT`、`**/*ITCase`，与项目约定的 `*IntegrationTest` 一个都不匹配——不显式配置时容器用例会被 surefire 跑掉、failsafe 一条也收不到。容器用例统一 `@Tag("container")` + `@Testcontainers(disabledWithoutDocker = true)`：没有可用 Docker 的机器上它们计为 skip 而不是失败，构建仍然成功。改完后的实测条数：surefire 130 条（全 H2，与拆分前一致）、failsafe 110 条（真 MySQL，含 `@Version` 乐观锁、`@Convert`、批量写、悲观锁四类写路径场景）、无可用 Docker 时 failsafe 110 条全部 skip。
+两个方向都写死：surefire `<excludes>` 排掉 `*IntegrationTest`，failsafe `<includes>` 收这些类。failsafe 的默认 includes 是 `**/IT*`、`**/*IT`、`**/*ITCase`，与项目约定的 `*IntegrationTest` 一个都不匹配——不显式配置时容器用例会被 surefire 跑掉、failsafe 一条也收不到。容器用例统一 `@Tag("container")` + `@ExtendWith(MySqlL4Gate.class)`。改完后的实测条数：surefire 130 条（全 H2，与拆分前一致）、failsafe 110 条（真 MySQL，含 `@Version` 乐观锁、`@Convert`、批量写、悲观锁四类写路径场景）。
+
+**容器通道不许静默降级**：`MySqlL4Gate` 是自定义的 `ExecutionCondition`，默认「没有 Docker 就跳过」（本地开发需要这个宽进），但加上 `-Dnextentity.requireContainer=true` 后不再跳过——Docker 缺失时容器在静态初始化阶段启动失败，构建直接变红。**CI 必须带这个属性**，否则 110 条真方言对拍会悄悄变成 110 条 skip，报表上看不出区别，L4 就成了纸面门禁。三条路径都实测过：宽进 + 无 Docker → 110 skip / SUCCESS；强制 + 无 Docker → 18 个类 error / FAILURE；强制 + 有 Docker → 110 pass / SUCCESS。
 
 **变异测试（PIT，已接入三个模块）**：`mvn -pl nextentity-api pitest:mutationCoverage`、`-pl nextentity-core`、`-pl nextentity-jpa`。它只出分数、不新增用例形态，所以是**度量层**而不是五层防线之一。三处阈值都是 **95%**，写在各模块 pom，低于阈值构建失败；都不绑生命周期，只在显式执行时校验。
 
