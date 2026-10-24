@@ -41,12 +41,17 @@ public abstract class PaginationConsistencyTest<T extends Item> extends Consiste
         assertThat(slice.total()).isEqualTo(4L);
     }
 
-    /// 偏移量超过总数时不抛异常。
+    /// 偏移量远超总数时返回空页、不抛异常，且 `total` 仍是过滤后的总行数。
+    ///
+    /// `total` 必须一起钉住：它由**另一条** count 语句算出，只断 `data` 为空的话，
+    /// 「把 offset 混进 count 条件」的实现（`total = max(0, 总数 - offset)`，越界时恒为 0）
+    /// 与「total 取自当前页行数」（恒为 0）都能通过。
     @Test
-    void sliceFarBeyondTotalReturnsEmptyData() {
+    void sliceFarBeyondTotalReturnsEmptyDataWithFullTotal() {
         Slice<T> slice = query().orderBy(idRef()).asc().slice(100, 5);
 
         assertThat(slice.data()).isEmpty();
+        assertThat(slice.total()).isEqualTo(4L);
     }
 
     /// 空结果上的分页：`data` 为空、`total` 为 `0`，且不抛异常。
