@@ -1,7 +1,9 @@
 package io.github.nextentity.core.builder;
 
+import io.github.nextentity.api.Expression;
 import io.github.nextentity.api.Op;
 import io.github.nextentity.api.Path;
+import io.github.nextentity.api.Predicate;
 import io.github.nextentity.core.spec.AggregateFunction;
 import io.github.nextentity.core.spec.AggregateOperand;
 import io.github.nextentity.core.spec.AggregateProjection;
@@ -85,14 +87,23 @@ final class OpInterpreter {
 
     /// 把表达式对象转成操作数：`Path` 取路径链，`Op` 递归取值，其余当字面量。
     ///
+    /// **既不是 `Path` 也不是 `Op` 的 `Expression` 必须拒绝**：`PathRef` 就是这种形态
+    /// （`Expression` 但不是 `Path`），当字面量处理会把 lambda 对象本身绑成参数，
+    /// 条件恒不成立、查询静默返回 0 行。列对列比较请写 `Path.of(B::getY)`。
+    ///
     /// @param argument 表达式或字面量
     /// @return 操作数
+    /// @throws IllegalArgumentException 实参是库无法解释的 `Expression`
     static Operand operand(Object argument) {
         if (argument instanceof Path<?, ?> path) {
             return PathRefs.resolve(path.refs());
         }
         if (argument instanceof Op op) {
             return value(op);
+        }
+        if (argument instanceof Expression<?, ?> expression) {
+            throw new IllegalArgumentException("无法解释的表达式: "
+                    + expression.getClass().getName() + "（只接受 Path、PathRef 经 Path.of(...) 包装后的路径，或聚合/算术值）");
         }
         return Literal.of(argument);
     }
@@ -154,9 +165,14 @@ final class OpInterpreter {
 
     /// 逻辑组合：`AND`/`OR` 的子条件放在 `arguments()` 里。
     ///
-    /// 子条件里可能混入 api 的"被短路条件"（`Conditions.AlwaysTrue`，不实现 `Op`）：
+    /// 子条件里可能混入 api 的"被短路条件"（`Conditions.AlwaysTrue`，是 `Predicate` 但不实现 `Op`）：
     /// - `AND` 下它是恒真，跳过不影响结果；
     /// - `OR` 下它是恒真，**整条 OR 恒真**，必须返回 `Constant.TRUE`（跳过会算错）。
+    ///
+    /// 判据是 `Predicate` 而**不是**"不是 `Op`"：`Path<T, Boolean>` 同样不是 `Op`，但它是
+    /// "把整列当条件"的写法（2.2.3 也不支持，见 `docs/USAGE.md`「布尔字段请写 `.eq(true)`」）。
+    /// 旧实现把这类实参一律当占位，于是 `pred.or(Path.of(Order::getActive))` 返回恒真、
+    /// WHERE 整体消失（连租户边界一起），是静默 fail-open。现在当场拒绝。
     ///
     /// 过滤后一个都不剩时：`AND` 恒真、`OR` 恒假（`or(空集合)` 不能匹配全表）。
     private static Spec logical(LogicalOperator operator, List<Object> arguments) {
@@ -164,6 +180,8 @@ final class OpInterpreter {
         for (Object argument : arguments) {
             if (argument instanceof Op op) {
                 operands.add(toSpec(op));
+            } else if (!isPlaceholder(argument)) {
+                throw notCondition(argument, "and/or 的子条件");
             } else if (operator == LogicalOperator.OR) {
                 return Constant.TRUE;
             }
@@ -172,5 +190,24 @@ final class OpInterpreter {
             return operator == LogicalOperator.OR ? Constant.FALSE : Constant.TRUE;
         }
         return new Logical(operator, operands);
+    }
+
+    /// 是否为 api 的"被短路条件"占位（`Conditions.AlwaysTrue`）：`Predicate` 但不实现 `Op`。
+    ///
+    /// 这是 `where` / `having` / `and` / `or` 唯一允许的非 `Op` 入参；其余非 `Op` 表达式
+    /// （典型是 `Path<T, Boolean>`）一律按 [Expression] 走 [ #notCondition]。
+    static boolean isPlaceholder(Object argument) {
+        return argument instanceof Predicate<?>;
+    }
+
+    /// 非条件表达式被送进条件位置的统一拒绝消息。
+    ///
+    /// @param argument 实参
+    /// @param position 位置描述，例如 `where(...)` / `and/or 的子条件`
+    /// @return 带类型与正确写法的异常
+    static IllegalArgumentException notCondition(Object argument, String position) {
+        String type = argument == null ? "null" : argument.getClass().getName();
+        return new IllegalArgumentException(
+                position + " 只接受条件表达式（api 的 Op）：" + "布尔字段请写 .eq(true)，不支持把字段本身当条件；实际 " + type);
     }
 }

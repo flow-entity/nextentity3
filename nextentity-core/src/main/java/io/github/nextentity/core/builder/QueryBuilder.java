@@ -79,6 +79,8 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     public BaseWhereStep<T, T> where(Expression<T, Boolean> expression) {
         if (expression instanceof Op op) {
             addCondition(OpInterpreter.toSpec(op));
+        } else if (!OpInterpreter.isPlaceholder(expression)) {
+            throw OpInterpreter.notCondition(expression, "where(...)");
         }
         return this;
     }
@@ -180,13 +182,15 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     public BaseWhereStep<T, T> having(Expression<T, Boolean> expression) {
         if (expression instanceof Op op) {
             having = mergeCondition(having, OpInterpreter.toSpec(op));
+        } else if (!OpInterpreter.isPlaceholder(expression)) {
+            throw OpInterpreter.notCondition(expression, "having(...)");
         }
         return this;
     }
 
     @Override
     public Collector<T> lock(LockMode mode) {
-        lock = mode;
+        lock = Objects.requireNonNull(mode, "mode");
         return this;
     }
 

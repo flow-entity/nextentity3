@@ -418,6 +418,18 @@ class QueryBuilderTest {
         assertThat(backend.last().orderBy()).containsExactly(new Ordering(path("name"), Ordering.Direction.ASC));
     }
 
+    /// 与 `distinctPagingKeepsNoIdOrder` 成对：`distinctSelection()` 是「窗口受限 + 无显式排序 +
+    /// 非聚合 + 投影去重」四个条件的合取，这里钉住**非去重投影**这一格仍要补主键排序。
+    /// 少了它，把 `value.distinct()` 判定恒真（等价于"所有投影都不补排序"）不会被任何用例发现。
+    @Test
+    @DisplayName("非去重投影 + 分页：仍补主键排序（去重与否是唯一差别）")
+    void projectionPagingKeepsIdOrder() {
+        query().select(Order::getName).list(5);
+
+        assertThat(((ValueSelection) backend.last().selection()).distinct()).isFalse();
+        assertThat(backend.last().orderBy()).containsExactly(new Ordering(path("id"), Ordering.Direction.ASC));
+    }
+
     // ------------------------------------------------------- groupBy / having
 
     /// 守护 `QueryBuilder:181` 的 `return this` → `null`：变长 `groupBy(refs...)` 只有多列
@@ -491,6 +503,18 @@ class QueryBuilderTest {
         Order first = query().first();
 
         assertThat(first).isSameAs(row);
+        assertThat(backend.last().window()).isEqualTo(new Window(0, 1));
+    }
+
+    /// 与 `first()` 成对：无命中时必须返回 `null`。
+    /// 少了这一格，`rows.isEmpty() ? null : rows.getFirst()` 的判空被去掉（空结果抛
+    /// `NoSuchElementException`）不会被任何用例发现——`first()` 的"查不到返回 null"契约也只在这条上。
+    @Test
+    @DisplayName("first()：无命中时返回 null（不是空列表取首元素异常）")
+    void firstReturnsNullWithoutRows() {
+        backend.rows = List.of();
+
+        assertThat(query().first()).isNull();
         assertThat(backend.last().window()).isEqualTo(new Window(0, 1));
     }
 
@@ -641,6 +665,91 @@ class QueryBuilderTest {
                 .hasMessageContaining("不是方法引用")
                 .hasMessageContaining("EntityPath.of(A::getB).get(C::getD)");
     }
+    // ------------------------------------------- 条件位置的契约拒绝（fail-closed）
+
+    /// `Path<T, Boolean>` 是 `Expression<T, Boolean>` 但不是条件（不是 `Op`）。
+    /// 2.2.3 起就不支持"把字段本身当条件"（`docs/USAGE.md`：布尔字段请写 `.eq(true)`），
+    /// 因此送进条件位置必须**当场拒绝**。旧实现用 `instanceof Op` 当唯一入口、其余静默跳过，
+    /// 于是 `where(flag)` 会退化成无条件（返回全表），租户/权限边界一起消失。
+    @Test
+    @DisplayName("where(布尔字段路径)：拒绝，而不是静默丢掉整条 WHERE")
+    void whereBooleanPathRejected() {
+        Expression<Order, Boolean> flag = Path.of(Order::getActive);
+
+        assertThatThrownBy(() -> query().where(flag).list())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("where(...)")
+                .hasMessageContaining("布尔字段请写 .eq(true)");
+    }
+
+    @Test
+    @DisplayName("having(布尔字段路径)：拒绝，而不是丢掉 HAVING 返回全部组")
+    void havingBooleanPathRejected() {
+        Expression<Order, Boolean> flag = Path.of(Order::getActive);
+
+        assertThatThrownBy(() -> query().groupBy(Order::getOrgId).having(flag))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("having(...)")
+                .hasMessageContaining("布尔字段请写 .eq(true)");
+    }
+
+    /// `null` 也是"不是条件"的一种：旧实现同样静默丢掉整条 WHERE。
+    /// 消息里必须点名"实际 null"，否则调用方只能看到一句泛泛的"不是条件"。
+    @Test
+    @DisplayName("where(null)：拒绝，消息点名实际类型是 null")
+    void whereNullRejected() {
+        assertThatThrownBy(
+                        () -> query().where((Expression<Order, Boolean>) null).list())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("where(...)")
+                .hasMessageContaining("实际 null");
+    }
+
+    /// OR 下的静默降级最危险：非条件子项被当成恒真 → 整条 OR 恒真 → 前半条一起消失。
+    @Test
+    @DisplayName("or(布尔字段路径)：拒绝，而不是把整条 OR 升级成恒真")
+    void orBooleanPathRejected() {
+        Expression<Order, Boolean> flag = Path.of(Order::getActive);
+
+        assertThatThrownBy(() ->
+                        query().where(Path.of(Order::getOrgId).eq(1L).or(flag)).list())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("and/or 的子条件");
+    }
+
+    @Test
+    @DisplayName("and(布尔字段路径)：拒绝，而不是静默削弱该子条件")
+    void andBooleanPathRejected() {
+        Expression<Order, Boolean> flag = Path.of(Order::getActive);
+
+        assertThatThrownBy(() ->
+                        query().where(Path.of(Order::getOrgId).eq(1L).and(flag)).list())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("and/or 的子条件");
+    }
+
+    /// 列对列比较必须写 `Path.of(B::getY)`：裸 `PathRef` 是 `Expression` 但不是 `Path`，
+    /// 当字面量处理会把 lambda 对象本身绑成参数，条件恒不成立、查询静默返回 0 行。
+    @Test
+    @DisplayName("eq(裸 PathRef)：拒绝，而不是把 lambda 绑成参数")
+    void rawPathRefOperandRejected() {
+        PathRef<Order, Integer> ageRef = Order::getAge;
+
+        assertThatThrownBy(
+                        () -> query().where(Path.of(Order::getAge).eq(ageRef)).list())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("无法解释的表达式")
+                .hasMessageContaining("PathRef");
+    }
+
+    @Test
+    @DisplayName("lock(null)：拒绝，而不是静默返回未加锁的行")
+    void lockNullRejected() {
+        assertThatThrownBy(() -> query().lock(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("mode");
+    }
+
     // ---------------------------------------------------------------- fixture
 
     private static AttributePath path(String name) {
@@ -745,6 +854,7 @@ class QueryBuilderTest {
         private Long debitId;
         private String creditType;
         private String debitType;
+        private Boolean active;
 
         @SuppressWarnings("unused")
         private static final class Customer {
@@ -809,6 +919,10 @@ class QueryBuilderTest {
 
         public String getDebitType() {
             return debitType;
+        }
+
+        public Boolean getActive() {
+            return active;
         }
 
         public Customer getCustomer() {
