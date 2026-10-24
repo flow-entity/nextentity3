@@ -58,22 +58,38 @@ public abstract class DistinctConsistencyTest<T extends Item> extends Consistenc
 
         assertThat(rows).hasSize(4);
         assertThat(rows.getFirst().size()).isEqualTo(3);
-        // 没有 orderBy 时行序由数据库决定，只能按集合断言列 0 的取值
+        // 三列**逐列**钉住：只断列 0 的话，列 1 / 列 2 取错（错列、少列、错位）照样绿。
+        // 顺序无关是查询本身的语义（`distinct()` 投影不自动按主键排序），见 `Collector` 类注释。
         assertThat(rows)
-                .extracting(Tuple3::get0)
-                .containsExactlyInAnyOrder(ItemStatus.NEW, ItemStatus.ACTIVE, ItemStatus.DONE, ItemStatus.NEW);
+                .containsExactlyInAnyOrder(
+                        new Tuple3<>(ItemStatus.NEW, null, 10),
+                        new Tuple3<>(ItemStatus.ACTIVE, NOTE_1, 10),
+                        new Tuple3<>(ItemStatus.DONE, NOTE_2, null),
+                        new Tuple3<>(ItemStatus.NEW, null, 5));
     }
 
-    /// 去重投影 + 分页：`list(n)` / `first()` / `slice(o, l)` 必须可执行（原因见 `QueryBuilder#spec`）。
-    /// 断言只依赖去重语义与行数，不依赖行序。
+    /// 去重投影 + 分页：`list(n)` / `first()` / `slice(o, l)` 必须可执行（原因见 `QueryBuilder#spec`），
+    /// 且三者取到的值都必须落在**同一次 `list()` 的去重结果**里。
+    ///
+    /// 为什么不是 `containsExactly`：`distinct()` 投影不自动按主键排序（见 `Collector` 类注释），
+    /// 行序由数据库决定，所以能钉的精确口径是「取值集合 + 无重复 + 个数」，行序不在断言范围内。
+    /// 只断 `hasSize(2)` / `isNotNull()` 时，返回重复行、返回错列、返回去重前的行都照样通过。
     @Test
     void distinctSurvivesPaginationWithoutExplicitOrder() {
-        assertThat(query().distinct().select(noteRef()).list(2)).hasSize(2);
-        // `note` 可空：去重后有一组是 NULL，`first()` 可能正好取到它，因此用非空列 `status` 验非空
-        assertThat(query().distinct().select(statusRef()).first()).isNotNull();
+        List<String> distinctNotes = query().distinct().select(noteRef()).list();
+        assertThat(distinctNotes).hasSize(3).containsExactlyInAnyOrder(NOTE_1, NOTE_2, null);
+
+        List<String> firstTwo = query().distinct().select(noteRef()).list(2);
+        assertThat(firstTwo).hasSize(2).doesNotHaveDuplicates().isSubsetOf(NOTE_1, NOTE_2, null);
+
+        // `note` 可空：去重后有一组是 NULL，`first()` 可能正好取到它，因此换非空列 `status` 验取值
+        List<ItemStatus> distinctStatuses =
+                query().distinct().select(statusRef()).list();
+        assertThat(distinctStatuses).containsExactlyInAnyOrder(ItemStatus.NEW, ItemStatus.ACTIVE, ItemStatus.DONE);
+        assertThat(query().distinct().select(statusRef()).first()).isIn(distinctStatuses.toArray());
 
         Slice<String> slice = query().distinct().select(noteRef()).slice(0, 2);
-        assertThat(slice.data()).hasSize(2);
+        assertThat(slice.data()).hasSize(2).doesNotHaveDuplicates().isSubsetOf(NOTE_1, NOTE_2, null);
         // total 与 `count()` 同口径，而 `COUNT(DISTINCT)` 不计 NULL：三组（NULL / n1 / n2）里只算 2。
         // 这是已知口径（见 `Slice#total`），钉住以免被当成回归修掉。
         assertThat(slice.total()).isEqualTo(2);
