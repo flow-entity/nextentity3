@@ -19,8 +19,18 @@ import org.junit.jupiter.api.Test;
 /// 为什么不复用 `ProjectionConsistencyTest` 的手算常量：那里的期望值只有一种来源（人脑）。
 /// 列序写反时「常量」与「期望」错在同一处，用例照样绿。这里两条路径不相交：
 /// - 真库一侧：`select(...)` / `project(...)` 渲染成 SQL，由 Hibernate 装配成 `Tuple2` / `Tuple3` / 映射器结果；
-/// - 内存一侧：[Oracle] 只读 {@link Fixtures#ITEM_ROWS} 的字段，用 `new Tuple2<>(row.id(), row.name())`
+/// - 内存一侧：[Oracle] 只读 {@link #fixtureRows()} 的字段，用 `new Tuple2<>(row.id(), row.name())`
 ///   这类构造拼期望值，不调 nextentity 的任何生产代码，也不回读后端结果——否则就是自己证明自己。
+///
+/// **内存侧的行数据一律取 {@link #fixtureRows()}，不写死 {@link Fixtures#ITEM_ROWS}**：播种走的是
+/// `@BeforeEach seed()` → `support().seedData(fixtureRows())`，而 `fixtureRows()` 可被子类覆写；
+/// 内存侧若钉死默认夹具，覆写之后就变成「灌的是 A、算的是 B」，差分静默假绿、永远不红。
+/// 行数据是**输入**不是答案，从同一入口取不损害 oracle 的独立性——独立性来自
+/// 「[Oracle] 不调 nextentity 的任何生产代码、也不回读后端结果」。
+///
+/// 唯一写死的是各处 **oracle 自检**里的具体主键（如 `where score >= 20` 期望 `[2, 3]`、
+/// `where score is null` 期望 `[4]`）：它们钉的是**默认夹具**的形状，用来证明期望值不是退化的。
+/// 子类覆写 `fixtureRows()` 时这些自检会故意变红，提醒把自检一起改成新夹具的形状。
 ///
 /// 覆盖的语义（每条都能被某一类 bug 证伪）：
 /// - 两列 / 三列的**列序**：实参传反，或装配时按下标取错列（`get1()` 取到第一列）；
@@ -47,11 +57,11 @@ public abstract class ProjectionDifferentialTest<T extends Item> extends Consist
                 .orderBy(idRef())
                 .asc()
                 .list();
-        List<Tuple2<Long, String>> expectedIdFirst = Oracle.idThenName(Fixtures.ITEM_ROWS);
-        List<Tuple2<String, Long>> expectedNameFirst = Oracle.nameThenId(Fixtures.ITEM_ROWS);
+        List<Tuple2<Long, String>> expectedIdFirst = Oracle.idThenName(fixtureRows());
+        List<Tuple2<String, Long>> expectedNameFirst = Oracle.nameThenId(fixtureRows());
 
         // oracle 自检：期望值逐行可分辨，否则「列序被忽略」也可能凑过去。
-        assertThat(expectedIdFirst).hasSize(Fixtures.ITEM_ROWS.size()).doesNotHaveDuplicates();
+        assertThat(expectedIdFirst).hasSize(fixtureRows().size()).doesNotHaveDuplicates();
         assertThat(idFirst).containsExactlyElementsOf(expectedIdFirst);
         assertThat(nameFirst).containsExactlyElementsOf(expectedNameFirst);
     }
@@ -67,11 +77,11 @@ public abstract class ProjectionDifferentialTest<T extends Item> extends Consist
                 .orderBy(idRef())
                 .asc()
                 .list();
-        List<Tuple3<Long, String, Integer>> expected = Oracle.idThenNameThenScore(Fixtures.ITEM_ROWS);
+        List<Tuple3<Long, String, Integer>> expected = Oracle.idThenNameThenScore(fixtureRows());
 
         // oracle 自检：期望值里既有 null 也有非 null 的 score，`null` 行没被内存侧漏掉。
         assertThat(expected)
-                .hasSize(Fixtures.ITEM_ROWS.size())
+                .hasSize(fixtureRows().size())
                 .extracting(Tuple3::get2)
                 .containsNull();
         assertThat(rows).containsExactlyElementsOf(expected);
@@ -85,10 +95,10 @@ public abstract class ProjectionDifferentialTest<T extends Item> extends Consist
     @Test
     void singleColumnProjectionKeepsNullRows() {
         List<Integer> scores = query().select(scoreRef()).orderBy(idRef()).asc().list();
-        List<Integer> expected = Oracle.scores(Fixtures.ITEM_ROWS);
+        List<Integer> expected = Oracle.scores(fixtureRows());
 
         // oracle 自检：`null` 行必须真的在期望值里，否则这条测不出「null 行被过滤」。
-        assertThat(expected).hasSize(Fixtures.ITEM_ROWS.size()).containsNull();
+        assertThat(expected).hasSize(fixtureRows().size()).containsNull();
         assertThat(scores).containsExactlyElementsOf(expected);
     }
 
@@ -103,10 +113,10 @@ public abstract class ProjectionDifferentialTest<T extends Item> extends Consist
                 .orderBy(idRef())
                 .asc()
                 .list();
-        List<Tuple2<Long, String>> expected = Oracle.idThenName(Oracle.withScoreAtLeast(Fixtures.ITEM_ROWS, 20));
+        List<Tuple2<Long, String>> expected = Oracle.idThenName(Oracle.withScoreAtLeast(fixtureRows(), 20));
 
         // oracle 自检：过滤必须真的去掉行（既非空也不是全表），否则「where 被忽略」照样绿。
-        assertThat(expected).isNotEmpty().hasSizeLessThan(Fixtures.ITEM_ROWS.size());
+        assertThat(expected.stream().map(Tuple2::get0).toList()).containsExactly(2L, 3L);
         assertThat(rows).containsExactlyElementsOf(expected);
     }
 
@@ -122,13 +132,11 @@ public abstract class ProjectionDifferentialTest<T extends Item> extends Consist
                 .orderBy(idRef())
                 .asc()
                 .list();
-        List<Tuple3<Long, String, Integer>> expected =
-                Oracle.idThenNameThenScore(Oracle.withNullScore(Fixtures.ITEM_ROWS));
+        List<Tuple3<Long, String, Integer>> expected = Oracle.idThenNameThenScore(Oracle.withNullScore(fixtureRows()));
 
-        assertThat(expected)
-                .isNotEmpty()
-                .hasSizeLessThan(Fixtures.ITEM_ROWS.size())
-                .allSatisfy(row -> assertThat(row.get2()).isNull());
+        // oracle 自检：默认夹具里 `score is null` 只有 id=4，且它的投影值必须是 null。
+        assertThat(expected.stream().map(Tuple3::get0).toList()).containsExactly(4L);
+        assertThat(expected).allSatisfy(row -> assertThat(row.get2()).isNull());
         assertThat(rows).containsExactlyElementsOf(expected);
     }
 
@@ -143,11 +151,10 @@ public abstract class ProjectionDifferentialTest<T extends Item> extends Consist
                 .orderBy(nameRef())
                 .asc()
                 .list(2);
-        List<Tuple2<String, Long>> expected =
-                Oracle.first(Oracle.nameThenId(Oracle.sortedByName(Fixtures.ITEM_ROWS)), 2);
+        List<Tuple2<String, Long>> expected = Oracle.first(Oracle.nameThenId(Oracle.sortedByName(fixtureRows())), 2);
 
         // oracle 自检：截断真的生效（期望比全表短），否则「limit 被忽略」也能过。
-        assertThat(expected).hasSize(2).isNotEqualTo(Oracle.nameThenId(Oracle.sortedByName(Fixtures.ITEM_ROWS)));
+        assertThat(expected).hasSize(2).isNotEqualTo(Oracle.nameThenId(Oracle.sortedByName(fixtureRows())));
         assertThat(rows).containsExactlyElementsOf(expected);
     }
 
@@ -161,10 +168,9 @@ public abstract class ProjectionDifferentialTest<T extends Item> extends Consist
                 .orderBy(idRef())
                 .asc()
                 .list();
-        List<Tuple4<Long, String, Integer, ItemStatus>> expected =
-                Oracle.idThenNameThenScoreThenStatus(Fixtures.ITEM_ROWS);
+        List<Tuple4<Long, String, Integer, ItemStatus>> expected = Oracle.idThenNameThenScoreThenStatus(fixtureRows());
 
-        assertThat(expected).hasSize(Fixtures.ITEM_ROWS.size()).doesNotHaveDuplicates();
+        assertThat(expected).hasSize(fixtureRows().size()).doesNotHaveDuplicates();
         assertThat(rows).containsExactlyElementsOf(expected);
     }
 
@@ -176,7 +182,7 @@ public abstract class ProjectionDifferentialTest<T extends Item> extends Consist
     void customMapperAssignsEveryField() {
         List<ItemView> rows =
                 query().project(new ItemViewMapper()).orderBy(idRef()).asc().list();
-        List<ItemView> expected = Fixtures.ITEM_ROWS.stream().map(ItemView::of).toList();
+        List<ItemView> expected = fixtureRows().stream().map(ItemView::of).toList();
 
         // oracle 自检：期望值覆盖空值与非空值两种形态，字段错位才会被看出。
         assertThat(expected).extracting(ItemView::score).containsNull();
