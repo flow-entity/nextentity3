@@ -250,9 +250,10 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 `jpa` 的门禁原先只覆盖 `jpa.compile.*`（49 个变异），理由是「exec/meta 每个变异都要起 Hibernate，太慢」；实测全模块只需 28s，该理由不成立，已扩到全模块并把阈值从 90 提到 95。
 
-**变异组本身的强度也会骗人（`STRONGER` 组，一次性测量，不进流水线）**：默认 `DEFAULTS` 组只做条件取反、算术值替换、返回值常量替换三类，而「整条 `if (...)` 被换成恒真/恒假」与「操作符互换」都在 `STRONGER` 里——恰好是 fail-open 缺陷的形状。用 `-Dmutators=STRONGER -DmutationThreshold=0` 跑四个模块，比 `DEFAULTS` 多出 20 条存活体（api 3 / core 5 / jpa 13 / spring 0）。逐条核对后 **18 条是被语义套件杀死的**（模块级 PIT 只看本模块 `src/test`，见上「度量口径」），剩下的两条已判定为等价变异：
+**变异组本身的强度也会骗人（`STRONGER` 组，一次性测量，不进流水线）**：默认 `DEFAULTS` 组只做条件取反、算术值替换、返回值常量替换三类，而「整条 `if (...)` 被换成恒真/恒假」与「操作符互换」都在 `STRONGER` 里——恰好是 fail-open 缺陷的形状。用 `-Dmutators=STRONGER -DmutationThreshold=0` 跑四个模块，比 `DEFAULTS` 多出 20 条存活体（api 3 / core 5 / jpa 13 / spring 0）。逐条核对后 **18 条是被语义套件杀死的**（模块级 PIT 只看本模块 `src/test`，见上「度量口径」），剩下 2 条 + 上一节已有的 2 条已判定为等价变异（api 的两条在下面第 1、2 项，`jpa` 的 13 条全被语义套件覆盖）：
 
 - `api/Conditions:101` 的 `if (suppressed) return alwaysTrue();` 整个分支：`suppressed == true` 只由 `AlwaysTrue.or(PathRef)` 产生（`Conditions:196` 显式传 `parent = null`），而 `skip()` 的 `parent == null` 分支返回的是同一个 `ALWAYS_TRUE` 单例，两条路径的可观测结果完全相同。
+- `api/Conditions:104` 的 `return parent == null ? alwaysTrue() : parent;` 被换成 `return parent;`：`skip()` 只有 `or(PathRef)` 造出的链才走得到，而 `PathOperatorValue` 的两个构造点里，传 `parent = null` 的那个（`Conditions:196`）同时 `suppressed = true`——执行到第 104 行时 `parent` 必然非 `null`，`parent == null` 这一支是死代码。**已实验证实**：注入后跑 `-pl nextentity-api test -Dtest=PredicateOrOperatorTest` 全绿（41/41）。
 - `core/spec/Window.limited()` 的 `return limit != null` 被换成 `return offset != null`：该方法全仓库只在 `QueryBuilder#spec(Window)` 读一次，而到达那里的 `Window` 要么两字段皆 `null`（`Window.NONE`），要么两字段皆非 `null`（`first()` / `limit(n)` / `slice(offset, limit)`），两种写法对该判定等价。
 - `core/builder/ImmutableList.ofIterable` 的 `iterable instanceof Collection<?> sized` 同理（只影响新建 `ArrayList` 的初始容量）。
 
@@ -270,7 +271,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 同时暴露一个门禁漏洞：**默认 `mvn test` 在第一个失败的模块就停**，12 个缺陷的「先红」全是既有 `core`/`jpa` 单测，`nextentity-tests-jpa` 的 L4 真库层在默认流水线里根本没跑；必须加 `-Dmaven.test.failure.ignore=true` 才看得到分层结果。这也说明「跑绿了」与「每一层都跑了」是两件事，夜间档要按层落日志、按层判读。
 
-**第二轮故障注入（36 条，覆盖面换成 api 短路语义 / 分页与投影的静默降级 / 写侧版本与影响行数）**：脚本 `tmp/scripts/fault-campaign.ps1`（一次性本地产物，不入库），单个 `git worktree add ../nextentity3-semantic-pit`，逐条「`Get-Content -Raw` 精确替换 → `mvnw -pl nextentity-api,nextentity-core,nextentity-jpa,nextentity-tests-jpa test -DskipITs -fae` → `git checkout -- .` 还原」，按退出码判 KILLED / SURVIVED，另按日志里的 `COMPILATION ERROR` 判 PATCH-BROKEN（注入本身把代码写坏，不算测试漏洞）。结果 **33 杀 / 2 等价 / 1 脚本自身编译失败**，唯二存活的是 api `Conditions#skip()` 的两条分支：一条是等价变异（`suppressed ⇒ parent == null`，见上「变异组本身的强度」），一条是**真盲区**——无 parent 时返回 `null` 而非恒真占位，此前没有任何用例区分「恒真占位」与 `null`（两者在 `where(null)` 与 `where(占位)` 下都不产生条件）。已补 `PredicateOrOperatorTest#standaloneSkipReturnsPlaceholderNotNull` 钉住单例身份与"链上追加条件仍短路"。
+**第二轮故障注入（36 条，覆盖面换成 api 短路语义 / 分页与投影的静默降级 / 写侧版本与影响行数）**：脚本 `tmp/scripts/fault-campaign.ps1`（一次性本地产物，不入库），单个 `git worktree add ../nextentity3-semantic-pit`，逐条「`Get-Content -Raw` 精确替换 → `mvnw -pl nextentity-api,nextentity-core,nextentity-jpa,nextentity-tests-jpa test -DskipITs -fae` → `git checkout -- .` 还原」，按退出码判 KILLED / SURVIVED，另按日志里的 `COMPILATION ERROR` 判 PATCH-BROKEN（注入本身把代码写坏，不算测试漏洞）。结果 **33 杀 / 3 等价 / 1 脚本自身编译失败**，**零真盲区**。存活的三条都在 api `Conditions#skip()`：`if (suppressed) return alwaysTrue();` 与末行 `return parent == null ? alwaysTrue() : parent;` 的两支。判等价的过程值得记下来，因为它差点被当成缺口：第一支靠「`suppressed ⇒ parent == null`」推出来，第二支一开始按「无 parent 时会返回 `null`」判成**真盲区**并补了用例，结果把末行改成 `return parent;` 后那条新用例仍然全绿——查下去才发现 `skip()` 只有 `or(PathRef)` 造出来的链走得到，而两个构造点一个传 `this`（`Conditions:156`）、一个传 `null` 但 `suppressed = true`（`Conditions:196`），`parent == null` 这一支是死代码。**结论：等价变异只能靠"注入后跑一遍"证明，不能靠读代码论证**——所以那条 api 用例保留了，但改为钉另一半（`PathValues` 自己的短路必须返回恒真占位而不是 `null`，否则 `Path.of(X).eqIfNotNull(null).or(Y::getScore)` 会 NPE），javadoc 里写明"`skip()` 末行是等价变异"。
 
 这轮还确认了两件此前只有猜测的事：
 

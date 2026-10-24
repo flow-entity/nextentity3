@@ -109,12 +109,19 @@ class PredicateOrOperatorTest {
         assertThat(alwaysTrue.or(Order::getScore).eqIfNotNull(5)).isSameAs(alwaysTrue);
     }
 
-    /// 短路占位必须是**非 null 的恒真占位**，不能是 `null`：
-    /// `skip()` 有三个语义分支（整链已恒真 / 无 parent / 有 parent），前两支都返回恒真占位。
-    /// 返回 `null` 时，`where(...)` 那一层碰巧也"看不到条件"，但调用方一旦继续链式组合
-    /// （`Path.of(X).eqIfNotNull(null).or(Y::getScore)`）就会 NPE——这是纯 api 侧就能钉住的契约。
+    /// 独立路径（`Path.of(...)`）的短路必须返回**非 null 的恒真占位**，不能是 `null`。
+    ///
+    /// 这一格走的是 `PathValues` 自己的短路（`value == null ? Conditions.alwaysTrue() : ...`），
+    /// 不是 `Conditions.AbstractOperators#skip()`——后者只有 `or(PathRef)` 造出来的链才走得到，
+    /// 而那条链的 `parent == null` 分支不可达（两个构造点：`Conditions:156` 传 `this`、
+    /// `Conditions:196` 传 `null` 且 `suppressed = true` 已提前返回），所以把 `skip()` 末行改成
+    /// `return parent;` 是**等价变异**（已实验：改完本类全绿）。
+    ///
+    /// 保留这条用例的理由是另一半：`PathValues` 的短路若返回 `null`，`where(...)` 那一层碰巧
+    /// 也"看不到条件"，但调用方一旦继续链式组合（`Path.of(X).eqIfNotNull(null).or(Y::getScore)`）
+    /// 就会 NPE——这是纯 api 侧就能钉住的契约。
     @Test
-    @DisplayName("无 parent 的短路：返回恒真占位而非 null，且仍可继续链式组合")
+    @DisplayName("独立路径的短路：返回恒真占位而非 null，且仍可继续链式组合")
     void standaloneSkipReturnsPlaceholderNotNull() {
         Predicate<Order> skipped = Path.of(Order::getAge).eqIfNotNull(null);
 
