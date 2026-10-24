@@ -13,6 +13,7 @@ import io.github.nextentity.api.model.Tuple;
 import io.github.nextentity.api.model.Tuple2;
 import io.github.nextentity.api.model.Tuple3;
 import io.github.nextentity.api.model.Tuple4;
+import io.github.nextentity.api.model.Tuple6;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
@@ -45,6 +46,9 @@ import org.junit.jupiter.api.TestFactory;
 /// - 投影 + `orderBy` + `list(n)`：截断发生在排序之后，且不改变列序；
 /// - 映射器家族（`ProjectionMappers.select(...)` 四列、自定义五列映射器）：**每个字段**都对位，
 ///   而不是只断言对象非空；
+/// - 六列投影（`ProjectionMappers.select` 的 `Tuple6` 路径）：四列以内看不见的「后两列互换」
+///   在这格暴露——`score`/`score2` 同为 `Integer`、`note`/`status` 类型不同但位置相邻，
+///   错位后强转不一定报错，只有逐元素比对才看得出；
 /// - `distinct()` 修饰投影（单列 / 两列 / 三列 / 映射器四条路径）：去重后的值域与顺序由内存
 ///   用 `LinkedHashSet` 独立算出，见 [DistinctOracle]；
 /// - `distinct()` + `slice` / `count` / 聚合：`total` 与 `count` 的口径是 `COUNT(DISTINCT 列)`，
@@ -204,6 +208,67 @@ public abstract class ProjectionDifferentialTest<T extends Item> extends Consist
         assertThat(expected).extracting(ItemView::score).containsNull();
         assertThat(expected).extracting(ItemView::note).containsNull();
         assertThat(rows).containsExactlyElementsOf(expected);
+    }
+
+    /// 六列投影（`ProjectionMappers.select` 的 `Tuple6` 路径）：列序必须与实参顺序逐位一致。
+    ///
+    /// 为什么非要到六列：四列以内「首列对、其余错位」常被首列断言掩盖；六列是唯一能把
+    /// 「前四列正确、后两列互换」暴露出来的规模。`score`/`score2` 同为 `Integer` 且相邻、
+    /// `note`/`status` 相邻，装配时按下标取错一格不会抛异常，只有逐元素比对才看得见。
+    ///
+    /// 两种形态共用同一份内存期望：`ProjectionMappers.select(...)` 与 [SixColumnMapper#expressions()]
+    /// 的列序相同，所以映射结果必须逐字段相等——其中一条把列序写歪，两者立刻分叉。
+    ///
+    /// 为什么不用 `@ParameterizedTest`：`nextentity-testing` 的编译类路径上没有
+    /// `junit-jupiter-params`，参数化只能走 `@TestFactory` + `DynamicTest`。
+    @TestFactory
+    Stream<DynamicTest> everySixColumnProjectionMatchesMemoryOracle() {
+        return Stream.of(
+                dynamicTest("六列元组 `ProjectionMappers.select` 逐列对位", () -> {
+                    List<Tuple6<Long, String, Integer, Integer, String, ItemStatus>> expected =
+                            Oracle.sixColumns(fixtureRows());
+                    List<Tuple6<Long, String, Integer, Integer, String, ItemStatus>> rows = query().project(
+                                    ProjectionMappers.select(
+                                            Path.of(idRef()),
+                                            Path.of(nameRef()),
+                                            Path.of(scoreRef()),
+                                            Path.of(score2Ref()),
+                                            Path.of(noteRef()),
+                                            Path.of(statusRef())))
+                            .orderBy(idRef())
+                            .asc()
+                            .list();
+
+                    // oracle 自检：夹具里 score / score2 / note 都含 null，六列期望不是退化的常量表
+                    assertThat(expected).extracting(Tuple6::get2).containsNull();
+                    assertThat(expected).extracting(Tuple6::get3).containsNull();
+                    assertThat(expected).extracting(Tuple6::get4).containsNull();
+                    assertThat(rows).containsExactlyElementsOf(expected);
+                    // `get(int)` 与 `get0()..get5()` 必须是同一份数据：下标分发写错时这里先红
+                    assertThat(rows).allSatisfy(row -> {
+                        assertThat(row.size()).isEqualTo(6);
+                        assertThat(row.get(0)).isEqualTo(row.get0());
+                        assertThat(row.get(1)).isEqualTo(row.get1());
+                        assertThat(row.get(2)).isEqualTo(row.get2());
+                        assertThat(row.get(3)).isEqualTo(row.get3());
+                        assertThat(row.get(4)).isEqualTo(row.get4());
+                        assertThat(row.get(5)).isEqualTo(row.get5());
+                    });
+                }),
+                dynamicTest("六列自定义映射器逐字段对位", () -> {
+                    List<ItemDetail> expected =
+                            fixtureRows().stream().map(ItemDetail::of).toList();
+                    List<ItemDetail> rows = query().project(new SixColumnMapper())
+                            .orderBy(idRef())
+                            .asc()
+                            .list();
+
+                    // oracle 自检：相邻的 score / score2 都含 null，错位会被记录比较抓到
+                    assertThat(expected).extracting(ItemDetail::score).containsNull();
+                    assertThat(expected).extracting(ItemDetail::score2).containsNull();
+                    assertThat(expected).extracting(ItemDetail::note).containsNull();
+                    assertThat(rows).containsExactlyElementsOf(expected);
+                }));
     }
 
     /// `distinct()` 单列 / 多列 / 映射器四条路径的差分格：期望值全部由 [DistinctOracle] 从夹具原始字段
@@ -427,6 +492,65 @@ public abstract class ProjectionDifferentialTest<T extends Item> extends Consist
         }
     }
 
+    /// 六列映射结果：字段名与列序一一对应（`score2` 紧跟 `score`），让「相邻同类型列错位」
+    /// 在失败信息里直接显示成 `expected: score2=5 but was: score2=null`。
+    ///
+    /// @param id     主键
+    /// @param name   名称
+    /// @param score  分数
+    /// @param score2 第二分数
+    /// @param note   备注
+    /// @param status 状态
+    private record ItemDetail(long id, String name, Integer score, Integer score2, String note, ItemStatus status) {
+
+        /// 内存侧构造：只读夹具原始字段，不经任何生产代码。
+        ///
+        /// @param row 夹具原始行
+        /// @return 期望的映射结果
+        static ItemDetail of(FixtureRow row) {
+            return new ItemDetail(row.id(), row.name(), row.score(), row.score2(), row.note(), row.status());
+        }
+    }
+
+    /// 把六列映射成 [ItemDetail]：下标常量紧邻 [ProjectionMapper#expressions()]，
+    /// 让「列序 ↔ 取值下标」的错位在审查与失败信息里都看得见；`map` 里的强转同时钉住每列类型。
+    private final class SixColumnMapper implements ProjectionMapper<T, ItemDetail> {
+
+        private static final int IDX_ID = 0;
+
+        private static final int IDX_NAME = 1;
+
+        private static final int IDX_SCORE = 2;
+
+        private static final int IDX_SCORE2 = 3;
+
+        private static final int IDX_NOTE = 4;
+
+        private static final int IDX_STATUS = 5;
+
+        @Override
+        public List<Expression<T, ?>> expressions() {
+            return List.of(
+                    Path.of(idRef()),
+                    Path.of(nameRef()),
+                    Path.of(scoreRef()),
+                    Path.of(score2Ref()),
+                    Path.of(noteRef()),
+                    Path.of(statusRef()));
+        }
+
+        @Override
+        public ItemDetail map(Tuple row) {
+            return new ItemDetail(
+                    (Long) row.get(IDX_ID),
+                    (String) row.get(IDX_NAME),
+                    (Integer) row.get(IDX_SCORE),
+                    (Integer) row.get(IDX_SCORE2),
+                    (String) row.get(IDX_NOTE),
+                    (ItemStatus) row.get(IDX_STATUS));
+        }
+    }
+
     /// 单列映射器：`expressions()` 只有 `note` 一列，`map` 取第 0 列。
     ///
     /// 用单列映射器是为了让「`distinct()` 在 `project(...)` 路径上是否生效」与列序无关：
@@ -469,6 +593,19 @@ public abstract class ProjectionDifferentialTest<T extends Item> extends Consist
         static List<Tuple4<Long, String, Integer, ItemStatus>> idThenNameThenScoreThenStatus(List<FixtureRow> rows) {
             return rows.stream()
                     .map(row -> new Tuple4<>(row.id(), row.name(), row.score(), row.status()))
+                    .toList();
+        }
+
+        /// 六列投影的期望值：**按实参列序** `id, name, score, score2, note, status` 逐列装配。
+        ///
+        /// 列序即契约：`select` 的第 n 个实参必须落在 `Tuple6` 的第 n 个分量上，
+        /// 所以这里用位置化的 `new Tuple6<>(...)` 而不是「按字段名装配」的 map。
+        ///
+        /// @param rows 夹具原始行
+        /// @return 与行一一对应的六列元组
+        static List<Tuple6<Long, String, Integer, Integer, String, ItemStatus>> sixColumns(List<FixtureRow> rows) {
+            return rows.stream()
+                    .map(row -> new Tuple6<>(row.id(), row.name(), row.score(), row.score2(), row.note(), row.status()))
                     .toList();
         }
 
