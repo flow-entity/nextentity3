@@ -16,7 +16,7 @@ import org.junit.jupiter.api.TestFactory;
 /// 谓词（条件）矩阵的**差分** oracle：`eq` / `ne` / `gt` / `ge` / `lt` / `le` / `between` /
 /// `notBetween` / `in` / `notIn` / `isNull` / `isNotNull` / `contains` / `like` / 枚举 `eq` /
 /// `and` / `or` / `not`，加上条件化算子 `eqIfNotNull` / `eqIfNotEmpty` / `containsIfNotNull` /
-/// `inIfNotNull`，共 27 格，每格一条动态用例。
+/// `inIfNotNull`，共 33 格，每格一条动态用例。
 ///
 /// 差分分工（两条路径不相交）：
 /// - 真库一侧：`query().where(<后端谓词>).orderBy(id).asc()`，渲染走生产代码的谓词编译路径；
@@ -50,6 +50,13 @@ import org.junit.jupiter.api.TestFactory;
 /// 「不提供的能力」把替代写成 `like("v%")` / `like("%v")`），所以这两格的后端一侧是
 /// `like("app%")` / `like("%berry")`，内存一侧是前缀 / 后缀匹配。
 ///
+/// **字符串格刻意避开「全是前缀」的取值**：`contains` 渲染成 `%value%`；如果夹具里所有名字都以该
+/// 子串开头（上一版只用了 `"app"`，而 `apple` / `apple pie` 都以它开头），`%app%` 与 `app%` 在
+/// 夹具上同解，把 `contains` 误写成前缀匹配的缺陷（故障注入实验 #10）照样绿。因此这里补了
+/// 中间命中（`"ppl"` / `"nana"`）、后缀命中（`"pie"`）、零命中（`MISSING_NAME`）以及
+/// `like("%ppl%")` / `like("%ana")` 两个对照格：这些格靠**确定性取值**就能抓住「少一个通配符 /
+/// 前后缀拼错」，不依赖随机抽签。
+///
 /// @param <T> 后端实体类型
 public abstract class PredicateDifferentialTest<T extends Item> extends ConsistencyTestBase<T> {
 
@@ -58,7 +65,7 @@ public abstract class PredicateDifferentialTest<T extends Item> extends Consiste
         return Fixtures.OPERATOR_ROWS;
     }
 
-    /// 27 格各一条用例：真库谓词结果与内存三值逻辑结果逐元素比对。
+    /// 33 格各一条用例：真库谓词结果与内存三值逻辑结果逐元素比对。
     ///
     /// 用 `@TestFactory` 而不是 `@ParameterizedTest`：`junit-jupiter-params` 不在
     /// `nextentity-testing` 的编译类路径上（本模块只声明 `junit-jupiter-api`），改 pom 是红线；
@@ -134,7 +141,13 @@ public abstract class PredicateDifferentialTest<T extends Item> extends Consiste
     /// 内存一侧的 `Truth` / `Atom` / `Numbers` / `Texts` 也放在这里，物理上就与后端路径分开。
     private static final class Matrix {
 
-        /// 全表 27 格。
+        /// 「中间命中」的样本：`banana` 里含 `nana`，所以它是本组里唯一能区分 `%v%` 与前缀匹配的取值。
+        ///
+        /// 写成常量是为了让这个字面量在文件里只出现一次（PMD `AvoidDuplicateLiterals` 的上限是
+        /// 1 次），也把「为什么是这一串」的理由挂在名字旁边。
+        private static final String MIDDLE_FRAGMENT = "nana";
+
+        /// 全表 33 格。
         ///
         /// @param base 后端接线（只用来取属性引用，不读任何结果）
         /// @param <E>  后端实体类型
@@ -235,6 +248,38 @@ public abstract class PredicateDifferentialTest<T extends Item> extends Consiste
                     "like(name,%berry)",
                     query -> query.where(base.nameRef()).like("%berry"),
                     Texts.suffix(FixtureRow::name, "berry").keepsOnlyTrue(),
+                    Shape.PARTIAL));
+
+            // ---- 文本：非前缀取值，专钉「contains 渲染成 %v% 还是 v%」这类通配符缺陷 ----
+            cells.add(new Case<>(
+                    "contains(name,ppl)",
+                    query -> query.where(base.nameRef()).contains("ppl"),
+                    Texts.contains(FixtureRow::name, "ppl").keepsOnlyTrue(),
+                    Shape.PARTIAL));
+            cells.add(new Case<>(
+                    "contains(name,pie)",
+                    query -> query.where(base.nameRef()).contains("pie"),
+                    Texts.contains(FixtureRow::name, "pie").keepsOnlyTrue(),
+                    Shape.PARTIAL));
+            cells.add(new Case<>(
+                    "contains(name,nana)",
+                    query -> query.where(base.nameRef()).contains(MIDDLE_FRAGMENT),
+                    Texts.contains(FixtureRow::name, MIDDLE_FRAGMENT).keepsOnlyTrue(),
+                    Shape.PARTIAL));
+            cells.add(new Case<>(
+                    "contains(name,zzz)",
+                    query -> query.where(base.nameRef()).contains(MISSING_NAME),
+                    row -> false,
+                    Shape.EMPTY));
+            cells.add(new Case<>(
+                    "like(name,%ppl%)",
+                    query -> query.where(base.nameRef()).like("%ppl%"),
+                    Texts.contains(FixtureRow::name, "ppl").keepsOnlyTrue(),
+                    Shape.PARTIAL));
+            cells.add(new Case<>(
+                    "like(name,%ana)",
+                    query -> query.where(base.nameRef()).like("%ana"),
+                    Texts.suffix(FixtureRow::name, "ana").keepsOnlyTrue(),
                     Shape.PARTIAL));
 
             // ---- 枚举 ----
