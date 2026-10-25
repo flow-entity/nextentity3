@@ -47,6 +47,17 @@ ALLOWED_BASELINE_FIELDS = ("type", "issue", "expires")
 #: 与 AGENTS.md「禁用要有租约」同一条理由：期限长到看不见就等于没有期限。
 MAX_BASELINE_LEASE_DAYS = 180
 
+#: 等价变异台账的必填字段。等价变异不是「杀不死就算了」——每条都要写出**为什么杀不死**
+#: （改了什么、为什么行为不变），否则它只是漏测的另一种写法。
+EQUIVALENT_REQUIRED_FIELDS = ("reason", "expires")
+
+#: 等价变异理由的最短长度。一个字的理由（「等价」「无差」）不构成论证，
+#: 和没有理由是一回事——这里只是把「明显敷衍」挡在门外，真正的判据仍要人读。
+MIN_EQUIVALENT_REASON_CHARS = 10
+
+#: 等价论证的最长租约（天）。与基线同一条理由：期限长到看不见就等于没有期限。
+MAX_EQUIVALENT_LEASE_DAYS = 180
+
 
 def modules(root: str) -> list[str]:
     """仓库下的 nextentity-* 模块目录。"""
@@ -283,21 +294,27 @@ def _scan_pit(root: str) -> dict[str, dict]:
         generated = 0
         status_counts: dict[str, int] = {}
         survived: list[str] = []
+        survivors: dict[str, int] = {}
         for mutation in suite.iter("mutation"):
             generated += 1
             status = mutation.get("status", "") or "UNKNOWN"
             status_counts[status] = status_counts.get(status, 0) + 1
             detected = mutation.get("detected") == "true" or status in ("KILLED", "TIMED_OUT")
             if not detected:
-                survived.append(
-                    "%s:%s:%s(%s)"
-                    % (
-                        mutation.findtext("mutatedClass") or "?",
-                        mutation.findtext("lineNumber") or "?",
-                        (mutation.findtext("mutator") or "?").rsplit(".", 1)[-1],
-                        status,
+                mutated_class = mutation.findtext("mutatedClass") or "?"
+                line_number = mutation.findtext("lineNumber") or "?"
+                mutator = (mutation.findtext("mutator") or "?").rsplit(".", 1)[-1]
+                survived.append("%s:%s:%s(%s)" % (mutated_class, line_number, mutator, status))
+                # 等价台账的键**不含状态**：SURVIVED 与 NO_COVERAGE 之间漂移不改变语义，
+                # 把状态写进键会让「补了覆盖但仍是等价」变成一条假腐化。
+                if status in ("SURVIVED", "NO_COVERAGE"):
+                    key = "%s|%s|%s|%s" % (
+                        mutated_class,
+                        line_number,
+                        mutation.findtext("mutatedMethod") or "?",
+                        mutator,
                     )
-                )
+                    survivors[key] = survivors.get(key, 0) + 1
         detected_n = sum(n for s, n in status_counts.items() if s in ("KILLED", "TIMED_OUT"))
         effective = sum(n for s, n in status_counts.items() if s in ("KILLED", "TIMED_OUT", "SURVIVED", "NO_COVERAGE"))
         # 保留未取整值：先 round 再和阈值比，94.95% 会被抬成 95.0% 判绿。
@@ -310,6 +327,7 @@ def _scan_pit(root: str) -> dict[str, dict]:
             "effective": effective,
             "statuses": status_counts,
             "survived": survived,
+            "survivors": survivors,
             "coverage": round(coverage_raw, 1) if coverage_raw is not None else None,
             "coverage_raw": coverage_raw,
             "run_errors": status_counts.get("RUN_ERROR", 0),
@@ -541,6 +559,8 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
                     "%s：%d 个变异体 RUN_ERROR（测试 JVM 崩了），这部分既不计分母也不计分子，不能算过"
                     % (name, info["run_errors"])
                 )
+            # 分数过关不代表剩下的那些是漏测：未杀死的变异体必须逐条在台账里论证。
+            _check_equivalents(name, info, args.root, today, problems, notes)
             continue
         if info.get("kind") == "static":
             # 每个**应当**产出的报告都必须真产出且新鲜；违规数必须为 0。
@@ -850,6 +870,167 @@ def _check_expected_failures(
                 "%s：%s 按基线失败（issue=%s，至 %s）"
                 % (name, test, entry["issue"], entry["expires"])
             )
+
+
+def _equivalents_path(root: str, module: str) -> str:
+    return os.path.join(root, "tools", "equivalents", "%s.txt" % module)
+
+
+def _load_equivalents(root: str, module: str) -> tuple[dict[str, dict], list[str]]:
+    """读「等价变异台账」：某模块上**已论证**杀不死的变异体清单。
+
+    为什么需要它：PIT 分数只回答「杀死了多少」，不回答「剩下那些是不是漏测」。没有台账时，
+    剩下的变异体只有两种命运——被忽略（分数刚好压线就过），或者靠下调 `mutationThreshold`
+    放行（阈值一路降到 80，等于把门禁拆了）。台账把「剩下的」变成逐条申报。
+
+    格式（`|` 分隔，`#` 开头为注释）::
+
+        <mutatedClass> | <行号> | <方法名> | <变异算子> | <条数> | reason=<为什么行为不变> | expires=<yyyy-MM-dd>
+
+    前四段直接抄 PIT 报告里的值，不猜、不简写：写错就是「申报了但没生效」，而台账一旦
+    与报告脱节，它就从证据退化成注释。`reason` 与 `expires` 同 AGENTS.md「禁用要有租约」。
+
+    @param root 仓库根目录
+    @param module 模块名（`nextentity-core` 之类）
+    @return (键 → 条目, 格式错误列表)；文件不存在时返回空条目且不报错（由调用方判红）
+    """
+    path = _equivalents_path(root, module)
+    entries: dict[str, dict] = {}
+    errors: list[str] = []
+    if not os.path.isfile(path):
+        return entries, errors
+    today = datetime.date.fromisoformat(time.strftime("%Y-%m-%d"))
+    try:
+        with open(path, encoding="utf-8") as handle:
+            lines = handle.readlines()
+    except OSError as exc:
+        return {}, ["等价变异台账 %s 读不出来：%s" % (path, exc)]
+    for lineno, raw in enumerate(lines, 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = [p.strip() for p in line.split("|")]
+        where = "%s:%d" % (os.path.basename(path), lineno)
+        if len(parts) < 7:
+            errors.append(
+                "%s 字段不足（需要 `类 | 行号 | 方法 | 算子 | 条数 | reason=… | expires=…`）：%s"
+                % (where, line)
+            )
+            continue
+        key = "|".join(parts[:4])
+        try:
+            count = int(parts[4])
+        except ValueError:
+            errors.append("%s 条数 `%s` 不是整数：%s" % (where, parts[4], key))
+            continue
+        fields: dict[str, str] = {}
+        unknown: list[str] = []
+        for part in parts[5:]:
+            name, sep, value = part.partition("=")
+            name = name.strip().lower()
+            if not sep or name not in EQUIVALENT_REQUIRED_FIELDS:
+                unknown.append(part)
+                continue
+            fields[name] = value.strip()
+        if unknown:
+            errors.append(
+                "%s 出现未知字段 %s（只认 reason= / expires=，且理由里不能含 `|`）：%s"
+                % (where, unknown, key)
+            )
+            continue
+        missing = [f for f in EQUIVALENT_REQUIRED_FIELDS if not fields.get(f)]
+        if missing:
+            errors.append("%s 缺少 %s——没有论证的等价变异就是漏测：%s" % (where, "/".join(missing), key))
+            continue
+        if len(fields["reason"]) < MIN_EQUIVALENT_REASON_CHARS:
+            errors.append(
+                "%s 的 reason 只有 %d 个字（至少 %d）——要写清改了什么、为什么行为不变：%s"
+                % (where, len(fields["reason"]), MIN_EQUIVALENT_REASON_CHARS, key)
+            )
+            continue
+        try:
+            expiry = datetime.date.fromisoformat(fields["expires"])
+        except ValueError:
+            errors.append(
+                "%s 的 expires= 需为合法日期 yyyy-MM-dd（收到 %r）：%s"
+                % (where, fields["expires"], key)
+            )
+            continue
+        lease_limit = today + datetime.timedelta(days=MAX_EQUIVALENT_LEASE_DAYS)
+        if expiry > lease_limit:
+            errors.append(
+                "%s 的 expires=%s 超过最长租约 %d 天（今天 %s，上限 %s）：%s"
+                % (where, fields["expires"], MAX_EQUIVALENT_LEASE_DAYS, today.isoformat(), lease_limit.isoformat(), key)
+            )
+            continue
+        if key in entries:
+            errors.append("%s 变异体重复申报：%s" % (where, key))
+            continue
+        entries[key] = {
+            "count": count,
+            "reason": fields["reason"],
+            "expires": fields["expires"],
+            "line": lineno,
+        }
+    if not entries and not errors:
+        # 空台账不是「没有等价变异」，是配置错误：文件建了却一条条目都没有，等于把
+        # 「等价已论证」这个前提抽掉，而调用方仍以为有台账在管。
+        errors.append("%s 里没有任何条目——空台账等于没有台账，请删掉这个文件" % path)
+    return entries, errors
+
+
+def _check_equivalents(
+    name: str,
+    info: dict,
+    root: str,
+    today: str,
+    problems: list[str],
+    notes: list[str],
+) -> None:
+    """拿实际未杀死变异体与台账做**双向**比对。
+
+    - 实际有、台账没有 → 漏测（不是等价变异），必须写用例杀掉或补论证
+    - 台账有、实际没有 → 台账腐化（已杀死 / 算子集变了 / 该行被删改），必须删条目
+    - 同位置条数不符 → 算子集或代码结构变了，原论证不再覆盖新变异体
+    - 论证过期 → 到期未续，与 `@Disabled` 超期同性质
+    """
+    actual = dict(info.get("survivors") or {})
+    module = info.get("module") or ""
+    path = _equivalents_path(root, module)
+    declared, errors = _load_equivalents(root, module)
+    for error in errors:
+        problems.append("%s：%s" % (name, error))
+    if actual and not declared:
+        problems.append(
+            "%s：%d 个变异体没被杀死，且没有等价台账（%s）——要么写用例杀掉，要么逐条论证"
+            % (name, sum(actual.values()), path)
+        )
+        return
+    for key in sorted(set(actual) - set(declared)):
+        problems.append(
+            "%s：未杀死的变异体 %s 不在等价台账里——这是漏测，不是等价变异" % (name, key)
+        )
+    for key in sorted(set(declared) - set(actual)):
+        problems.append(
+            "%s：台账申报 %s 等价，但它已被杀死或不再产生（第 %d 行）——台账腐化，请删掉该行"
+            % (name, key, declared[key]["line"])
+        )
+    for key in sorted(set(actual) & set(declared)):
+        entry = declared[key]
+        if entry["count"] != actual[key]:
+            problems.append(
+                "%s：%s 台账申报 %d 条，实际 %d 条——同一位置多出或少了变异体"
+                "（算子集被改？代码结构变了？），原论证不再覆盖，请重新论证"
+                % (name, key, entry["count"], actual[key])
+            )
+            continue
+        if entry["expires"] < today:
+            problems.append(
+                "%s：等价变异 %s 的论证已于 %s 到期——要么补用例，要么重新论证并续期"
+                % (name, key, entry["expires"])
+            )
+        else:
+            notes.append("%s：%s 按台账视为等价（至 %s）" % (name, key, entry["expires"]))
 
 
 def _print_step(receipt: dict) -> None:

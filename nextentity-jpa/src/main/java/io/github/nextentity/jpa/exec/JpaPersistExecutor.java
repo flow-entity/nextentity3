@@ -86,9 +86,10 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
         Root<T> root = update.from(entityType);
         setValues(entityMeta, entity, update, root, versionValue);
         update.where(whereClause(builder, root, id, version, idValue, versionValue));
-        if (version != null) {
-            entityManager.detach(entity);
-        }
+        // 这里曾经有一句 `if (version != null) entityManager.detach(entity);`，已删除：
+        // 方法开头 `contains(entity)` 为真就直接返回，能走到这一行的实体必然不在上下文里，
+        // 对游离对象调 `detach` 是 no-op（JPA 规范：非托管实体上 detach 静默忽略）。
+        // 也就是说那三行从来没有过任何效果，只是让人误以为「更新后会被摘除」。
 
         int affected = entityManager.createQuery(update).executeUpdate();
         verifyAffected(affected, version, idValue, versionValue);
@@ -146,7 +147,15 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
         return builder.and(byId, builder.equal(root.get(version.name()), versionValue));
     }
 
-    private static Object nextVersion(Object versionValue) {
+    /// `@Version` 递增的**唯一**实现点：四个分支各有一条用例（`JpaPersistExecutorNextVersionTest`）。
+    ///
+    /// 包私有而不是私有：`default` 分支要抛 `UnsupportedOperationException`，而「版本列是第三种
+    /// 类型」的实体在测试实体集里不存在，走不到这里。按红线「契约拒绝必须钉住」，这条拒绝分支
+    /// 必须有 `assertThatThrownBy` 用例，所以放开到包内可见。
+    ///
+    /// @param versionValue 旧版本值，可为 `null`
+    /// @return 新版本值
+    static Object nextVersion(Object versionValue) {
         return switch (versionValue) {
             case null -> 0;
             case Integer current -> current + 1;

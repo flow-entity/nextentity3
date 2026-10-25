@@ -69,7 +69,7 @@ public final class SimpleEntityOperationsFactory<S> implements EntityOperationsF
 
         @Override
         public EntityQuery<T> query() {
-            return new QueryBuilder<>(entityType, compiler, executor);
+            return new QueryBuilder<>(entityType(), compiler(), executor());
         }
 
         @Override
@@ -79,22 +79,22 @@ public final class SimpleEntityOperationsFactory<S> implements EntityOperationsF
 
         @Override
         public void insert(T entity) {
-            persist.insert(entity);
+            persist().insert(entity);
         }
 
         @Override
         public void insertAll(Iterable<T> entities) {
-            persist.insertAll(entities);
+            persist().insertAll(entities);
         }
 
         @Override
         public void update(T entity) {
-            persist.update(entity);
+            persist().update(entity);
         }
 
         @Override
         public void updateAll(Iterable<T> entities) {
-            persist.updateAll(entities);
+            persist().updateAll(entities);
         }
     }
 }

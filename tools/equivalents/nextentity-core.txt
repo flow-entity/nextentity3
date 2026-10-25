@@ -1,0 +1,12 @@
+# 等价变异台账：nextentity-core
+#
+# 算子集：STRONGER + NON_VOID_METHOD_CALLS，且不含 FRECORD 过滤器（否则 27 个 spec record 零变异）。
+
+io.github.nextentity.core.builder.OpInterpreter | 190 | logical | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-20
+io.github.nextentity.core.builder.PathRefs | 46 | resolve | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-20
+io.github.nextentity.core.builder.ValueProjections | 45 | ofAll | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-20
+io.github.nextentity.core.builder.RowAssembler | 35 | assemble | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-20
+io.github.nextentity.core.builder.RowAssembler | 44 | assemble | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-20
+io.github.nextentity.core.util.ImmutableList | 27 | ofIterable | NonVoidMethodCallMutator | 1 | reason=instanceof 分支里的 new ArrayList<>(sized.size()) 只是容量提示，删掉容量后逐元素复制结果相同 | expires=2027-04-20
+io.github.nextentity.core.util.ImmutableList | 27 | ofIterable | RemoveConditionalMutator_EQUAL_ELSE | 1 | reason=把 instanceof 判成假只让容量退化成默认值，复制循环与不可变包装都不受影响 | expires=2027-04-20
+io.github.nextentity.core.builder.QueryBuilder$1 | 311 | <init> | NonVoidMethodCallMutator | 1 | reason=javac 为匿名类捕获外部实例自动生成的非空校验，源码里没有这一行 | expires=2027-04-20

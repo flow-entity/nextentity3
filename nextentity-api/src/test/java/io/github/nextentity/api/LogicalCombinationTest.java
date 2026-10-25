@@ -72,10 +72,10 @@ class LogicalCombinationTest {
 
         assertThatThrownBy(() -> age.and((Collection<? extends Expression<Order, Boolean>>) null))
                 .isInstanceOf(NullPointerException.class)
-                .hasMessageContaining("others");
+                .hasMessage("others");
         assertThatThrownBy(() -> age.or((Collection<? extends Expression<Order, Boolean>>) null))
                 .isInstanceOf(NullPointerException.class)
-                .hasMessageContaining("others");
+                .hasMessage("others");
         assertThatThrownBy(() -> age.and(Arrays.<Expression<Order, Boolean>>asList((Expression<Order, Boolean>) null)))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage("others 元素不能为 null");
@@ -112,16 +112,30 @@ class LogicalCombinationTest {
     }
 
     @Test
+    @DisplayName("短路链上的空值：TRUE.or(ref).eqIfNotNull(null) 仍返回恒真占位，而不是 null")
+    void skippedConditionOnSuppressedChainStaysAlwaysTrue() {
+        // 两个构造点决定了 skip() 的三种情形：
+        //   - `Leaf.or(PathRef)`    → parent 非 null、suppressed=false（只丢本次条件）
+        //   - `AlwaysTrue.or(PathRef)` → parent 为 null、suppressed=true（整条链恒真）
+        // 这里走后者。`skip()` 若把 `alwaysTrue()` 那一步删掉，返回的就是 null，
+        // 下游 `predicate.and(...)` 直接 NPE——「可选条件」会变成「空指针」。
+        Predicate<Order> alwaysTrue = Path.of(Order::getAge).eqIfNotNull(null);
+        PathOperator<Order, Integer, Predicate<Order>> chain = alwaysTrue.or(Order::getAge);
+
+        assertThat(chain.eqIfNotNull(null)).isSameAs(alwaysTrue);
+    }
+
+    @Test
     @DisplayName("恒真占位的集合入参同样校验 null 集合与 null 元素")
     void alwaysTrueCollectionArgumentsAreChecked() {
         Predicate<Order> alwaysTrue = Path.of(Order::getAge).eqIfNotNull(null);
 
         assertThatThrownBy(() -> alwaysTrue.and((Collection<? extends Expression<Order, Boolean>>) null))
                 .isInstanceOf(NullPointerException.class)
-                .hasMessageContaining("others");
+                .hasMessage("others");
         assertThatThrownBy(() -> alwaysTrue.or((Collection<? extends Expression<Order, Boolean>>) null))
                 .isInstanceOf(NullPointerException.class)
-                .hasMessageContaining("others");
+                .hasMessage("others");
         assertThatThrownBy(() ->
                         alwaysTrue.and(Arrays.<Expression<Order, Boolean>>asList((Expression<Order, Boolean>) null)))
                 .isInstanceOf(NullPointerException.class)

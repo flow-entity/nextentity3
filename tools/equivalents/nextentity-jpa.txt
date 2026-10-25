@@ -1,0 +1,27 @@
+# 等价变异台账：nextentity-jpa
+#
+# 算子集：STRONGER + NON_VOID_METHOD_CALLS，不含 FRECORD 过滤器。
+# NonVoidMethodCallMutator 落在 switch 模式匹配那一行的，基本都是 javac 生成的模式变量空值校验。
+
+io.github.nextentity.jpa.exec.JpaExecutor | 113 | shape | NonVoidMethodCallMutator | 1 | reason=javac 为 switch 模式变量 values 生成的非空校验，选择项由 switch 分派保证非空，源码无此行 | expires=2027-04-20
+io.github.nextentity.jpa.exec.JpaExecutor | 121 | shapeRow | RemoveConditionalMutator_EQUAL_IF | 1 | reason=itemCount 大于 1 时强制走单列分支，此时行必然是长度大于 1 的数组，三元项判假后原样返回 row，与多列分支返回同一个数组 | expires=2027-01-31
+io.github.nextentity.jpa.exec.JpaExecutor | 122 | shapeRow | RemoveConditionalMutator_EQUAL_IF | 2 | reason=该行有两个条件被去掉：把 instanceof 判成真只影响非数组行，而单列投影在 H2/MySQL/PG 三方言下 Hibernate 都返回长度 1 的 Object 数组；把长度判成等于 1 只影响长度不为 1 的数组，而 itemCount 为 1 时长度必为 1。两条都只让防御性守卫失效 | expires=2027-01-31
+io.github.nextentity.jpa.exec.JpaExecutor | 124 | shapeRow | RemoveConditionalMutator_EQUAL_IF | 1 | reason=多列投影下 Hibernate 恒返回 Object 数组，把 instanceof 判成真后仍返回同一个数组引用，包装分支不可达 | expires=2027-01-31
+io.github.nextentity.jpa.compile.JpaPredicates | 37 | predicate | NonVoidMethodCallMutator | 1 | reason=javac 为 switch 模式变量生成的非空校验，源码里没有这一行，Spec 已由 builder 保证非空 | expires=2027-04-20
+io.github.nextentity.jpa.compile.JpaPredicates | 51 | comparison | NonVoidMethodCallMutator | 1 | reason=javac 为 instanceof 模式变量 value 生成的非空校验，字面量操作数不可能为 null，PIT 报 NO_COVERAGE | expires=2027-04-20
+io.github.nextentity.jpa.compile.JpaPredicates | 92 | between | NonVoidMethodCallMutator | 1 | reason=javac 为 instanceof 模式变量生成的边界校验，PIT 报 NO_COVERAGE，属编译器生成代码 | expires=2027-04-20
+io.github.nextentity.jpa.compile.JpaQueryBuilder | 37 | entityQuery | NonVoidMethodCallMutator | 1 | reason=删掉 query.select(root) 后 CriteriaQuery 默认选择根对象，生成的 SQL 与投影结果完全相同 | expires=2027-04-20
+io.github.nextentity.jpa.compile.JpaQueryBuilder | 46 | valueQuery | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-20
+io.github.nextentity.jpa.compile.JpaQueryBuilder | 60 | apply | NonVoidMethodCallMutator | 1 | reason=isEmpty 变异成常量假后，分组为空时也会调用 query.groupBy 空列表，Hibernate 对空分组等价于不设置，渲染出的 SQL 不变 | expires=2027-01-31
+io.github.nextentity.jpa.compile.JpaQueryBuilder | 60 | apply | RemoveConditionalMutator_EQUAL_IF | 1 | reason=去掉 if 判断后无条件调用 query.groupBy 空列表，Hibernate 对空分组等价于不设置，SQL 一致 | expires=2027-01-31
+io.github.nextentity.jpa.compile.JpaQueryBuilder | 61 | apply | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-20
+io.github.nextentity.jpa.compile.JpaQueryBuilder | 70 | apply | NonVoidMethodCallMutator | 1 | reason=isEmpty 变异成常量假后，排序为空时也会调用 query.orderBy 空列表，Hibernate 对空排序等价于不设置 | expires=2027-01-31
+io.github.nextentity.jpa.compile.JpaQueryBuilder | 70 | apply | RemoveConditionalMutator_EQUAL_IF | 1 | reason=去掉 if 判断后无条件调用 query.orderBy 空列表，Hibernate 对空排序等价于不设置，SQL 不变 | expires=2027-01-31
+io.github.nextentity.jpa.compile.JpaQueryBuilder | 76 | orders | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-20
+io.github.nextentity.jpa.compile.JpaPaths | 78 | navigate | RemoveConditionalMutator_EQUAL_IF | 1 | reason=把 association 判成真后嵌入属性也走 join，Hibernate 7 会把嵌入属性的 join 摊平成同表列，渲染的 SQL 与取列结果不变（JpaEmbeddedChainTest 钉住） | expires=2027-01-31
+io.github.nextentity.jpa.compile.JpaOperands | 34 | expression | NonVoidMethodCallMutator | 1 | reason=javac 为 switch 模式变量生成的非空校验，源码里没有这一行 | expires=2027-04-20
+io.github.nextentity.jpa.meta.JpaEntityAttribute | 49 | get | NonVoidMethodCallMutator | 1 | reason=catch IllegalAccessException 分支不可达：字段构造时已 setAccessible，PIT 报 NO_COVERAGE，属防御性死分支 | expires=2027-04-20
+io.github.nextentity.jpa.meta.JpaEntityAttribute | 59 | set | NonVoidMethodCallMutator | 1 | reason=catch IllegalAccessException 分支不可达：字段构造时已 setAccessible，PIT 报 NO_COVERAGE，属防御性死分支 | expires=2027-04-20
+io.github.nextentity.jpa.meta.JpaMeta | 52 | association | RemoveConditionalMutator_EQUAL_ELSE | 1 | reason=PluralAttribute 本身也是 Association，删掉这个提前返回后 isAssociation 同样返回真 | expires=2027-04-20
+io.github.nextentity.jpa.compile.JpaProjections | 24 | projection | NonVoidMethodCallMutator | 1 | reason=javac 为 switch 模式变量生成的非空校验，源码里没有这一行 | expires=2027-04-20
+io.github.nextentity.jpa.compile.JpaCompiler | 33 | compile | NonVoidMethodCallMutator | 1 | reason=javac 为 switch 模式变量生成的非空校验，源码里没有这一行 | expires=2027-04-20

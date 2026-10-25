@@ -544,10 +544,10 @@ class ApiOperatorAssemblyTest {
 
         assertThatThrownBy(() -> leaf.and((Collection<? extends Expression<Order, Boolean>>) null))
                 .isInstanceOf(NullPointerException.class)
-                .hasMessageContaining("others");
+                .hasMessage("others");
         assertThatThrownBy(() -> leaf.or((Collection<? extends Expression<Order, Boolean>>) null))
                 .isInstanceOf(NullPointerException.class)
-                .hasMessageContaining("others");
+                .hasMessage("others");
         assertThatThrownBy(() -> leaf.and(Arrays.<Expression<Order, Boolean>>asList((Expression<Order, Boolean>) null)))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage("others 元素不能为 null");

@@ -52,6 +52,7 @@
 - **契约拒绝必须钉住**：任何抛 `UnsupportedOperationException` 的分支必须有 `assertThatThrownBy` 用例；缺用例的拒绝分支视为能力缺口被掩盖，不得合入。
 - **方言跳过必须可数**：按方言跳过的用例一律用显式标记（注解或 `@Tag`），不得只在注释或日志里交代。跳过条数**由凭证判定**：`tools/gate.sh` 给每个通道申报 skip 预算（默认 0），`tools/gate-receipt.py` 从 surefire/failsafe XML 读 `<skipped>` 连理由汇总到 `receipt.json` 的 `skip_report` 字段，**超预算即红**。所以 PR 说明不手写清单：直接贴凭证里的 `skip_report.total` 与条目。
 - **预期失败要有台账且会腐烂**：某通道上「按设计就会红」的用例不许用 `@Disabled` 藏（既不跑、也看不出哪天修好），必须逐条写进 `tools/expected-failures/<通道>.txt`，每条带 `type=`、`issue=` 与 `expires=`。判据是**双向完全相等**：实际失败集多一条 = 新回归，少一条 = 基线腐化（已修好仍留着条目），过期未续也算违规；`type`（`failure` / `error`）也必须相等——断言不符悄悄变成被测代码抛异常时，名字和条数都不变。`expires` 不得超过今天 + 180 天，空基线文件按配置错误处理。只许在 `tools/gate.sh` 里由 `STEP_EXPECTED_FAILURES` 点名的步骤生效；申报了基线的通道若不在该步的 `--require` 里，同样判红（「申报了却被静默忽略」）；「测试红但生命周期不中断」由 `nextentity-tests-jpa/pom.xml` 的 `pg-dialect` execution 上的 `<testFailureIgnore>true</testFailureIgnore>` 承担，好让 `verify` 阶段的 checkstyle/PMD/SpotBugs/jacoco 照常执行；**不要**用 `-Dmaven.test.failure.ignore=true` 全局属性代替——它会把同一反应堆里 api/core/jpa/spring 的失败一并吞掉。判定权交给凭证。方言矩阵通道还要求与基础通道**跑同一批用例**（条数相等），少跑即红。
+- **变异分数不许靠降阈值换来**：PIT 分数只回答「杀死了多少」，剩下的变异体必须逐条进 `tools/equivalents/<模块>.txt` 台账（`类 | 行 | 方法 | 算子 | 条数 | reason=… | expires=…`），`reason` 要写清「改了什么、为什么行为不变」。判据与预期失败同款：与 PIT 报告**双向**比对——实际未杀死却不在台账 = 漏测；台账里有而报告里没有 = 台账腐化；同位置条数不符 = 算子集或代码结构变了；到期未续 = 违规；空台账按配置错误处理。`mutationThreshold` 只许在「确实写不出能杀它的用例、且已逐条论证」时下降，不许为了过门禁下调。根 pom 的 `<mutators>` 必须显式关掉 `-FRECORD`——PIT 默认开启它，会把**整个** record 类的变异全部吃掉（`nextentity-core` 的 27 个 spec 节点曾因此完全隐形）。跑 PIT 前必须先 `test-compile`：`pitest:mutationCoverage` 自己不编译，陈旧的 `target/test-classes` 会让它拿旧用例去杀新代码，看着像「用例写不出来」，其实是没编。
 
 # 命令速查
 
@@ -72,10 +73,10 @@
 ./mvnw -pl nextentity-tests-legacy -am test  # 2.2.3 遗留语义回归：H2，无容器
 ./mvnw -pl nextentity-tests-legacy -am test -Ddbc=h2,mysql   # 同上，加真 MySQL（需 Docker 或外部实例，见模块 README）
 ./mvnw -Papi-compat -Djapicmp.oldVersion=3.0.0 -pl nextentity-api -am verify   # API 兼容检查
-./mvnw -pl nextentity-api pitest:mutationCoverage    # 变异测试：api，阈值 95%（门禁自足，用例在本模块）
-./mvnw -pl nextentity-core pitest:mutationCoverage   # 变异测试：core，阈值 95%
-./mvnw -pl nextentity-jpa pitest:mutationCoverage    # 变异测试：jpa 全模块，阈值 95%
-./mvnw -pl nextentity-spring pitest:mutationCoverage # 变异测试：spring（委派与条件装配），阈值 95%
+./mvnw -pl nextentity-api test-compile pitest:mutationCoverage    # 变异测试：api，阈值 95%（门禁自足，用例在本模块）
+./mvnw -pl nextentity-core test-compile pitest:mutationCoverage   # 变异测试：core，阈值 95%
+./mvnw -pl nextentity-jpa test-compile pitest:mutationCoverage    # 变异测试：jpa 全模块，阈值 95%
+./mvnw -pl nextentity-spring test-compile pitest:mutationCoverage # 变异测试：spring（委派与条件装配），阈值 95%
 ```
 
 从仓库根目录执行；单模块内工作时才 `cd`。首次克隆后执行 `git config core.hooksPath githooks` 启用提交前门禁。

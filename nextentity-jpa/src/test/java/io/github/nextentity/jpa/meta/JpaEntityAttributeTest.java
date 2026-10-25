@@ -33,6 +33,18 @@ class JpaEntityAttributeTest {
     }
 
     @Test
+    @DisplayName("set 收到 null 实体：NullPointerException，消息点名 entity")
+    void setRejectsNullEntity() {
+        JpaEntityAttribute code = new JpaEntityAttribute(DerivedRecord.class, "code");
+
+        // 去掉 `Objects.requireNonNull(entity, "entity")` 之后 `field.set(null, …)` 一样抛
+        // NullPointerException，只断类型分不清这两条路径；消息里的 "entity" 只有那条护栏会写
+        assertThatThrownBy(() -> code.set(null, "D-9"))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("entity");
+    }
+
+    @Test
     @DisplayName("整条继承链都没有该字段：IllegalArgumentException，消息点名实体与字段")
     void rejectsUnknownFieldOnWholeInheritanceChain() {
         assertThatThrownBy(() -> new JpaEntityAttribute(DerivedRecord.class, "missing"))

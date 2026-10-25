@@ -276,6 +276,49 @@
                         <timestampedReports>false</timestampedReports>
                         <threads>4</threads>
                         <failWhenNoMutations>false</failWhenNoMutations>
+                        <!--
+                          算子集：`DEFAULTS` 只覆盖「改边界 / 改条件 / 改返回值 / 删 void 调用」，
+                          它**不会**变异非 void 的方法调用——而本项目的入参校验全是
+                          `Objects.requireNonNull(x, "name")`，返回值被丢弃，于是在 `DEFAULTS` 下
+                          这些校验连一个变异体都产不出来（`spec` 包 27 个节点的构造器校验长期
+                          对 PIT 隐形）。加 `NON_VOID_METHOD_CALLS` 才能让「把校验删掉」变成一个
+                          必须被用例杀死的变异体。
+                          另加 `STRONGER`（在 `DEFAULTS` 之上再补空值返回、常量返回、增量、
+                          数学算子、构造器调用等），因为 `spec`/`builder` 里大量逻辑是
+                          「算出一个值」而不是「走一个分支」。
+                        -->
+                        <mutators>
+                            <mutator>STRONGER</mutator>
+                            <mutator>NON_VOID_METHOD_CALLS</mutator>
+                        </mutators>
+                        <!--
+                          `-FRECORD`：关掉 PIT 默认开启的 `FRECORD` 过滤器。
+                          它在 `pitest-entry` 里的自述是「Filters mutations in compiler generated record code」，
+                          实测行为却是把**整个 record 类**的变异体全部丢弃——不是只丢编译器合成的
+                          `equals`/`hashCode`/`toString`/访问器。后果：本项目 `core` 的 `spec` 包里
+                          27 个节点类型全是 record，紧凑构造器里的入参校验（`requireNonNull`、
+                          「空集合必须在 builder 层折成 Constant」）因此长期零变异——
+                          46 个生产源文件只有 19 个产出过变异体，分数看着满分，实际整包没被度量。
+                          关掉之后同一批用例的变异体从 242 涨到 857，其中 67 个当场暴露成
+                          SURVIVED/NO_COVERAGE（见 `tools/equivalents/` 台账）。
+                          代价是会自动生成 record 合成的 `equals`/`hashCode`/`toString` 变异体，
+                          那些是语言生成代码，由下面的 `excludedMethods` 排掉。
+                        -->
+                        <features>
+                            <param>-FRECORD</param>
+                        </features>
+                        <!--
+                          排除与业务语义无关的合成方法：`equals`/`hashCode`/`toString` 对 record 是
+                          编译器按字段逐一生成的，给它们写用例只能证明「JDK 的 record 实现是对的」；
+                          `values`/`valueOf` 同理（enum 合成静态方法）。
+                        -->
+                        <excludedMethods>
+                            <param>equals</param>
+                            <param>hashCode</param>
+                            <param>toString</param>
+                            <param>values</param>
+                            <param>valueOf</param>
+                        </excludedMethods>
                     </configuration>
                 </plugin>
             </plugins>

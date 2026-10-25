@@ -221,12 +221,16 @@ class JpaEndToEndTest extends JpaTestSupport {
         inTx(entityManager -> {
             JpaCompiler compiler = compiler(entityManager);
             JpaExecutor executor = executor(entityManager);
+            // 文案里必须点名实体类型（`JpaExecutor:96` 的 `getName()`）：只断 "exists" 时，
+            // 把类型名那一段删掉照样绿，排查时看不出是哪个实体被拒
             assertThatThrownBy(() -> executor.exists(compiler.compile(grouped.forExists())))
                     .isInstanceOf(UnsupportedOperationException.class)
-                    .hasMessageContaining("exists");
+                    .hasMessageContaining("exists")
+                    .hasMessageContaining(ShopOrder.class.getName());
             assertThatThrownBy(() -> executor.exists(compiler.compile(havingOnly.forExists())))
                     .isInstanceOf(UnsupportedOperationException.class)
-                    .hasMessageContaining("exists");
+                    .hasMessageContaining("exists")
+                    .hasMessageContaining(ShopOrder.class.getName());
 
             // 普通条件查询的 exists 行为不变
             assertThat(executor.exists(
@@ -316,8 +320,14 @@ class JpaEndToEndTest extends JpaTestSupport {
 
         Spec paid = comparison("status", ComparisonOperator.EQ, OrderStatus.PAID);
         Spec cheap = comparison("amount", ComparisonOperator.LT, new BigDecimal("6"));
+        // 两个条件各自命中一行、并集恰好是全表时，把 `builder.or` 整行删掉（`JpaPredicates:118`
+        // 的变异体）会让 `where(null)` 退化成不加限制，结果同样是 {100,101}——这就是它一直
+        // 活着的原因。这里把第二个条件换成命中零行的条件，并集只剩一行，删掉 `or` 就会多出 101。
         assertThat(ids(query(new Logical(LogicalOperator.OR, List.of(paid, cheap)))))
                 .containsExactly(100L, 101L);
+        assertThat(ids(query(new Logical(
+                        LogicalOperator.OR, List.of(paid, comparison("id", ComparisonOperator.EQ, 99999L))))))
+                .containsExactly(100L);
         assertThat(ids(query(new Logical(LogicalOperator.AND, List.of(paid, cheap)))))
                 .isEmpty();
         assertThat(ids(query(new Logical(LogicalOperator.NOT, List.of(paid))))).containsExactly(101L);
@@ -399,6 +409,36 @@ class JpaEndToEndTest extends JpaTestSupport {
         assertThat(distinct).containsExactly(2L);
     }
 
+    /// 右值是**表达式**（列而不是字面量）时走 `JpaPredicates.withExpression`（`:72-85`）。
+    ///
+    /// 这一整个方法早先没有用例：`Comparison` 的右值总是 `Literal`，五个 `builder.xxx` 分支全是
+    /// NO_COVERAGE——把 `greaterThan` 写成 `lessThan`、或整条分支删掉（返回 null 谓词，等于不加
+    /// 限制），测试全绿。
+    ///
+    /// 用 `customer.id` 与 `customer.orgId` 两列对拍：Alice 是 10 vs 1。订单 101 的 customer 为
+    /// null，LEFT JOIN 后比较结果是 unknown，两个算子都应把它排除——这同时钉住了「表达式比较
+    /// 不会把 null 行算成命中」。
+    @Test
+    void comparisonWithExpressionOnTheRightUsesTheMatchingOperator() {
+        AttributePath customerId = AttributePath.of(ShopOrder.class, "customer", "id");
+        AttributePath orgId = AttributePath.of(ShopOrder.class, "customer", "orgId");
+
+        assertThat(ids(query(new Comparison(customerId, ComparisonOperator.NE, orgId))))
+                .containsExactly(100L);
+        assertThat(ids(query(new Comparison(customerId, ComparisonOperator.GT, orgId))))
+                .containsExactly(100L);
+        assertThat(ids(query(new Comparison(customerId, ComparisonOperator.GE, orgId))))
+                .containsExactly(100L);
+        assertThat(ids(query(new Comparison(customerId, ComparisonOperator.LT, orgId))))
+                .isEmpty();
+        assertThat(ids(query(new Comparison(customerId, ComparisonOperator.LE, orgId))))
+                .isEmpty();
+        // 右值是表达式时 LIKE 没有渲染语义：模式串只能是字面量（`:83`）
+        assertThatThrownBy(() -> ids(query(new Comparison(customerId, ComparisonOperator.LIKE, orgId))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("LIKE");
+    }
+
     @Test
     void lockAppliesForUpdate() {
         QuerySpec locked = new QuerySpec(
@@ -413,6 +453,10 @@ class JpaEndToEndTest extends JpaTestSupport {
         List<ShopOrder> orders = inTx(entityManager ->
                 executor(entityManager).list(compiler(entityManager).compile(locked)));
         assertThat(orders).extracting(ShopOrder::getId).containsExactly(100L);
+        // 锁必须真的进语句：只断结果行时，把 `spec.lock()` 的判定（`JpaExecutor:47`）或
+        // `setLockMode`（`JpaExecutor:49`）删掉，结果行一模一样，测试全绿——锁静默消失。
+        // `for update` 只可能出现在锁语句的句尾，所以按句尾钉住。
+        assertThat(normalized(drainSql())).singleElement().asString().endsWith("for update");
     }
 
     private static Comparison comparison(String attribute, ComparisonOperator operator, Object value) {

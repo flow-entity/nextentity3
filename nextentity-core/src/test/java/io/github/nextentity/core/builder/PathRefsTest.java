@@ -67,25 +67,103 @@ class PathRefsTest {
     }
 
     /// `declaringClass` 的拒绝侧：静态方法引用（`REF_invokeStatic`）不是属性路径。
+    ///
+    /// 断言带上 `invokeStatic`：拒绝理由若只断「只接受实例方法引用」这段常量前缀，
+    /// 把 `referenceKindToString(kind)` 删掉（消息退化成 `实际是 null`）照样通过——
+    /// 那就变成「拒绝得对，但说不清为什么拒绝」。
     @Test
-    @DisplayName("declaringClass：静态方法引用被拒绝")
+    @DisplayName("declaringClass：静态方法引用被拒绝，且消息点出引用种类")
     void declaringClassRejectsStaticMethodReference() {
         PathRef<String, Integer> parseInt = Integer::parseInt;
 
         assertThatThrownBy(() -> PathRefs.resolve(parseInt))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("只接受实例方法引用");
+                .hasMessageContaining("只接受实例方法引用")
+                .hasMessageContaining("invokeStatic");
     }
 
     /// `declaringClass` 的拒绝侧：构造引用（`REF_newInvokeSpecial`）不是属性路径。
     @Test
-    @DisplayName("declaringClass：构造引用被拒绝")
+    @DisplayName("declaringClass：构造引用被拒绝，且消息点出引用种类")
     void declaringClassRejectsConstructorReference() {
         PathRef<String, String> copy = String::new;
 
         assertThatThrownBy(() -> PathRefs.resolve(copy))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("只接受实例方法引用");
+                .hasMessageContaining("只接受实例方法引用")
+                .hasMessageContaining("newInvokeSpecial");
+    }
+
+    /// 解析方法描述里的类型用的是**上下文类加载器**，不是「反正总能加载到」的某个回退。
+    ///
+    /// 把上下文类加载器换成一个拒绝加载实体类的实现：类型解析必须当场失败。
+    /// 若生产代码改成传 `null`（回退到调用方/引导加载器），实体会被**悄悄解析成功**——
+    /// 在容器里这等于绕开容器给的加载器去加载应用类，插件热部署后拿到的是旧类。
+    /// 用例不碰全局状态——用完复位。
+    @Test
+    @DisplayName("declaringClass：用上下文类加载器解析类型，解析不到时当场失败")
+    void declaringClassResolvesTypesThroughContextClassLoader() {
+        PathRef<Order, Long> id = Order::getId;
+        ClassLoader original = Thread.currentThread().getContextClassLoader();
+        ClassLoader refusing = new ClassLoader(original) {
+            @Override
+            protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+                if (name.equals(Order.class.getName())) {
+                    throw new ClassNotFoundException(name);
+                }
+                return super.loadClass(name, resolve);
+            }
+        };
+        Thread.currentThread().setContextClassLoader(refusing);
+        try {
+            assertThatThrownBy(() -> PathRefs.resolve(id))
+                    .as("上下文类加载器解析不到类型时不许回退到别的加载器")
+                    .isInstanceOf(TypeNotPresentException.class);
+        } finally {
+            Thread.currentThread().setContextClassLoader(original);
+        }
+    }
+
+    /// 属性路径必须用方法引用表达：普通实现类没有 `writeReplace`，消息要点名具体类。
+    @Test
+    @DisplayName("resolve：非方法引用实现被拒绝，且消息点名具体类")
+    void resolveRejectsNonLambdaPathRef() {
+        PathRef<Order, Long> notALambda = new PathRef<>() {
+            @Override
+            public Long apply(Order entity) {
+                return entity.getId();
+            }
+        };
+
+        assertThatThrownBy(() -> PathRefs.resolve(notALambda))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("不是方法引用")
+                .hasMessageContaining(notALambda.getClass().getName());
+    }
+
+    /// `writeReplace` 存在但调用失败时，走的是另一条拒绝分支，消息同样要点名具体类。
+    ///
+    /// 这条分支公开调用点进不去（lambda 的 `writeReplace` 不会抛），只能手工造一个
+    /// 「有 `writeReplace`、但它会抛」的实现把它逼出来。
+    @Test
+    @DisplayName("resolve：writeReplace 调用失败时报「无法从方法引用解析」，且消息点名具体类")
+    void resolveRejectsPathRefWhoseWriteReplaceFails() {
+        PathRef<Order, Long> broken = new PathRef<>() {
+            @Override
+            public Long apply(Order entity) {
+                return entity.getId();
+            }
+
+            @SuppressWarnings("unused")
+            private Object writeReplace() {
+                throw new IllegalStateException("broken");
+            }
+        };
+
+        assertThatThrownBy(() -> PathRefs.resolve(broken))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("无法从方法引用解析属性路径")
+                .hasMessageContaining(broken.getClass().getName());
     }
 
     /// 空路径链在 `declaringClass` 之前就被拒绝，保证拒绝理由是可读的入参错误。

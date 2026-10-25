@@ -11,6 +11,7 @@ import io.github.nextentity.core.spec.BinaryOperator;
 import io.github.nextentity.core.spec.Comparison;
 import io.github.nextentity.core.spec.ComparisonOperator;
 import io.github.nextentity.core.spec.ComputedProjection;
+import io.github.nextentity.core.spec.Constant;
 import io.github.nextentity.core.spec.EntitySelection;
 import io.github.nextentity.core.spec.Literal;
 import io.github.nextentity.core.spec.Logical;
@@ -80,6 +81,62 @@ class JpaRenderingTest extends JpaTestSupport {
         // Hibernate 7 在 H2/MySQL 方言下把 `cb.mod` 渲染成 `%` 运算符（不是 `mod(...)` 函数），
         // 且右侧常量内联成 `2` 而不是绑定参数；整句把「哪一列取模、模几」一起钉住
         assertThat(normalized(drainSql())).containsExactly("select (so1_0.id%2) from shop_order so1_0");
+    }
+
+    /// 算术算子的 `switch` 是唯一分派点（`compile/JpaOperands.java:59-65`）。早先只覆盖了 `ADD`
+    /// 与 `MOD`，`SUB`/`MUL`/`DIV` 三个分支一条用例都没走到——PIT 报的是 NO_COVERAGE：把
+    /// `builder.diff` 写成 `builder.sum`、或整条分支删掉，测试全绿。
+    ///
+    /// 三条各钉一句整句：算子符号、左列、右值都在断言里，换错算子或换错列都会红。
+    @Test
+    void subtractionMultiplicationAndDivisionRenderTheirOwnOperators() {
+        assertThat(renderArithmetic(BinaryOperator.SUB, 1L))
+                .containsExactly("select (so1_0.id-1) from shop_order so1_0");
+        assertThat(renderArithmetic(BinaryOperator.MUL, 2L))
+                .containsExactly("select (so1_0.id*2) from shop_order so1_0");
+        assertThat(renderArithmetic(BinaryOperator.DIV, 2L))
+                .containsExactly("select (so1_0.id/2) from shop_order so1_0");
+    }
+
+    /// `Constant` 两个分支渲染成恒真 / 恒假谓词（`compile/JpaPredicates.java:43`）。
+    ///
+    /// 只断结果行是杀不死这两个分支的：把 `builder.conjunction()` 整行删掉，`where(null)` 等于
+    /// 「不加限制」，结果与恒真一模一样。恒真谓词在 SQL 里留下 `where 1=1`，恒假留下 `where 1=0`
+    /// ——这两个串只可能出现在这里，所以按句尾钉住。
+    @Test
+    void constantPredicatesRenderAlwaysTrueAndAlwaysFalse() {
+        // Hibernate 7 在 H2/MySQL 方言下把 `conjunction()` 渲染成 `1=1`、`disjunction()` 渲染成
+        // `1<>1`（不是 `1=0`）；整句把「谓词真的进了 where」钉住
+        String columns = "select so1_0.id,so1_0.amount,so1_0.customer_id,so1_0.note,so1_0.status,so1_0.version"
+                + " from shop_order so1_0 where ";
+        assertThat(renderWhere(Constant.TRUE)).containsExactly(columns + "1=1");
+        assertThat(renderWhere(Constant.FALSE)).containsExactly(columns + "1<>1");
+    }
+
+    private List<String> renderWhere(Spec where) {
+        QuerySpec spec = new QuerySpec(
+                ShopOrder.class, new EntitySelection(), where, List.of(), null, List.of(), Window.NONE, null);
+        inTx(entityManager ->
+                executor(entityManager).list(compiler(entityManager).compile(spec)));
+        return normalized(drainSql());
+    }
+
+    private List<String> renderArithmetic(BinaryOperator operator, long right) {
+        QuerySpec spec = new QuerySpec(
+                ShopOrder.class,
+                new ValueSelection(
+                        List.of(new ComputedProjection(new ArithmeticOperand(
+                                operator, AttributePath.of(ShopOrder.class, "id"), Literal.of(right)))),
+                        false),
+                null,
+                List.of(),
+                null,
+                List.of(),
+                Window.NONE,
+                null);
+        inTx(entityManager ->
+                executor(entityManager).list(compiler(entityManager).compile(spec)));
+        return normalized(drainSql());
     }
 
     @Test

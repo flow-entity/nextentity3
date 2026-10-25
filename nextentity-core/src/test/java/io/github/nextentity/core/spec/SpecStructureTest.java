@@ -6,8 +6,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.nextentity.api.LockMode;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /// Spec 节点结构的单元测试：不依赖数据库、不依赖 Spring。
 ///
@@ -325,5 +330,172 @@ class SpecStructureTest {
 
         assertThat(spec.orderBy()).hasSize(1);
         assertThat(spec.orderBy()).isUnmodifiable();
+    }
+
+    // ------------------------------------------- 构造期契约：必填字段与访问器
+    //
+    // 这一节只管「字段在构造期被拒绝、访问器原样交回」，语义仍由上面各节负责。
+    // 它存在的理由是变异测试：`Objects.requireNonNull(x, "x")` 的变异体是**整句删除**，
+    // 删掉之后字段静默存 null，异常改由后续第一次使用它的地方抛出——`List.copyOf(null)`
+    // 同样抛 NullPointerException、`list.isEmpty()` 同样抛，所以只断言「抛了个 NPE」
+    // 什么也证明不了。每一行都必须断到 `requireNonNull` 里那个字段名。
+
+    /// 每个节点的每个必填字段：单独传一次 `null`。
+    ///
+    /// 表驱动而不是逐个 `@Test`：这张表一行对应一个变异体，评审时能直接数出覆盖面。
+    static Stream<Arguments> requiredFields() {
+        Literal value = Literal.of("A");
+        return Stream.of(
+                Arguments.of(
+                        "QuerySpec.entityType",
+                        (Executable) () -> new QuerySpec(
+                                null, new EntitySelection(), null, List.of(), null, List.of(), Window.NONE, null),
+                        "entityType"),
+                Arguments.of(
+                        "QuerySpec.selection",
+                        (Executable) () ->
+                                new QuerySpec(String.class, null, null, List.of(), null, List.of(), Window.NONE, null),
+                        "selection"),
+                Arguments.of(
+                        "QuerySpec.groupBy",
+                        (Executable) () -> new QuerySpec(
+                                String.class, new EntitySelection(), null, null, null, List.of(), Window.NONE, null),
+                        "groupBy"),
+                Arguments.of(
+                        "QuerySpec.orderBy",
+                        (Executable) () -> new QuerySpec(
+                                String.class, new EntitySelection(), null, List.of(), null, null, Window.NONE, null),
+                        "orderBy"),
+                Arguments.of(
+                        "QuerySpec.window",
+                        (Executable) () -> new QuerySpec(
+                                String.class, new EntitySelection(), null, List.of(), null, List.of(), null, null),
+                        "window"),
+                Arguments.of("ValueSelection.items", (Executable) () -> new ValueSelection(null, false), "items"),
+                Arguments.of(
+                        "AttributePath.entityType",
+                        (Executable) () -> new AttributePath(null, List.of("status")),
+                        "entityType"),
+                Arguments.of("AttributePath.names", (Executable) () -> new AttributePath(String.class, null), "names"),
+                Arguments.of(
+                        "Logical.operator",
+                        (Executable) () -> new Logical(null, List.of(new Constant(true))),
+                        "operator"),
+                Arguments.of("Logical.operands", (Executable) () -> new Logical(LogicalOperator.AND, null), "operands"),
+                Arguments.of(
+                        "Comparison.left",
+                        (Executable) () -> new Comparison(null, ComparisonOperator.EQ, value),
+                        "left"),
+                Arguments.of("Comparison.operator", (Executable) () -> new Comparison(STATUS, null, value), "operator"),
+                Arguments.of(
+                        "Comparison.right",
+                        (Executable) () -> new Comparison(STATUS, ComparisonOperator.EQ, null),
+                        "right"),
+                Arguments.of("Between.subject", (Executable) () -> new Between(null, value, value), "subject"),
+                Arguments.of("Between.lower", (Executable) () -> new Between(STATUS, null, value), "lower"),
+                Arguments.of("Between.upper", (Executable) () -> new Between(STATUS, value, null), "upper"),
+                Arguments.of("In.path", (Executable) () -> new In(null, List.of("A"), false), "path"),
+                Arguments.of("In.values", (Executable) () -> new In(STATUS, null, false), "values"),
+                Arguments.of("NullCheck.path", (Executable) () -> new NullCheck(null, false), "path"),
+                Arguments.of(
+                        "ArithmeticOperand.operator",
+                        (Executable) () -> new ArithmeticOperand(null, value, value),
+                        "operator"),
+                Arguments.of(
+                        "ArithmeticOperand.left",
+                        (Executable) () -> new ArithmeticOperand(BinaryOperator.ADD, null, value),
+                        "left"),
+                Arguments.of(
+                        "ArithmeticOperand.right",
+                        (Executable) () -> new ArithmeticOperand(BinaryOperator.ADD, value, null),
+                        "right"),
+                Arguments.of(
+                        "AggregateProjection.function",
+                        (Executable) () -> new AggregateProjection(null, STATUS),
+                        "function"),
+                Arguments.of(
+                        "AggregateProjection.path",
+                        (Executable) () -> new AggregateProjection(AggregateFunction.MAX, null),
+                        "path"),
+                Arguments.of(
+                        "AggregateOperand.function", (Executable) () -> new AggregateOperand(null, STATUS), "function"),
+                Arguments.of(
+                        "AggregateOperand.path",
+                        (Executable) () -> new AggregateOperand(AggregateFunction.MAX, null),
+                        "path"),
+                Arguments.of("PathProjection.path", (Executable) () -> new PathProjection(null), "path"),
+                Arguments.of("ComputedProjection.operand", (Executable) () -> new ComputedProjection(null), "operand"),
+                Arguments.of("Ordering.path", (Executable) () -> new Ordering(null, Ordering.Direction.ASC), "path"),
+                Arguments.of("Ordering.direction", (Executable) () -> new Ordering(STATUS, null), "direction"));
+    }
+
+    @ParameterizedTest(name = "{0} 传 null")
+    @MethodSource("requiredFields")
+    @DisplayName("必填字段为 null：构造期即拒绝，消息点名是哪个字段")
+    void requiredFieldRejectsNull(String field, Executable construction, String fieldName) {
+        assertThatThrownBy(construction::execute)
+                .as(field)
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage(fieldName);
+    }
+
+    /// `Window` 的两个边界：`0` 合法（`limit = 0` 是「受限但不截断」），缺省用 `null`。
+    @Test
+    @DisplayName("窗口：0 是合法边界，缺省边界用 null 且不参与负数校验")
+    void windowAcceptsZeroAndNullBounds() {
+        Window zero = new Window(0, 0);
+
+        assertThat(zero.offset()).isZero();
+        assertThat(zero.limit()).isZero();
+        assertThat(zero.limited()).isTrue();
+
+        assertThat(new Window(null, null)).isEqualTo(Window.NONE);
+        assertThat(new Window(3, null).limit()).isNull();
+        assertThat(new Window(null, 3).offset()).isNull();
+    }
+
+    /// 每个节点的访问器都必须原样交回构造时的入参。
+    ///
+    /// record 的访问器是编译器生成的，但「交回哪个字段」由紧凑构造器里的赋值决定；
+    /// 后端编译器与方言渲染全靠这些访问器取值，返回 null 会让整条链路在很远的地方崩。
+    @Test
+    @DisplayName("访问器原样交回入参")
+    void accessorsReturnTheirComponents() {
+        Logical or = new Logical(LogicalOperator.OR, List.of(new Constant(true)));
+        Comparison comparison = new Comparison(STATUS, ComparisonOperator.GE, Literal.of("A"));
+        Between between = new Between(CREATED_AT, Literal.of("a"), Literal.of("b"));
+        In in = new In(STATUS, List.of("A"), false);
+        ArithmeticOperand arithmetic = new ArithmeticOperand(BinaryOperator.MUL, Literal.of(2), Literal.of(3));
+        AggregateProjection projection = new AggregateProjection(AggregateFunction.AVG, CREATED_AT);
+        AggregateOperand aggregate = new AggregateOperand(AggregateFunction.SUM, ID);
+        Ordering ordering = new Ordering(STATUS, Ordering.Direction.ASC);
+
+        assertThat(new AttributePath(String.class, List.of("status")).entityType())
+                .isEqualTo(String.class);
+        assertThat(or.operator()).isEqualTo(LogicalOperator.OR);
+        assertThat(or.operands()).hasSize(1);
+        assertThat(comparison.left()).isEqualTo(STATUS);
+        assertThat(comparison.operator()).isEqualTo(ComparisonOperator.GE);
+        assertThat(comparison.right()).isEqualTo(Literal.of("A"));
+        assertThat(between.subject()).isEqualTo(CREATED_AT);
+        assertThat(between.lower()).isEqualTo(Literal.of("a"));
+        assertThat(between.upper()).isEqualTo(Literal.of("b"));
+        assertThat(in.path()).isEqualTo(STATUS);
+        assertThat(in.negated()).isFalse();
+        assertThat(new NullCheck(CREATED_AT, false).path()).isEqualTo(CREATED_AT);
+        assertThat(arithmetic.operator()).isEqualTo(BinaryOperator.MUL);
+        assertThat(arithmetic.left()).isEqualTo(Literal.of(2));
+        assertThat(arithmetic.right()).isEqualTo(Literal.of(3));
+        assertThat(projection.function()).isEqualTo(AggregateFunction.AVG);
+        assertThat(projection.path()).isEqualTo(CREATED_AT);
+        assertThat(aggregate.function()).isEqualTo(AggregateFunction.SUM);
+        assertThat(aggregate.path()).isEqualTo(ID);
+        assertThat(new PathProjection(CREATED_AT).path()).isEqualTo(CREATED_AT);
+        assertThat(new ComputedProjection(Literal.of(1)).operand()).isEqualTo(Literal.of(1));
+        assertThat(ordering.path()).isEqualTo(STATUS);
+        assertThat(ordering.direction()).isEqualTo(Ordering.Direction.ASC);
+        assertThat(Literal.of("A").value()).isEqualTo("A");
+        assertThat(Constant.TRUE.value()).isTrue();
+        assertThat(Constant.FALSE.value()).isFalse();
     }
 }

@@ -288,6 +288,20 @@ class QueryBuilderTest {
     }
 
     @Test
+    @DisplayName("distinct().select(双列)：Tuple2 投影同样带 distinct 标志")
+    void distinctBeforeTwoColumnSelect() {
+        query().distinct()
+                .select(Path.of(Order::getId), Path.of(Order::getAge).max())
+                .list();
+
+        ValueSelection selection = (ValueSelection) backend.last().selection();
+        assertThat(selection.distinct()).isTrue();
+        assertThat(selection.items())
+                .containsExactly(
+                        new PathProjection(path("id")), new AggregateProjection(AggregateFunction.MAX, path("age")));
+    }
+
+    @Test
     @DisplayName("distinct().select(三列)：多列去重，列序保持")
     void distinctBeforeMultiColumnSelect() {
         query().distinct()
@@ -861,7 +875,10 @@ class QueryBuilderTest {
                         () -> query().where(Path.of(Order::getAge).eq(ageRef)).list())
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("无法解释的表达式")
-                .hasMessageContaining("PathRef");
+                .hasMessageContaining("PathRef")
+                // 实参的运行时类名要出现在消息里：否则「报错了但说不清是哪一种表达式」，
+                // 用户在 `eq(a).or(...)` 这类长链里没有任何线索定位是哪个参数写错。
+                .hasMessageContaining(ageRef.getClass().getName());
     }
 
     @Test

@@ -238,6 +238,25 @@ class JpaPersistVersionTest extends JpaTestSupport {
         });
     }
 
+    @Test
+    @DisplayName("update：已托管实体直接返回，不重复发 UPDATE，版本号保持原值")
+    void updateIgnoresManagedEntity() {
+        inTx(entityManager -> {
+            VersionedLedger ledger = entityManager.find(VersionedLedger.class, 1L);
+            long versionBefore = ledger.getVersion();
+            ledger.setName("managed-noop");
+            drainSql();
+
+            persister(entityManager).update(ledger);
+
+            // `updateOne` 开头的 `contains` 判断把托管实体当作「Hibernate 会自己 flush」直接返回。
+            // 去掉这个判断，这里就会多发一条 UPDATE 并把版本自增，调用方看到版本跳号。
+            assertThat(drainSql()).as("托管实体的 update 不应发出 SQL").isEmpty();
+            assertThat(ledger.getVersion()).as("托管实体的版本号不应被改动").isEqualTo(versionBefore);
+            return null;
+        });
+    }
+
     private JpaPersistExecutor<VersionedLedger> persister(EntityManager entityManager) {
         return new JpaPersistExecutor<>(entityManager, meta(), VersionedLedger.class);
     }
