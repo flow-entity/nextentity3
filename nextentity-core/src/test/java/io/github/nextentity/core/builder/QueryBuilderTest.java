@@ -8,6 +8,7 @@ import io.github.nextentity.api.EntityQuery;
 import io.github.nextentity.api.Expression;
 import io.github.nextentity.api.LockMode;
 import io.github.nextentity.api.Path;
+import io.github.nextentity.api.PathOperator;
 import io.github.nextentity.api.PathRef;
 import io.github.nextentity.api.Predicate;
 import io.github.nextentity.api.ProjectionMapper;
@@ -39,6 +40,7 @@ import io.github.nextentity.core.spec.ValueSelection;
 import io.github.nextentity.core.spec.Window;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -710,6 +712,20 @@ class QueryBuilderTest {
                 .hasMessageContaining("实际 null");
     }
 
+    /// 第三方自造的谓词既不是 `Op`（`Op` 是 sealed 的，外部实现不了），也不实现
+    /// `SkippedCondition` 标记：**必须拒绝**。旧判据「不是 `Op` 的 `Predicate` 一律当占位」
+    /// 会把它当成"条件没写"，于是调用方以为加上了过滤、实际下发的是全表。
+    @Test
+    @DisplayName("第三方自造的 Predicate：拒绝，而不是当成恒真占位把条件丢掉")
+    void foreignPredicateRejected() {
+        Predicate<Order> foreign = new ForeignPredicate();
+
+        assertThatThrownBy(() -> query().where(foreign).list())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("where(...)")
+                .hasMessageContaining("ForeignPredicate");
+    }
+
     /// OR 下的静默降级最危险：非条件子项被当成恒真 → 整条 OR 恒真 → 前半条一起消失。
     @Test
     @DisplayName("or(布尔字段路径)：拒绝，而不是把整条 OR 升级成恒真")
@@ -968,6 +984,41 @@ class QueryBuilderTest {
 
         public Customer getCustomer() {
             return null;
+        }
+    }
+
+    /// 第三方能造出来的"谓词"长这样：`Op` 是 sealed 的，外部实现不了它；标记接口
+    /// `SkippedCondition` 也只有本库会实现。这类对象既没有可下发的节点、也不是短路占位。
+    private static final class ForeignPredicate implements Predicate<Order> {
+
+        @Override
+        public <N> PathOperator<Order, N, Predicate<Order>> or(PathRef<Order, N> ref) {
+            throw new UnsupportedOperationException("测试桩");
+        }
+
+        @Override
+        public Predicate<Order> and(Expression<Order, Boolean> other) {
+            throw new UnsupportedOperationException("测试桩");
+        }
+
+        @Override
+        public Predicate<Order> and(Collection<? extends Expression<Order, Boolean>> others) {
+            throw new UnsupportedOperationException("测试桩");
+        }
+
+        @Override
+        public Predicate<Order> or(Expression<Order, Boolean> other) {
+            throw new UnsupportedOperationException("测试桩");
+        }
+
+        @Override
+        public Predicate<Order> or(Collection<? extends Expression<Order, Boolean>> others) {
+            throw new UnsupportedOperationException("测试桩");
+        }
+
+        @Override
+        public Predicate<Order> not() {
+            throw new UnsupportedOperationException("测试桩");
         }
     }
 }

@@ -1,0 +1,12 @@
+package io.github.nextentity.api;
+
+/// 被短路的条件占位：`*IfNotNull` / `*IfNotEmpty` 在参数为 `null`（或空串）时返回它。
+///
+/// 后端解释条件位置的入参时按本接口判定：**实现了本接口的谓词**表示"这条条件没写"
+/// （恒真、不产生任何附加条件）。
+///
+/// 只有本库会实现它，第三方自己实现的 [Predicate] 不会实现本接口——因此后端对
+/// `where(自造谓词)` 的处理是**当场拒绝**（`IllegalArgumentException`），不是"当作恒真
+/// 占位把条件悄悄丢掉"。这条区分是必要的：[Op] 是 sealed 的，外部本来就造不出可下发的
+/// 条件节点，若再把非 `Op` 的谓词一律当占位，第三方的自定义谓词会静默退化成全表。
+public interface SkippedCondition {}

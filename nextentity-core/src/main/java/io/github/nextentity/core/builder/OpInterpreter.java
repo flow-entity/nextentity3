@@ -3,7 +3,7 @@ package io.github.nextentity.core.builder;
 import io.github.nextentity.api.Expression;
 import io.github.nextentity.api.Op;
 import io.github.nextentity.api.Path;
-import io.github.nextentity.api.Predicate;
+import io.github.nextentity.api.SkippedCondition;
 import io.github.nextentity.core.spec.AggregateFunction;
 import io.github.nextentity.core.spec.AggregateOperand;
 import io.github.nextentity.core.spec.AggregateProjection;
@@ -165,11 +165,11 @@ final class OpInterpreter {
 
     /// 逻辑组合：`AND`/`OR` 的子条件放在 `arguments()` 里。
     ///
-    /// 子条件里可能混入 api 的"被短路条件"（`Conditions.AlwaysTrue`，是 `Predicate` 但不实现 `Op`）：
+    /// 子条件里可能混入 api 的"被短路条件"（`Conditions.AlwaysTrue`，实现 `SkippedCondition`）：
     /// - `AND` 下它是恒真，跳过不影响结果；
     /// - `OR` 下它是恒真，**整条 OR 恒真**，必须返回 `Constant.TRUE`（跳过会算错）。
     ///
-    /// 判据是 `Predicate` 而**不是**"不是 `Op`"：`Path<T, Boolean>` 同样不是 `Op`，但它是
+    /// 判据是 `SkippedCondition` 标记而**不是**"不是 `Op`"：`Path<T, Boolean>` 同样不是 `Op`，但它是
     /// "把整列当条件"的写法（2.2.3 也不支持，见 `docs/USAGE.md`「布尔字段请写 `.eq(true)`」）。
     /// 旧实现把这类实参一律当占位，于是 `pred.or(Path.of(Order::getActive))` 返回恒真、
     /// WHERE 整体消失（连租户边界一起），是静默 fail-open。现在当场拒绝。
@@ -199,12 +199,12 @@ final class OpInterpreter {
         return new Logical(operator, operands);
     }
 
-    /// 是否为 api 的"被短路条件"占位（`Conditions.AlwaysTrue`）：`Predicate` 但不实现 `Op`。
+    /// 是否为 api 的"被短路条件"占位（`Conditions.AlwaysTrue`）：实现 `SkippedCondition`。
     ///
     /// 这是 `where` / `having` / `and` / `or` 唯一允许的非 `Op` 入参；其余非 `Op` 表达式
     /// （典型是 `Path<T, Boolean>`）一律按 [Expression] 走 [ #notCondition]。
     static boolean isPlaceholder(Object argument) {
-        return argument instanceof Predicate<?>;
+        return argument instanceof SkippedCondition;
     }
 
     /// 非条件表达式被送进条件位置的统一拒绝消息。

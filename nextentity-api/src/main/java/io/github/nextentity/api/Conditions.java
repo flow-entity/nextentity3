@@ -160,7 +160,7 @@ final class Conditions {
     /// 被短路的条件：不实现 `Op`，逻辑上恒真。
     ///
     /// @param <T> 根实体类型
-    static final class AlwaysTrue<T> implements Predicate<T> {
+    static final class AlwaysTrue<T> implements Predicate<T>, SkippedCondition {
 
         @Override
         public Predicate<T> and(Expression<T, Boolean> other) {

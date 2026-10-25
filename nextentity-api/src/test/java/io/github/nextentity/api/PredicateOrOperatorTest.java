@@ -127,11 +127,47 @@ class PredicateOrOperatorTest {
 
         assertThat(skipped).isNotNull();
         assertThat(skipped).isNotInstanceOf(Op.class);
+        // 占位的公开判据：实现 SkippedCondition 标记。后端靠它区分"这条条件没写"与
+        // "第三方自造的谓词"——后者会被当场拒绝，而不是被当成占位静默丢掉。
+        assertThat(skipped).isInstanceOf(SkippedCondition.class);
         // 所有短路条件共用同一个单例
         assertThat(skipped).isSameAs(Path.of(Order::getAge).ltIfNotNull(null));
         // TRUE ∨ x = TRUE：继续组合不抛 NPE，且不为 x 建节点
         assertThat(skipped.or(Order::getScore).eq(5)).isSameAs(skipped);
         assertThat(skipped.or(Order::getScore).eqIfNotNull(null)).isSameAs(skipped);
+    }
+
+    /// 数值侧的六个短路点逐处钉住：返回**同一个**恒真占位实例，且它实现 `SkippedCondition`。
+    ///
+    /// `PathValues` 有 10 处 `value == null ? alwaysTrue() : ...`。此前只钉了 `eqIfNotNull`
+    /// 一处，另外 9 处若返回 `null`，只有"恰好被 core 的 `where(null)` 拒绝撞上"才会红——
+    /// 那是偶然覆盖。字符串侧（`containsIfNotEmpty` / `containsIfNotNull` / `likeIfNotNull`）
+    /// 由 `StringPathOperatorTest` 已经逐处钉住，这里补齐数值侧。
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("numberShortCircuitCalls")
+    @DisplayName("数值短路：返回同一个恒真占位实例，不是 null")
+    void numberShortCircuit(String name, Function<Path<Order, Integer>, Predicate<Order>> call) {
+        Predicate<Order> shortCircuited = call.apply(Path.of(Order::getAge));
+
+        assertThat(shortCircuited).as("%s 的短路结果", name).isNotInstanceOf(Op.class);
+        assertThat(shortCircuited).isInstanceOf(SkippedCondition.class);
+        assertThat(shortCircuited).isSameAs(Path.of(Order::getAge).eqIfNotNull(null));
+    }
+
+    private static Stream<Arguments> numberShortCircuitCalls() {
+        return Stream.of(
+                Arguments.of(
+                        "eqIfNotNull", (Function<Path<Order, Integer>, Predicate<Order>>) age -> age.eqIfNotNull(null)),
+                Arguments.of(
+                        "geIfNotNull", (Function<Path<Order, Integer>, Predicate<Order>>) age -> age.geIfNotNull(null)),
+                Arguments.of(
+                        "gtIfNotNull", (Function<Path<Order, Integer>, Predicate<Order>>) age -> age.gtIfNotNull(null)),
+                Arguments.of(
+                        "leIfNotNull", (Function<Path<Order, Integer>, Predicate<Order>>) age -> age.leIfNotNull(null)),
+                Arguments.of(
+                        "ltIfNotNull", (Function<Path<Order, Integer>, Predicate<Order>>) age -> age.ltIfNotNull(null)),
+                Arguments.of("inIfNotNull", (Function<Path<Order, Integer>, Predicate<Order>>)
+                        age -> age.inIfNotNull(null)));
     }
 
     private static Predicate<Order> parent() {

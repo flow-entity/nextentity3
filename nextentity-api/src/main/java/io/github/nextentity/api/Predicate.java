@@ -2,9 +2,11 @@ package io.github.nextentity.api;
 
 /// 谓词：可继续与其它条件组合的布尔表达式。
 ///
-/// 后端解释 `where(Expression<Boolean>)` 的入参时按 `Op` 判定：**实现 `Op` 的谓词**携带
-/// `operation()/refs()/arguments()`；**不实现 `Op` 的谓词**是 `*IfNotNull`/`*IfNotEmpty`
-/// 短路产生的占位（恒真，后端应视为"无附加条件"）。
+/// 后端解释 `where(Expression<Boolean>)` 的入参时按两级判定：**实现 `Op` 的谓词**携带
+/// `operation()/refs()/arguments()`；**实现 [SkippedCondition] 的谓词**是
+/// `*IfNotNull`/`*IfNotEmpty` 短路产生的占位（恒真，后端视为"无附加条件"）；两者都不是的
+/// 谓词既没有可下发的节点、也不是短路占位，后端一律**当场拒绝**
+/// （`IllegalArgumentException`），不会静默忽略。
 ///
 /// 组合算子（`and`/`or`/`not`、含集合形态）在 [LogicalOps] 里，本接口只多一个
 /// `or(PathRef)` 便捷重载。
