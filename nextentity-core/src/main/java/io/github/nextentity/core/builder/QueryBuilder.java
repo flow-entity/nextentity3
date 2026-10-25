@@ -25,6 +25,7 @@ import io.github.nextentity.core.spec.Constant;
 import io.github.nextentity.core.spec.EntitySelection;
 import io.github.nextentity.core.spec.Logical;
 import io.github.nextentity.core.spec.Ordering;
+import io.github.nextentity.core.spec.Projection;
 import io.github.nextentity.core.spec.QuerySpec;
 import io.github.nextentity.core.spec.Selection;
 import io.github.nextentity.core.spec.Spec;
@@ -126,36 +127,43 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
 
     @Override
     public <R> BaseWhereStep<T, R> select(PathRef<T, R> ref) {
-        return applySelection(new ValueSelection(List.of(ValueProjections.of(ref)), takeDistinct()), null);
+        boolean distinct = takeDistinct();
+        return applySelection(new ValueSelection(List.of(ValueProjections.of(ref)), distinct), null);
     }
 
     @Override
     public <R> BaseWhereStep<T, R> select(Expression<T, R> expression) {
-        return applySelection(new ValueSelection(List.of(ValueProjections.of(expression)), takeDistinct()), null);
+        boolean distinct = takeDistinct();
+        return applySelection(new ValueSelection(List.of(ValueProjections.of(expression)), distinct), null);
     }
 
     @Override
     public <A, B> BaseWhereStep<T, Tuple2<A, B>> select(Expression<T, A> first, Expression<T, B> second) {
+        boolean distinct = takeDistinct();
         return applySelection(
-                new ValueSelection(List.of(ValueProjections.of(first), ValueProjections.of(second)), takeDistinct()),
-                null);
+                new ValueSelection(List.of(ValueProjections.of(first), ValueProjections.of(second)), distinct), null);
     }
 
     @Override
     public <A, B, C> BaseWhereStep<T, Tuple3<A, B, C>> select(
             Expression<T, A> first, Expression<T, B> second, Expression<T, C> third) {
+        boolean distinct = takeDistinct();
         return applySelection(
                 new ValueSelection(
                         List.of(ValueProjections.of(first), ValueProjections.of(second), ValueProjections.of(third)),
-                        takeDistinct()),
+                        distinct),
                 null);
     }
 
     @Override
     public <R> BaseWhereStep<T, R> project(ProjectionMapper<T, R> mapper) {
+        // 旗标先取：`project(null)` 这类「进到投影步骤但当场失败」的调用同样消耗 `distinct()`，
+        // 否则残留的旗标会让下一次 `count()` 变成 `count(distinct …)`。取旗标不依赖 mapper 是否合法。
+        boolean distinct = takeDistinct();
         Objects.requireNonNull(mapper, "mapper");
         // expressions() 只求值一次：求值两次时「校验用的列集」与「建投影用的列集」会分叉
-        return applySelection(new ValueSelection(ValueProjections.ofAll(mapper.expressions()), takeDistinct()), mapper);
+        List<Projection> items = ValueProjections.ofAll(mapper.expressions());
+        return applySelection(new ValueSelection(items, distinct), mapper);
     }
 
     // -------------------------------------------------------------- orderBy
@@ -274,6 +282,11 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     }
 
     /// 取走「下一次投影是否去重」的旗标：只生效一次，投影之后回到不去重。
+    ///
+    /// **必须在求值投影项之前调用**。参数求值顺序是先投影项、后旗标，投影项抛
+    /// `IllegalArgumentException`/`NullPointerException` 时旗标不会被取走，于是残留到
+    /// 下一次投影上——`count()` 随之从 `count(*)` 变成 `count(distinct 第一列)`，结果集与
+    /// 总数一起悄悄变小。旗标归「这次投影尝试」所有，尝试失败也要消耗掉。
     private boolean takeDistinct() {
         boolean distinct = pendingDistinct;
         pendingDistinct = false;

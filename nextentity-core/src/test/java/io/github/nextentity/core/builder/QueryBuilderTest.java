@@ -342,6 +342,71 @@ class QueryBuilderTest {
 
         assertThat(((ValueSelection) backend.last().selection()).distinct()).isFalse();
     }
+
+    /// 投影项求值抛错时，`distinct()` 的旗标必须同样被消耗。
+    ///
+    /// 参数求值顺序是「先投影项、后取旗标」：若把 `takeDistinct()` 写在 `ValueProjections.of(...)`
+    /// 之后，一次失败投影不会取走旗标，它会残留到下一次投影上——`count()` 于是从 `count(*)`
+    /// 变成 `count(distinct name)`，总数与结果集一起悄悄变小，且没有任何报错。
+    @Test
+    @DisplayName("投影项被拒时 distinct 旗标不残留：下一次 count 仍是 count(*)")
+    void distinctFlagIsConsumedEvenWhenProjectionFails() {
+        EntityQuery<Order> query = query();
+
+        assertThatThrownBy(() -> query.distinct().select(new ForeignExpression()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("不支持的表达式类型");
+
+        query.select(Order::getName).count();
+
+        assertThat(((ValueSelection) backend.last().selection()).distinct())
+                .as("失败投影已经消耗掉旗标，下一次投影回到不去重")
+                .isFalse();
+    }
+
+    /// 映射器路径的旗标同样在求值 `expressions()` 之前取走：列集合校验失败不许留下去重态。
+    @Test
+    @DisplayName("映射器 expressions() 为空时 distinct 旗标不残留")
+    void distinctFlagIsConsumedEvenWhenMapperFails() {
+        EntityQuery<Order> query = query();
+        ProjectionMapper<Order, String> emptyColumns = new ProjectionMapper<>() {
+            @Override
+            public List<Expression<Order, ?>> expressions() {
+                return List.of();
+            }
+
+            @Override
+            public String map(Tuple row) {
+                return (String) row.get(0);
+            }
+        };
+
+        assertThatThrownBy(() -> query.distinct().project(emptyColumns))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("不能为空");
+
+        query.select(Order::getName).count();
+
+        assertThat(((ValueSelection) backend.last().selection()).distinct()).isFalse();
+    }
+
+    /// 传 `null` 映射器也属于「进到投影步骤后当场失败」：旗标同样必须被消耗。
+    @Test
+    @DisplayName("project(null) 被拒时 distinct 旗标不残留")
+    void distinctFlagIsConsumedEvenWhenMapperIsNull() {
+        EntityQuery<Order> query = query();
+
+        assertThatThrownBy(() -> query.distinct().project(null)).isInstanceOf(NullPointerException.class);
+
+        query.select(Order::getName).count();
+
+        assertThat(((ValueSelection) backend.last().selection()).distinct()).isFalse();
+    }
+
+    /// 既不是 `Path`、`PathRef` 也不是 `Op` 的表达式：`Expression` 是空标记接口，
+    /// 第三方实现可以合法地传进来，投影阶段必须拒绝。
+    private record ForeignExpression() implements Expression<Order, String> {}
+
     // ---------------------------------------------------------------- orderBy
 
     @Test
