@@ -145,6 +145,12 @@ final class OpInterpreter {
     /// `NOT` 节点），恒真取反即恒假。第三方谓词的 `not()` 由它自己实现，不会把非 `Op` 实参送到这里；
     /// 其余非 `Op` 表达式在 `where` / `having` / `and` / `or` 处已被拒绝。
     ///
+    /// **这条"不可达"的前提要写清，别只看现象**：`Predicate#not()` 是抽象方法（每个实现类必须自己给
+    /// 实现），且 `Op` 是 sealed 的、`NOT` 节点只能由 api 造出来。这两条任一被放开——给 `not()` 加
+    /// default 实现、或在 api 里加一个 `not(Expression)` 静态工厂——第三方谓词就会带着非 `Op` 实参走到
+    /// 这里，被**静默当成恒假**（而不是像 `where` 那样当场拒绝）。到那天必须把这里改判
+    /// `SkippedCondition` 并补拒绝用例；没有用例会在放开时先红，只能靠这段注释。
+    ///
     /// 顺带消去双重否定（`NOT(NOT(x))` = `x`）：Hibernate 的 `Predicate.not()` 对「最内层是比较谓词」
     /// 的嵌套取反只生效一次，原样下推会得到 `NOT(x)` 的结果（`AndOrPredicateIntegrationTest` 复现）。
     /// 消去是纯语法重写，三值逻辑下等价。
