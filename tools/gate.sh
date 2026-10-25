@@ -241,6 +241,31 @@ step() {
         echo "  · [$label] PIT 例外路径：依赖从 ~/.m2 解析，已由 install 步骤刷新" >&2
     fi
 
+    local -a warns=()
+    # 预期失败基线：只对本步「按设计就会红」的方言通道生效（当前只有 PG 兼容模式）。
+    # 必须显式点名，且基线文件里每条都带 type=、issue= 与 expires=（见 tools/expected-failures/）。
+    local -a baseline=()
+    if [ -n "${STEP_EXPECTED_FAILURES:-}" ]; then
+        if [ ! -f "$STEP_EXPECTED_FAILURES" ]; then
+            # 基线文件不存在时不能静默跳过——那会把「8 条已知方言差异」变回 8 条新红，
+            # 或者更糟（若通道也没声明）让整步变成无检查的绿。
+            echo "✗ [$label] 申报的基线文件不存在：$STEP_EXPECTED_FAILURES" >&2
+            FAILED+=("$label(baseline-missing)")
+            reject_step "$label" "预期失败基线文件不存在：$STEP_EXPECTED_FAILURES"
+            STEP_EXPECTED_FAILURES=""
+            return 1
+        fi
+        baseline+=(--expected-failures "$STEP_EXPECTED_FAILURES")
+        # 让 mvn 在测试失败时**不中断**生命周期。PG 那遍按设计必然红，默认 fail-fast 会让
+        # nextentity-tests-jpa 的 checkstyle / PMD / SpotBugs / jacoco:report（全绑在 verify）
+        # 一次都不执行——「静态检查根本没跑」会被「测试红是预期内」顺带盖过去。
+        # 加上之后判定权完全交给 receipt 的基线逐条比对：静态检查失败会让退出码非零，
+        # 那时 other_goals 非空，退不进下面的降级分支。
+        cmd+=(-Dmaven.test.failure.ignore=true)
+        warns+=(--warn "$label：本步申报了预期失败基线——surefire 失败不中断构建（-Dmaven.test.failure.ignore=true），判定权在凭证的基线逐条比对")
+    fi
+    STEP_EXPECTED_FAILURES=""
+
     local since log rc vrc
     since=$("$PY" -c 'import time; print(repr(time.time()))')
     log="$RUNDIR/$label.log"
@@ -255,34 +280,12 @@ step() {
         FRESH_SNAPSHOT=1
     fi
 
-    local -a warns=()
     if grep -q 'Nothing to compile - all classes are up to date' "$log" 2>/dev/null; then
         warns+=(--warn "$label：日志出现 Nothing to compile，本次复用了前序产物")
     fi
     if grep -q 'COMPILATION ERROR' "$log" 2>/dev/null; then
         warns+=(--warn "$label：日志出现 COMPILATION ERROR")
     fi
-
-    # 预期失败基线：只对本步「按设计就会红」的方言通道生效（当前只有 PG 兼容模式）。
-    # 必须显式点名，且基线文件里每条都带 issue= 与 expires=（见 tools/expected-failures/）。
-    local -a baseline=()
-    if [ -n "${STEP_EXPECTED_FAILURES:-}" ]; then
-        if [ ! -f "$STEP_EXPECTED_FAILURES" ]; then
-            # 基线文件不存在时不能静默跳过——那会把「8 条已知方言差异」变回 8 条新红，
-            # 或者更糟（若通道也没声明）让整步变成无检查的绿。
-            echo "✗ [$label] 申报的基线文件不存在：$STEP_EXPECTED_FAILURES" >&2
-            FAILED+=("$label(baseline-missing)")
-            reject_step "$label" "预期失败基线文件不存在：$STEP_EXPECTED_FAILURES"
-            STEP_EXPECTED_FAILURES=""
-            return 1
-        fi
-        baseline+=(--expected-failures "$STEP_EXPECTED_FAILURES")
-        # 提前声明：本步 mvn 必然以非零退出（基线里的用例就是会红的，surefire 一有失败
-        # 就让 verify 失败）。写进凭证而不是只打到 stderr——否则事后看凭证只见到
-        # 「GREEN + skip 2」，看不出「这步 mvn 其实是 exit 1」，会被当成普通绿。
-        warns+=(--warn "$label：本步申报了预期失败基线——若 mvn 非零退出，只有当实际失败集与基线逐条相等时才按预期内解释")
-    fi
-    STEP_EXPECTED_FAILURES=""
 
     local -a noreq=()
     # 空 require 的快照会跳过所有通道检查、必然绿。只有确实不产出测试报告的步骤才许豁免，

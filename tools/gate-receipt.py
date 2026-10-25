@@ -21,6 +21,7 @@ mtime 是 16:41:14，读它就会报「530 passed」，而容器通道一条没�
 from __future__ import annotations
 
 import argparse
+import datetime
 import fnmatch
 import glob
 import hashlib
@@ -38,6 +39,13 @@ import xml.etree.ElementTree as ET
 
 #: 判"新鲜"的容差（秒）。mtime 取浮点秒，同一秒内起跑不会误判成陈旧。
 FRESH_TOLERANCE = 0.0
+
+#: 基线条目只认这三个字段；其它一律报错（拼错的字段写了不生效还不报错，比没写更危险）。
+ALLOWED_BASELINE_FIELDS = ("type", "issue", "expires")
+
+#: 预期失败基线条目的最长租约（天）。没有上限的 `expires=2099-12-31` 等于永久豁免，
+#: 与 AGENTS.md「禁用要有租约」同一条理由：期限长到看不见就等于没有期限。
+MAX_BASELINE_LEASE_DAYS = 180
 
 
 def modules(root: str) -> list[str]:
@@ -81,6 +89,8 @@ def _scan_xml_reports(root: str, kind: str, since: float) -> dict[str, dict]:
             "stale_files": 0,
             "skipped_tests": [],
             "failed_tests": [],
+            "failed_kinds": {},
+            "case_names": {},
             "unparsable": [],
         }
         for path in files:
@@ -105,13 +115,20 @@ def _scan_xml_reports(root: str, kind: str, since: float) -> dict[str, dict]:
             agg["mtime"] = max(agg["mtime"], os.stat(path).st_mtime)
             for case in suite.iter("testcase"):
                 name = "%s#%s" % (case.get("classname", "?"), case.get("name", "?"))
+                agg["case_names"][name] = agg["case_names"].get(name, 0) + 1
                 skip = case.find("skipped")
                 if skip is not None:
                     agg["skipped_tests"].append(
                         {"test": name, "reason": (skip.get("message") or "").strip()[:240]}
                     )
-                if case.find("failure") is not None or case.find("error") is not None:
+                failure = case.find("failure")
+                error = case.find("error")
+                if failure is not None or error is not None:
                     agg["failed_tests"].append(name)
+                    # 记下失败**性质**：`failure` 是断言不符，`error` 是被测代码抛异常。
+                    # 基线只比用例名的话，「方言渲染差异」悄悄变成「生产代码 NPE」时
+                    # 名字不变、计数仍是「一条失败」，凭证照旧判绿——类型必须参与比对。
+                    agg["failed_kinds"][name] = "failure" if failure is not None else "error"
         out["%s:%s" % (kind, module)] = agg
     return out
 
@@ -392,6 +409,18 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
             )
         if info["tests"] == 0:
             problems.append("%s：报告存在但 tests=0（没有任何用例被执行）" % name)
+        # 同名失败用例被折叠：`@ParameterizedTest` 的多次 invocation 若 display name 撞车，
+        # `set()` 会把 N 条失败折成 1 个元素，一条基线条目就能盖住 N 条。折叠必须暴露。
+        folded = [
+            test
+            for test, count in (info.get("case_names") or {}).items()
+            if count > 1 and test in (info.get("failed_kinds") or {})
+        ]
+        if folded:
+            problems.append(
+                "%s：%d 个失败用例名在同一次运行里重复出现（%s）——基线按名字比对会把它们折叠成一条"
+                % (name, len(folded), ", ".join(sorted(folded)[:3]))
+            )
         if info["unparsable"]:
             problems.append(
                 "%s：%d 个报告无法解析（%s）——截断的 XML 不能算通过"
@@ -420,6 +449,22 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
         if key not in required:
             warnings_extra.append("%s：申报了 --max-skip 但不在 --require 里，预算未生效" % key)
 
+    # 方言矩阵通道必须与基础通道跑**同一批**用例：`surefire-pg` 少跑几条（profile 被改哑、
+    # 或基类被 `<excludes>` 掉）时，8 条预期红照样逐条命中基线，凭证仍绿——「只钉失败集、
+    # 不钉规模」等于允许把矩阵悄悄缩到只剩那 8 条。通道命名约定 `<基础类型>-<变体>`。
+    for name, info in fresh.items():
+        kind = info.get("kind") or ""
+        if "-" not in kind or kind == "pit":
+            continue
+        base = fresh.get("%s:%s" % (kind.split("-", 1)[0], info["module"]))
+        if not base:
+            continue
+        if info["tests"] != base["tests"]:
+            problems.append(
+                "%s：%d 条 vs %s 的 %d 条——方言矩阵必须与基础通道同一批用例，少跑的就是没测"
+                % (name, info["tests"], "%s:%s" % (base["kind"], info["module"]), base["tests"])
+            )
+
     receipt = {
         "step": args.label,
         "since": args.since,
@@ -427,6 +472,11 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
         "channels": fresh,
         "stale_channels": {
             k: {f: v.get(f) for f in ("tests", "mutations", "mtime")} for k, v in stale.items()
+        },
+        "baseline": {
+            "file": getattr(args, "expected_failures", None),
+            "entries": sum(len(v) for v in baseline.values()),
+            "channels": {k: sorted(v) for k, v in baseline.items()},
         },
         "warnings": list(args.warn or []) + warnings_extra,
         "notes": notes,
@@ -455,16 +505,20 @@ def _load_expected_failures(path: str) -> tuple[dict[str, dict[str, dict]], list
 
     格式（`|` 分隔，`#` 开头为注释）：:
 
-        <通道> | <classname>#<method> | issue=<链接或编号> | expires=<yyyy-MM-dd> | <原因>
+        <通道> | <classname>#<method> | type=<failure|error> | issue=<链接或编号> | expires=<yyyy-MM-dd> | <原因>
 
-    `issue` 与 `expires` 都必填：与 AGENTS.md「禁用要有租约」同一口径——没有到期日的
-    豁免就是永久豁免，而过期仍在基线里的条目按违规处理。
+    `type` / `issue` / `expires` 都必填，其余字段一律拒绝：
+    - `type` 钉住失败的**性质**。只比用例名的话，某条「方言渲染差异（断言不符）」哪天变成
+      「生产代码抛 NPE（error）」，名字不变、失败条数不变，凭证照旧判绿。
+    - `issue` 与 `expires` 同 AGENTS.md「禁用要有租约」：没有到期日的豁免就是永久豁免；
+      过期仍在基线里的条目按违规处理，且租约本身有上限（见 `MAX_BASELINE_LEASE_DAYS`）。
 
     @param path 基线文件路径
     @return (通道 → {用例全名 → 条目}, 格式错误列表)
     """
     baseline: dict[str, dict[str, dict]] = {}
     errors: list[str] = []
+    today = datetime.date.fromisoformat(time.strftime("%Y-%m-%d"))
     try:
         with open(path, encoding="utf-8") as handle:
             lines = handle.readlines()
@@ -475,17 +529,36 @@ def _load_expected_failures(path: str) -> tuple[dict[str, dict[str, dict]], list
         if not line or line.startswith("#"):
             continue
         parts = [p.strip() for p in line.split("|")]
-        if len(parts) < 4:
-            errors.append("%s:%d 字段不足（需要 `通道 | 用例 | issue=… | expires=…`）：%s" % (path, lineno, line))
+        if len(parts) < 5:
+            errors.append(
+                "%s:%d 字段不足（需要 `通道 | 用例 | type=… | issue=… | expires=… | 原因`）：%s"
+                % (path, lineno, line)
+            )
             continue
         channel, test = parts[0], parts[1]
         fields: dict[str, str] = {}
-        for part in parts[2:]:
+        unknown: list[str] = []
+        for part in parts[2:5]:
             key, _, value = part.partition("=")
-            fields[key.strip().lower()] = value.strip()
+            key = key.strip().lower()
+            if key not in ALLOWED_BASELINE_FIELDS:
+                unknown.append(part)
+                continue
+            fields[key] = value.strip()
+        if unknown:
+            # 只认三个字段且**拒绝**其它：早先是 `fields[key] = value` 无校验，
+            # `severity=` / `owner=` 之类写了既不生效也不报错，申报内容与判据静默脱节。
+            errors.append(
+                "%s:%d 出现未知字段 %s（只认 type= / issue= / expires=）：%s"
+                % (path, lineno, unknown, test)
+            )
+            continue
         issue = fields.get("issue", "")
         expires = fields.get("expires", "")
-        reason = " ".join(p for p in parts[4:] if "=" not in p).strip()
+        kind = fields.get("type", "").lower()
+        # 原因允许含 `|`：前 5 段是结构化的，剩下的一律算原因（早先按「不含 `=`」过滤，
+        # 原因里写个 `a=b` 就会被静默丢弃成空串）。
+        reason = " | ".join(p for p in parts[5:]).strip()
         if not channel or ":" not in channel:
             errors.append("%s:%d 通道名不合法（需 `类型:模块`）：%s" % (path, lineno, channel))
             continue
@@ -495,14 +568,37 @@ def _load_expected_failures(path: str) -> tuple[dict[str, dict[str, dict]], list
         if not issue:
             errors.append("%s:%d 缺 issue=（无 issue 的豁免等于永久豁免）：%s" % (path, lineno, test))
             continue
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", expires):
-            errors.append("%s:%d expires= 需为 yyyy-MM-dd：%s" % (path, lineno, test))
+        if kind not in ("failure", "error"):
+            errors.append(
+                "%s:%d type= 需为 failure 或 error（区分「断言不符」与「被测代码抛异常」）：%s"
+                % (path, lineno, test)
+            )
+            continue
+        try:
+            expiry = datetime.date.fromisoformat(expires)
+        except ValueError:
+            # `\d{4}-\d{2}-\d{2}` 只校验形状，`2026-13-45` 能过，且字典序比较下永远「未过期」。
+            errors.append("%s:%d expires= 需为合法日期 yyyy-MM-dd（收到 %r）：%s" % (path, lineno, expires, test))
+            continue
+        lease_limit = today + datetime.timedelta(days=MAX_BASELINE_LEASE_DAYS)
+        if expiry > lease_limit:
+            errors.append(
+                "%s:%d expires=%s 超过最长租约 %d 天（今天 %s，上限 %s）：%s"
+                % (path, lineno, expires, MAX_BASELINE_LEASE_DAYS, today.isoformat(), lease_limit.isoformat(), test)
+            )
             continue
         bucket = baseline.setdefault(channel, {})
         if test in bucket:
             errors.append("%s:%d 用例重复申报：%s" % (path, lineno, test))
             continue
-        bucket[test] = {"issue": issue, "expires": expires, "reason": reason, "line": lineno}
+        bucket[test] = {"type": kind, "issue": issue, "expires": expires, "reason": reason, "line": lineno}
+    if not baseline and not errors:
+        # 空基线文件不是「没有已知失败」，是配置错误：申报了基线却一条条目都没有，
+        # 等于把「基线生效」这个前提抽掉，而调用方仍以为有豁免在管。
+        errors.append(
+            "%s：基线文件里没有任何条目——空基线等于没有基线。要么补条目，"
+            "要么删掉这个文件并同时去掉 gate.sh 里的 --expected-failures 申报" % path
+        )
     return baseline, errors
 
 
@@ -537,6 +633,15 @@ def _check_expected_failures(
         )
     for test in sorted(declared & actual):
         entry = expected[test]
+        actual_kind = (info.get("failed_kinds") or {}).get(test)
+        if entry["type"] != actual_kind:
+            # 名字对上了不代表原因对上了：方言渲染差异是 `failure`（断言不符），
+            # 生产代码抛异常是 `error`。类型漂移必须重新定性，不能继续按「已知方言差异」放过。
+            problems.append(
+                "%s：%s 基线申报 type=%s，实际是 %s——失败性质变了（可能是生产代码抛异常，"
+                "不是已知方言差异），请重新定性而不是沿用基线条目" % (name, test, entry["type"], actual_kind or "未失败")
+            )
+            continue
         if entry["expires"] < today:
             problems.append(
                 "%s：基线条目 %s 已于 %s 到期（issue=%s）——要么续期，要么修掉"

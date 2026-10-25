@@ -4,31 +4,42 @@
 # 而不是生产代码 bug」。它不是垃圾桶，也不是跳过——用例照跑、失败照记，只是判定时
 # 允许与基线逐条对上。
 #
-# 三条硬规则（由 tools/gate-receipt.py 强制，任一违反即判红）：
+# 硬规则（由 tools/gate-receipt.py 强制，任一违反即判红）：
 #   1. 实际失败集必须与基线**完全相等**。多出一条 = 新回归（基线里没有它，不许夹带）；
 #      少一条 = 基线腐化（已修好或用例被删/改名，必须删掉这一行）。
-#   2. 每个条目必须带 issue=（无 issue 的豁免等于永久豁免）与 expires=（到期未续即红）。
-#   3. 只有本文件里点名的通道才享受基线判定，其余通道任何失败一律判红。
+#   2. 失败**性质**也要相等：`type=failure` 是断言不符，`type=error` 是被测代码抛异常。
+#      某条「方言渲染差异」哪天变成「生产代码 NPE」，名字不变但 type 会从 failure 变 error，
+#      此时必须重新定性，不能沿用这一行。
+#   3. 每个条目必须带 issue=（无 issue 的豁免等于永久豁免）与 expires=（到期未续即红），
+#      且 expires 不得超过今天 + 180 天——期限长到看不见就等于没有期限。
+#   4. 只有本文件里点名的通道才享受基线判定，其余通道任何失败一律判红。
+#   5. 方言通道必须与基础通道跑**同一批**用例（`surefire-pg` 条数 == `surefire` 条数），
+#      否则「把矩阵悄悄缩到只剩这几条」也会绿。
+#   6. 本文件不能是空文件：空基线等于没有基线。要撤销基线，删掉本文件并同时去掉
+#      tools/gate.sh 里的 --expected-failures 申报（两处一起改，改动因此可见）。
 #
 # 为什么要基线而不是 @Disabled：@Disabled 的用例根本不跑，看不出哪天修好了；
 # 基线让用例继续跑，一旦某条不再失败就立刻红，逼你把它从这份清单里划掉。
 #
-# 格式：<通道> | <classname>#<method> | issue=<编号> | expires=<yyyy-MM-dd> | <原因>
+# 格式：<通道> | <classname>#<method> | type=<failure|error> | issue=<编号> | expires=<yyyy-MM-dd> | <原因>
 
 # --- group by 的形态：MySQL 用选择列别名（group by c0,c1），PG 用序号（group by 1,2） ---
 # 两者都是合法 SQL，差异来自 Hibernate 的方言渲染，不是 nextentity 的缺陷。
 # 期望值钉的是「两个分组项互不相同且按调用顺序排列」这条语义，序号形态同样满足。
-surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemTier1RenderingTest#bothGroupColumnsAppearInGroupByClause | issue=DIALECT-PG-GROUPBY-ORDINAL | expires=2026-12-31 | PG 方言按序号渲染 group by（group by 1,2 而非 group by c0,c1），语义等价
-surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemProjectionMapperRenderingTest#projectionColumnsAppearInExpressionOrder | issue=DIALECT-PG-GROUPBY-ORDINAL | expires=2026-12-31 | 同上；整句快照里 group by c0,c1 在 PG 下渲染为 group by 1,2
-surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemSqlSnapshotTest#snapshotsRepresentativeStatements | issue=DIALECT-PG-RENDERING | expires=2026-12-31 | 整句快照同时含两处方言差异：group by 用序号而非别名、avg 不需要 cast 到 float(53)
+surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemTier1RenderingTest#bothGroupColumnsAppearInGroupByClause | type=failure | issue=DIALECT-PG-GROUPBY-ORDINAL | expires=2026-12-31 | PG 方言按序号渲染 group by（group by 1,2 而非 group by c0,c1），语义等价
+surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemProjectionMapperRenderingTest#projectionColumnsAppearInExpressionOrder | type=failure | issue=DIALECT-PG-GROUPBY-ORDINAL | expires=2026-12-31 | 同上；整句快照里 group by c0,c1 在 PG 下渲染为 group by 1,2
+surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemSqlSnapshotTest#snapshotsRepresentativeStatements | type=failure | issue=DIALECT-PG-RENDERING | expires=2026-12-31 | 整句快照同时含两处方言差异：group by 用序号而非别名、avg 不需要 cast 到 float(53)
 
 # --- 悲观锁子句：MySQL 渲染 for update，PG 渲染 for share / for no key update ---
 # PG 的 PESSIMISTIC_WRITE 渲染成 `for no key update`（比 for update 弱一档的合法 PG 语法），
 # PESSIMISTIC_READ 渲染成 `for share`。H2 的 PG 兼容模式**不认**这两个子句（只认 for update），
 # 所以在 H2 上执行会 SQLGrammarException——这是 H2 兼容层的限制，不是 nextentity 的缺陷，
 # 也不是真 PG 的行为。真 PG 通道（testcontainers）上这些用例应当全绿。
-surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemLockConsistencyTest#pessimisticWriteLockReadsRowAndEmitsForUpdate | issue=H2-PG-LOCK-CLAUSE | expires=2026-12-31 | H2 的 PG 兼容模式不支持 for no key update；真 PG 支持
-surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemLockConsistencyTest#pessimisticWriteLockOnMissingRowReturnsEmpty | issue=H2-PG-LOCK-CLAUSE | expires=2026-12-31 | 同上
-surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemLockConsistencyTest#everyLockModeIsEitherHonouredOrRejected | issue=H2-PG-LOCK-CLAUSE | expires=2026-12-31 | 五种锁模式的放行/拒绝形态在 PG 方言下整体改变（for share / for no key update），且 H2 兼容层不认
-surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemQueryEntrySnapshotTest#pessimisticLockSingleReturnsTheFilteredRow | issue=H2-PG-LOCK-CLAUSE | expires=2026-12-31 | 同上
-surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemQueryEntrySnapshotTest#snapshotsSixColumnProjectionsAndProjectionReplacement | issue=H2-PG-LOCK-CLAUSE | expires=2026-12-31 | 同上
+#
+# 注意这四条是 type=error（H2 直接抛 SQLGrammarException），不是断言不符；
+# 若哪天它们变成 type=failure，说明渲染形态变了（可能真的改好了，也可能改成别的错）。
+surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemLockConsistencyTest#everyLockModeIsEitherHonouredOrRejected | type=failure | issue=H2-PG-LOCK-CLAUSE | expires=2026-12-31 | 五种锁模式的放行/拒绝形态在 PG 方言下整体改变（for share / for no key update），断言先行失败
+surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemLockConsistencyTest#pessimisticWriteLockReadsRowAndEmitsForUpdate | type=error | issue=H2-PG-LOCK-CLAUSE | expires=2026-12-31 | H2 的 PG 兼容模式不支持 for no key update；真 PG 支持
+surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemLockConsistencyTest#pessimisticWriteLockOnMissingRowReturnsEmpty | type=error | issue=H2-PG-LOCK-CLAUSE | expires=2026-12-31 | 同上
+surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemQueryEntrySnapshotTest#pessimisticLockSingleReturnsTheFilteredRow | type=error | issue=H2-PG-LOCK-CLAUSE | expires=2026-12-31 | 同上
+surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemQueryEntrySnapshotTest#snapshotsSixColumnProjectionsAndProjectionReplacement | type=error | issue=H2-PG-LOCK-CLAUSE | expires=2026-12-31 | 同上
