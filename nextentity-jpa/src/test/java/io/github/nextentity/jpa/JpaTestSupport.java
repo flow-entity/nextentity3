@@ -8,6 +8,7 @@ import io.github.nextentity.jpa.entity.OrderStatus;
 import io.github.nextentity.jpa.entity.Organization;
 import io.github.nextentity.jpa.entity.PriceWindow;
 import io.github.nextentity.jpa.entity.Seal;
+import io.github.nextentity.jpa.entity.SealHolder;
 import io.github.nextentity.jpa.entity.Shipment;
 import io.github.nextentity.jpa.entity.ShopOrder;
 import io.github.nextentity.jpa.entity.Tag;
@@ -72,6 +73,7 @@ abstract class JpaTestSupport {
         configuration.addAnnotatedClass(Article.class);
         configuration.addAnnotatedClass(Tag.class);
         configuration.addAnnotatedClass(Seal.class);
+        configuration.addAnnotatedClass(SealHolder.class);
         this.sessionFactory = configuration.buildSessionFactory();
         this.meta = new JpaMeta(sessionFactory);
     }

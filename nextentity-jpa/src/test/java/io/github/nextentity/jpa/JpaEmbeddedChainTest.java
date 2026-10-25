@@ -134,7 +134,7 @@ class JpaEmbeddedChainTest extends JpaTestSupport {
     /// 前序路径填满，所以三层路径测不到缓存的行为。只有 1 号行有 `datum`，2 号行的
     /// `coordinates.datum` 为 `null`：命中一行才说明最内层真的渲染成仓库自己的列。
     @Test
-    @DisplayName("三层嵌入的四段路径：条件落在最内层列上，语句里不出现 join")
+    @DisplayName("三层嵌入的四段路径：条件落在最内层列上，投影/条件/排序都走仓库自己的列")
     void nestedEmbeddedPathAtFourthSegmentUsesGet() {
         AttributePath code = AttributePath.of(Warehouse.class, "location", "coordinates", "datum", "code");
         QuerySpec spec = new QuerySpec(
