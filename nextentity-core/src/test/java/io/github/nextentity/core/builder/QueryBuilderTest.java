@@ -671,6 +671,10 @@ class QueryBuilderTest {
     /// 2.2.3 起就不支持"把字段本身当条件"（`docs/USAGE.md`：布尔字段请写 `.eq(true)`），
     /// 因此送进条件位置必须**当场拒绝**。旧实现用 `instanceof Op` 当唯一入口、其余静默跳过，
     /// 于是 `where(flag)` 会退化成无条件（返回全表），租户/权限边界一起消失。
+    ///
+    /// 消息里的**实际类型**也要断：`OpInterpreter#notCondition` 把 `null` 与"某个类"分开描述，
+    /// 只断前半句时，把 `argument == null` 改成恒真（恒报 `null`）仍然全绿——
+    /// 那正是 `STRONGER` 组里 `OpInterpreter:216` 存活的原因。
     @Test
     @DisplayName("where(布尔字段路径)：拒绝，而不是静默丢掉整条 WHERE")
     void whereBooleanPathRejected() {
@@ -679,7 +683,8 @@ class QueryBuilderTest {
         assertThatThrownBy(() -> query().where(flag).list())
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("where(...)")
-                .hasMessageContaining("布尔字段请写 .eq(true)");
+                .hasMessageContaining("布尔字段请写 .eq(true)")
+                .hasMessageContaining("实际 io.github.nextentity.api");
     }
 
     @Test
@@ -726,6 +731,42 @@ class QueryBuilderTest {
                         query().where(Path.of(Order::getOrgId).eq(1L).and(flag)).list())
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("and/or 的子条件");
+    }
+
+    /// 校验不能取决于实参顺序：`or` 的短路判定如果在遍历中提前 `return`，
+    /// 后面那个非法实参就被跳过了——`a.or(List.of(短路占位, 布尔路径))` 会静默变成恒真。
+    @Test
+    @DisplayName("or(集合)：先校验全部子条件，再判短路，非法项不被顺序放过")
+    void orValidatesEveryArgumentBeforeShortCircuit() {
+        Expression<Order, Boolean> flag = Path.of(Order::getActive);
+        Predicate<Order> skipped = Path.of(Order::getAge).ltIfNotNull(null);
+
+        assertThatThrownBy(() -> query().where(Path.of(Order::getOrgId).eq(1L).or(List.of(skipped, flag)))
+                        .list())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("and/or 的子条件")
+                .hasMessageContaining("布尔字段请写 .eq(true)");
+    }
+
+    /// 路径形态的 `where` 是**步骤**而不是条件：裸写 `where(Order::getActive)` 一条条件都不产生，
+    /// 与"没写这条 where"等价（`docs/USAGE.md`：布尔字段请写 `.eq(true)`）。
+    /// 这条用例把该行为钉成契约——它是 `where(Expression)` 的拒绝分支覆盖不到的那半边。
+    @Test
+    @DisplayName("where(路径) 裸写：只返回算子步骤、不产生条件；链上算子才产生")
+    void bareWherePathAddsNoConditionUntilOperatorChained() {
+        EntityQuery<Order> bare = query();
+        bare.where(Order::getActive);
+        bare.list();
+        assertThat(backend.last().where())
+                .as("裸写 `where(Order::getActive)` 不产生条件")
+                .isNull();
+
+        EntityQuery<Order> chained = query();
+        chained.where(Order::getActive).eq(true);
+        chained.list();
+        assertThat(backend.last().where())
+                .as("链上 `.eq(true)` 之后才产生条件")
+                .isEqualTo(new Comparison(path("active"), ComparisonOperator.EQ, Literal.of(true)));
     }
 
     /// 列对列比较必须写 `Path.of(B::getY)`：裸 `PathRef` 是 `Expression` 但不是 `Path`，

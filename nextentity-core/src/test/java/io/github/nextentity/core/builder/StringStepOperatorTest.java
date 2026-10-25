@@ -27,7 +27,7 @@ import org.junit.jupiter.api.Test;
 ///
 /// 每个短路用例都配一条正向用例断言到节点：只测「跳过」时，把短路条件改成恒真也能通过，
 /// 那样 `*IfNotEmpty("abc")` 会静默丢掉条件。守护的行（见 `StringStepOperator.java`）：
-/// `:85` `inIfNotNull(Collection)`、`:114` `isEmpty(String)`。
+/// `:85` `inIfNotNull(Collection)`、`:110` `likeIfNotNull(String)`、`:114` `isEmpty(String)`。
 @DisplayName("StringStepOperator：空值/空串短路与 in 集合")
 class StringStepOperatorTest {
 
@@ -87,6 +87,24 @@ class StringStepOperatorTest {
         query().where(Order::getName).containsIfNotEmpty(null).list();
 
         assertThat(where()).isNull();
+    }
+
+    // ---------------------------------------------------- likeIfNotNull（:110）
+
+    @Test
+    @DisplayName("likeIfNotNull(null)：三元表达式的 null 侧命中，条件被跳过")
+    void likeIfNotNullSkipsNull() {
+        query().where(Order::getName).likeIfNotNull(null).list();
+
+        assertThat(where()).isNull();
+    }
+
+    @Test
+    @DisplayName("likeIfNotNull(非 null)：模式原样进 Literal，不额外加通配符")
+    void likeIfNotNullKeepsPattern() {
+        query().where(Order::getName).likeIfNotNull("A%").list();
+
+        assertThat(where()).isEqualTo(new Comparison(path("name"), ComparisonOperator.LIKE, Literal.of("A%")));
     }
 
     // ---------------------------------------------------------------- fixture

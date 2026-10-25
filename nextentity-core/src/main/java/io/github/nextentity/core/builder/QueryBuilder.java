@@ -85,21 +85,30 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
         return this;
     }
 
+    /// 路径形态的 `where`：**返回算子步骤，本身不产生条件**，必须链上 `eq` / `gt` / `in` … 才算一条条件。
+    ///
+    /// 这条重载与 [#where(Expression)] 的分工：`where(Order::getAge).gt(3)` 走这里，
+    /// `where(Order::getAge.gt(3))` 走那里。裸写 `where(Order::getActive)` 只拿到一个步骤对象、
+    /// 一条条件都不产生（等价于没写这条 `where`），不会像 [Path] 当条件那样被拒绝——
+    /// 布尔字段同样要链 `.eq(true)`，见 `docs/USAGE.md`「布尔字段请写 `.eq(true)`」。
     @Override
     public <N> PathOperator<T, N, ? extends BaseWhereStep<T, T>> where(PathRef<T, N> ref) {
         return new PathStepOperator<>(PathRefs.resolve(ref), this::addConditionStep, this::selfStep);
     }
 
+    /// 字符串路径形态的 `where`：同 [#where(PathRef)]，返回步骤、必须链 `eq` / `contains` / `like` …。
     @Override
     public StringOperator<T, ? extends BaseWhereStep<T, T>> where(PathRef.StringRef<T> ref) {
         return new StringStepOperator<>(PathRefs.resolve(ref), this::addConditionStep, this::selfStep);
     }
 
+    /// [Path] 形态的 `where`：同 [#where(PathRef)]，返回步骤、必须链算子。
     @Override
     public <N> PathOperator<T, N, ? extends BaseWhereStep<T, T>> where(Path<T, N> path) {
         return new PathStepOperator<>(PathRefs.resolve(path.refs()), this::addConditionStep, this::selfStep);
     }
 
+    /// [StringPath] 形态的 `where`：同 [#where(PathRef)]，返回步骤、必须链算子。
     @Override
     public StringOperator<T, ? extends BaseWhereStep<T, T>> where(StringPath<T> path) {
         return new StringStepOperator<>(PathRefs.resolve(path.refs()), this::addConditionStep, this::selfStep);

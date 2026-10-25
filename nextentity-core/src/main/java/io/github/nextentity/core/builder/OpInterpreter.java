@@ -175,16 +175,23 @@ final class OpInterpreter {
     /// WHERE 整体消失（连租户边界一起），是静默 fail-open。现在当场拒绝。
     ///
     /// 过滤后一个都不剩时：`AND` 恒真、`OR` 恒假（`or(空集合)` 不能匹配全表）。
+    ///
+    /// **先整轮校验、再判 OR 短路**：否则 `a.or(List.of(短路占位, 非法表达式))` 会在占位处
+    /// 提前 `return Constant.TRUE`，把后面的非法实参一起放过——校验结果不能取决于实参顺序。
     private static Spec logical(LogicalOperator operator, List<Object> arguments) {
         List<Spec> operands = new ArrayList<>(arguments.size());
+        boolean placeholder = false;
         for (Object argument : arguments) {
             if (argument instanceof Op op) {
                 operands.add(toSpec(op));
-            } else if (!isPlaceholder(argument)) {
+            } else if (isPlaceholder(argument)) {
+                placeholder = true;
+            } else {
                 throw notCondition(argument, "and/or 的子条件");
-            } else if (operator == LogicalOperator.OR) {
-                return Constant.TRUE;
             }
+        }
+        if (placeholder && operator == LogicalOperator.OR) {
+            return Constant.TRUE;
         }
         if (operands.isEmpty()) {
             return operator == LogicalOperator.OR ? Constant.FALSE : Constant.TRUE;
