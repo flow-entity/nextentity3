@@ -50,6 +50,7 @@
 - **一致性基类保持后端中立**：该守哪几条在 [docs/DESIGN.md](docs/DESIGN.md) §5「编写约定」里，此处不再重述；评审逐条对照，命中即违规。
 - **契约拒绝必须钉住**：任何抛 `UnsupportedOperationException` 的分支必须有 `assertThatThrownBy` 用例；缺用例的拒绝分支视为能力缺口被掩盖，不得合入。
 - **方言跳过必须可数**：按方言跳过的用例一律用显式标记（注解或 `@Tag`），不得只在注释或日志里交代。跳过条数**由凭证判定**：`tools/gate.sh` 给每个通道申报 skip 预算（默认 0），`tools/gate-receipt.py` 从 surefire/failsafe XML 读 `<skipped>` 连理由汇总到 `receipt.json` 的 `skip_report` 字段，**超预算即红**。所以 PR 说明不手写清单：直接贴凭证里的 `skip_report.total` 与条目。
+- **预期失败要有台账且会腐烂**：某通道上「按设计就会红」的用例不许用 `@Disabled` 藏（既不跑、也看不出哪天修好），必须逐条写进 `tools/expected-failures/<通道>.txt`，每条带 `issue=` 与 `expires=`。判据是**双向完全相等**：实际失败集多一条 = 新回归，少一条 = 基线腐化（已修好仍留着条目），过期未续也算违规。只许在 `tools/gate.sh` 里由 `STEP_EXPECTED_FAILURES` 点名的步骤生效；申报了基线的通道若不在该步的 `--require` 里，同样判红（「申报了却被静默忽略」）。
 
 # 命令速查
 

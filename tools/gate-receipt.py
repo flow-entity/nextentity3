@@ -29,6 +29,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import xml.etree.ElementTree as ET
 
 # ---------------------------------------------------------------------------
@@ -51,6 +52,10 @@ def modules(root: str) -> list[str]:
 def _scan_xml_reports(root: str, kind: str, since: float) -> dict[str, dict]:
     """扫 surefire / failsafe 报告，按模块聚合。
 
+    `kind` 既是凭证里的通道前缀（`surefire` → `surefire:nextentity-core`），也是磁盘目录名
+    （`target/surefire-reports`）。方言矩阵因此把第二遍的目录定成 `surefire-pg-reports`，
+    通道名自动就是独立的一档 `surefire-pg:...`，不需要额外参数。
+
     聚合的是 `<testsuite>` 的四个计数属性 + 跳过/失败用例的**具名清单**——
     只有数字没有名字的跳过报表，等于没有报表（AGENTS「方言跳过必须可数」要求点名）。
 
@@ -61,7 +66,7 @@ def _scan_xml_reports(root: str, kind: str, since: float) -> dict[str, dict]:
     """
     out: dict[str, dict] = {}
     for module in modules(root):
-        files = glob.glob(os.path.join(root, module, "target", f"{kind}-reports", "TEST-*.xml"))
+        files = glob.glob(os.path.join(root, module, "target", "%s-reports" % kind, "TEST-*.xml"))
         if not files:
             continue
         agg = {
@@ -191,6 +196,10 @@ def scan(root: str, since: float = 0.0) -> dict[str, dict]:
     channels: dict[str, dict] = {}
     channels.update(_scan_xml_reports(root, "surefire", since))
     channels.update(_scan_xml_reports(root, "failsafe", since))
+    # 方言矩阵通道：与 `surefire` 同一批用例、不同 H2 兼容模式，报告落在独立目录。
+    # 必须当成**独立通道**而不是并进 surefire：并进去就成了「两个模式的失败数相加」，
+    # 既看不出是哪个模式红的，也没法给 PG 模式单独挂预期失败基线。
+    channels.update(_scan_xml_reports(root, "surefire-pg", since))
     channels.update(_scan_pit(root))
     return channels
 
@@ -291,17 +300,45 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
     # 每条跳过的用例名都必须匹配白名单，否则红。
     budgets: dict[str, int] = {}
     skip_allow: dict[str, list[str]] = {}
+    bad_specs: list[str] = []
     for spec in args.max_skip or []:
         key, _, value = spec.partition("=")
         key = key.strip()
         count, _, pattern = value.partition(":")
-        budgets[key] = int(count) if count.strip() else 0
+        if not key or ":" not in key:
+            # 通道名形如 `surefire:模块名`；缺了它这条预算挂不到任何通道上，
+            # 而「挂不上的预算」等于没申报——静默忽略正是本机制要防的。
+            bad_specs.append("%s（缺少 `类型:模块` 通道名）" % spec)
+            continue
+        try:
+            budgets[key] = int(count) if count.strip() else 0
+        except ValueError:
+            # 此前这里直接 `int()` → 裸 ValueError traceback（exit 1 属 fail-closed，
+            # 但对使用者只是噪音，看不出是哪个 spec 写错了）。
+            bad_specs.append("%s（跳过条数 `%s` 不是整数）" % (spec, count.strip()))
+            continue
         if pattern.strip():
             skip_allow.setdefault(key, []).append(pattern.strip())
     default_budget = args.max_skip_default
 
     problems: list[str] = []
     warnings_extra: list[str] = []
+    notes: list[str] = []
+    for bad in bad_specs:
+        problems.append("--max-skip 申报格式非法：%s" % bad)
+
+    # 预期失败基线：显式 `--expected-failures <file>`。不传 = 任何失败都判红（默认最严）。
+    baseline: dict[str, dict[str, dict]] = {}
+    if getattr(args, "expected_failures", None):
+        baseline, baseline_errors = _load_expected_failures(args.expected_failures)
+        problems.extend(baseline_errors)
+        for key in baseline:
+            if key not in required:
+                # 申报了基线却不在 --require 里：基线被静默忽略，会让人以为「已知红已申报」。
+                problems.append(
+                    "预期失败基线里的通道 %s 不在 --require 里，基线未生效" % key
+                )
+    today = time.strftime("%Y-%m-%d")
     # E1：`--require` 为空时，下面的检查一条都不跑，snapshot 必绿。除了显式声明
     # 「本步不产出通道」（格式化类），空 require 就是漏写，必须报错。
     if not required and not getattr(args, "allow_no_require", False):
@@ -343,7 +380,12 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
                     % (name, info["run_errors"])
                 )
             continue
-        if info["failures"] or info["errors"]:
+        if name in baseline:
+            # 基线比对必须**无条件**跑，不能只在「有失败」时跑：某通道一条都没失败恰恰是
+            # 基线腐化的典型形态（8 条全修好了），而那种情况下 `if failures` 不进分支，
+            # 腐化检测就成了永远不会执行的代码——基线从此只增不减。
+            _check_expected_failures(name, info, baseline[name], today, problems, notes)
+        elif info["failures"] or info["errors"]:
             problems.append(
                 "%s：失败 %d / 错误 %d（%s）"
                 % (name, info["failures"], info["errors"], ", ".join(info["failed_tests"][:5]))
@@ -387,6 +429,7 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
             k: {f: v.get(f) for f in ("tests", "mutations", "mtime")} for k, v in stale.items()
         },
         "warnings": list(args.warn or []) + warnings_extra,
+        "notes": notes,
         "problems": problems,
         "verdict": "green" if not problems else "red",
     }
@@ -397,6 +440,113 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
 
     _print_step(receipt)
     return 0 if not problems else 1
+
+
+def _load_expected_failures(path: str) -> tuple[dict[str, dict[str, dict]], list[str]]:
+    """读「预期失败基线」：某个通道上**已知且已定性**的失败清单。
+
+    为什么需要它：`-Dnextentity.h2mode=postgresql` 这条方言通道上有 8 条用例必然红——
+    它们的期望值是 MySQL 方言的渲染形态（`group by c0,c1`、`avg(cast(...))`、`for update`），
+    在 PG 方言下本来就不该相等。没有基线时只有两个选择：要么整条通道不进 CI（等于不测），
+    要么把 8 条写成 `@Disabled`（等于不测，还看不出哪天修好了）。
+
+    基线把「已知红」变成**可腐烂的申报**：条目一旦不再失败，就必须从基线删掉，否则红。
+    这样「修好了忘了删」和「基线被当垃圾桶」都会当场暴露，而不是烂在注释里。
+
+    格式（`|` 分隔，`#` 开头为注释）：:
+
+        <通道> | <classname>#<method> | issue=<链接或编号> | expires=<yyyy-MM-dd> | <原因>
+
+    `issue` 与 `expires` 都必填：与 AGENTS.md「禁用要有租约」同一口径——没有到期日的
+    豁免就是永久豁免，而过期仍在基线里的条目按违规处理。
+
+    @param path 基线文件路径
+    @return (通道 → {用例全名 → 条目}, 格式错误列表)
+    """
+    baseline: dict[str, dict[str, dict]] = {}
+    errors: list[str] = []
+    try:
+        with open(path, encoding="utf-8") as handle:
+            lines = handle.readlines()
+    except OSError as exc:
+        return {}, ["预期失败基线 %s 读不出来：%s" % (path, exc)]
+    for lineno, raw in enumerate(lines, 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) < 4:
+            errors.append("%s:%d 字段不足（需要 `通道 | 用例 | issue=… | expires=…`）：%s" % (path, lineno, line))
+            continue
+        channel, test = parts[0], parts[1]
+        fields: dict[str, str] = {}
+        for part in parts[2:]:
+            key, _, value = part.partition("=")
+            fields[key.strip().lower()] = value.strip()
+        issue = fields.get("issue", "")
+        expires = fields.get("expires", "")
+        reason = " ".join(p for p in parts[4:] if "=" not in p).strip()
+        if not channel or ":" not in channel:
+            errors.append("%s:%d 通道名不合法（需 `类型:模块`）：%s" % (path, lineno, channel))
+            continue
+        if "#" not in test:
+            errors.append("%s:%d 用例名需为 `classname#method`：%s" % (path, lineno, test))
+            continue
+        if not issue:
+            errors.append("%s:%d 缺 issue=（无 issue 的豁免等于永久豁免）：%s" % (path, lineno, test))
+            continue
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", expires):
+            errors.append("%s:%d expires= 需为 yyyy-MM-dd：%s" % (path, lineno, test))
+            continue
+        bucket = baseline.setdefault(channel, {})
+        if test in bucket:
+            errors.append("%s:%d 用例重复申报：%s" % (path, lineno, test))
+            continue
+        bucket[test] = {"issue": issue, "expires": expires, "reason": reason, "line": lineno}
+    return baseline, errors
+
+
+def _check_expected_failures(
+    name: str,
+    info: dict,
+    expected: dict[str, dict],
+    today: str,
+    problems: list[str],
+    notes: list[str],
+) -> None:
+    """拿实际失败集与基线做**双向**比对。
+
+    只查「实际 ⊆ 基线」是不够的：那等于只要基线里留着条目，同一通道上出现任何新失败
+    都能被「基线里本来就有红的」这句话糊过去。所以三个方向都要查：
+
+    - 实际有、基线没有 → 未申报的新失败（真回归）
+    - 基线有、实际没有 → 基线腐化（已修好却未删条目；或该用例被删/改名）
+    - 基线条目过期 → 豁免到期未续
+    """
+    actual = set(info.get("failed_tests") or [])
+    declared = set(expected)
+    for test in sorted(actual - declared):
+        problems.append(
+            "%s：%s 失败但不在预期失败基线里——这是新回归，不是已知方言差异" % (name, test)
+        )
+    for test in sorted(declared - actual):
+        entry = expected[test]
+        problems.append(
+            "%s：基线申报 %s 会失败，实际没失败（基线腐化）——已修好或用例被删/改名，"
+            "请删掉基线第 %d 行" % (name, test, entry["line"])
+        )
+    for test in sorted(declared & actual):
+        entry = expected[test]
+        if entry["expires"] < today:
+            problems.append(
+                "%s：基线条目 %s 已于 %s 到期（issue=%s）——要么续期，要么修掉"
+                % (name, test, entry["expires"], entry["issue"])
+            )
+        else:
+            notes.append(
+                "%s：%s 按基线失败（issue=%s，至 %s）"
+                % (name, test, entry["issue"], entry["expires"])
+            )
 
 
 def _print_step(receipt: dict) -> None:
@@ -435,6 +585,8 @@ def _print_step(receipt: dict) -> None:
             print("    %-46s %4d 条  skip %d" % (name, info["tests"], info["skipped"]))
     for warning in receipt["warnings"]:
         print("  ⚠ %s" % warning)
+    for note in receipt.get("notes") or []:
+        print("  · %s" % note)
     for problem in receipt["problems"]:
         print("  ✗ %s" % problem)
     print("  判定：%s" % receipt["verdict"].upper())
@@ -476,6 +628,14 @@ def cmd_merge(args: argparse.Namespace) -> int:
         # 但也绝不能叫 green：它只能证明「工作树里这份未提交的东西能跑」。
         verdict = "dirty"
 
+    # 预期失败基线的逐条记录必须汇进最终凭证：CI 上传的只有 receipt.json，step-*.json
+    # 是中间产物。少了这一段，凭证上看不出「PG 通道那 8 条是按基线红的」，
+    # 只能看到「GREEN + skip 2」——与「这步根本没跑 PG」在凭证上完全无法区分。
+    baseline_notes: list[dict] = []
+    for step in steps:
+        for note in step.get("notes") or []:
+            baseline_notes.append({"step": step["step"], "note": note})
+
     receipt = {
         "head": args.head,
         "tier": args.tier,
@@ -486,6 +646,7 @@ def cmd_merge(args: argparse.Namespace) -> int:
         ],
         "absent_steps": absent_steps,
         "skip_report": {"total": len(skips), "entries": skips},
+        "expected_failure_notes": baseline_notes,
         "stale_artifacts": stale_artifacts(args.root),
         "verdict": verdict,
     }
@@ -533,6 +694,13 @@ def main(argv: list[str]) -> int:
         "--allow-no-require",
         action="store_true",
         help="显式声明本步不产出测试报告（如格式化检查）；不传且 --require 为空则判红",
+    )
+    snap.add_argument(
+        "--expected-failures",
+        default=None,
+        metavar="FILE",
+        help="预期失败基线文件：该通道上已定性的失败清单，条目须带 issue= 与 expires=；"
+        "实际失败集与基线必须完全相等（多一条=新回归，少一条=基线腐化）",
     )
     snap.add_argument(
         "--max-skip",

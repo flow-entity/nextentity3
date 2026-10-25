@@ -187,7 +187,7 @@ L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（
 |---|---|---|
 | 变异分数（PIT） | 主指标 | `api` / `core` / `jpa` / `spring` 均 ≥ 95%；当前实测 99% / 100% / 98% / 100%（见下「变异测试」，阈值写在各模块 pom） |
 | 语义等价律条数 | 辅助 | 每条律至少 1 条差分用例，条数只增不减 |
-| 方言矩阵通过率 | 辅助 | 默认通道 100% 通过；skip 数单独报表，只许降不许升。矩阵列为 H2\MODE=MySQL\ + MySQL 8.0.18（默认、强制）+ H2\MODE=PostgreSQL\（opt-in，-Dnextentity.h2mode=postgresql，允许 8 条已知方言差异：3 条 SQL 文本快照 + 5 条 H2 不认的 PG 锁语法；`Instant` 绑定偏移不再计入（写侧断言按方言分派，既不红也不跳过，见下「方言矩阵」））；skip 报表**已建成**：每次门禁都从 surefire/failsafe XML 里抽 `<skipped>` 并连理由一起落进 `tmp/gate/<commit>-<ts>/receipt.json`，见下「执行凭证」 |
+| 方言矩阵通过率 | 辅助 | 默认通道 100% 通过；skip 数单独报表，只许降不许升。矩阵列为 H2\MODE=MySQL\ + MySQL 8.0.18（默认、强制）+ H2\MODE=PostgreSQL\（`-Pdialect-pg`，报告落独立目录成独立通道 `surefire-pg:`，`pr`/`ci`/`night`/`release` 四档都跑；8 条已知方言差异按 `tools/expected-failures/h2-postgresql.txt` **逐条**判定，多一条或少一条都红；`Instant` 绑定偏移不再计入（写侧断言按方言分派，既不红也不跳过，见下「方言矩阵通道」））；skip 报表**已建成**：每次门禁都从 surefire/failsafe XML 里抽 `<skipped>` 并连理由一起落进 `tmp/gate/<commit>-<ts>/receipt.json`，见下「执行凭证」 |
 | 缺陷逃逸率 | 辅助 | 发版后发现的语义缺陷数 / 版本，趋势必须向下 |
 | 行/分支覆盖率（聚合口径） | **不作门禁**，仅诊断报表 | 不设百分比门槛；判据是「新增的未覆盖行必须落在下文『已判定不可达与度量限制』清单里」，落在清单外就按缺口处理 |
 
@@ -243,8 +243,17 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 | 通道 | 收哪些类 | 依赖 | 跳过方式 |
 |---|---|---|---|
-| surefire | 除 `*IntegrationTest` 外的全部（H2） | 无 | — |
+| surefire | 除 `*IntegrationTest` 外的全部（H2，MySQL 兼容模式=默认） | 无 | — |
+| surefire-pg | 与 surefire **同一批** 564 条，H2 的 **PostgreSQL** 兼容模式 | 无 | 报告落 `target/surefire-pg-reports/`，见下「方言矩阵通道」 |
 | failsafe | `**/*IntegrationTest.java`（显式 `<includes>`） | Docker + `mysql:8.0.18` | `-DskipITs` |
+
+**方言矩阵通道（`surefire-pg`）**：`-Pdialect-pg` 在**同一次 `verify`** 里加第二个 surefire execution（`-Dnextentity.h2mode=postgresql`），报告写进独立目录 `target/surefire-pg-reports/`，凭证按目录名认成独立通道 `surefire-pg:<模块>`。三个设计点都是被具体失真逼出来的：
+
+1. **为什么不用第二次 `mvn verify`**：第二次要么带 `-am`（把 api/core/jpa/spring 全重跑，白烧两分钟），要么不带（触发门禁的「`-pl` 缺 `-am`」守卫）。放进同一次 verify 的第二个 execution，两边都躲开。
+2. **为什么报告必须分目录**：surefire 默认把 XML 写死在 `target/surefire-reports/`，第二遍会**覆盖**第一遍。覆盖之后凭证读到的「564 条 0 失败」其实是 PG 那遍的，MySQL 兼容模式的结果凭空消失——这正是「读产物判绿」最典型的失真。`-Dsurefire.reportsDirectory` **不是** surefire 的 user property（实测传了不生效，53 个报告照样落在默认目录），只能在 pom 里显式写死。
+3. **为什么当独立通道而不并进 `surefire`**：并进去就成了「两个模式的失败数相加」，既看不出是哪个模式红的，也没法给 PG 模式单独挂预期失败基线。
+
+**默认不激活**：PG 兼容模式有 8 条已定性的方言差异（3 条 SQL 文本快照 + 5 条 H2 不认的 PG 锁语法），清单与租约在 `tools/expected-failures/h2-postgresql.txt`。让这 8 条在每次 `mvn test` 里都红，等于训练所有人忽略红；所以只在 `pr`/`ci`/`night`/`release` 档由 `gate.sh` 显式带 `-Pdialect-pg`，配合基线逐条判定（判据见下「执行凭证」）。**跳过预算也要分开申报**：两个模式的跳过项恰好相反——默认模式跳「PG 专属那条」，PG 模式跳「`Instant` 严格相等那条」（H2 的 PG 兼容模式把 `Instant` 绑成丢偏移的 `timestamp`）。
 
 两个方向都写死：surefire `<excludes>` 排掉 `*IntegrationTest`，failsafe `<includes>` 收这些类。failsafe 的默认 includes 是 `**/IT*`、`**/*IT`、`**/*ITCase`，与项目约定的 `*IntegrationTest` 一个都不匹配——不显式配置时容器用例会被 surefire 跑掉、failsafe 一条也收不到。容器用例统一 `@Tag("container")` + `@ExtendWith(MySqlL4Gate.class)`。当前实测条数：surefire **564** 条（全 H2）、failsafe **536** 条（真 MySQL，含 `@Version` 乐观锁、`@Convert`、批量写、悲观锁四类写路径场景，另加嵌入/时间/自增主键三族写侧维度），两个通道各跳过 **1** 条——就是 `TemporalWriteContract` 里那条 PG 兼容模式专用的 `Instant` 偏移用例（`@DisabledIfSystemProperty` 标记，默认两通道都不跑，PG 通道跑它、同时关掉严格相等那条），**不是**新引入的静默跳过。拆分之初是 130 / 110，差额来自后续补的差分 oracle（见下「差分 oracle 台账」）、写侧往返用例与写侧维度覆盖（见上「写侧维度覆盖」）。
 
@@ -342,10 +351,11 @@ java -jar <同上> report tmp/cov/merged.exec \
 - **必需通道必须真跑**：`-DskipITs` 下 failsafe 一份报告都不新（目录里上一轮的 XML 还在，靠逐文件 mtime 过滤才抓得住，这也是 `--require` 必须点名通道的原因）、`-Dnextentity.requireContainer` 下容器类整体 error，两种都判缺口；档位声明的步骤没落快照（被 `-am` 守卫拦下）同样算缺口，见 `merge --expect-step`。
 - **PIT 不许零变异**：除阈值外额外要求 `mutations > 0`，堵住根 pom `failWhenNoMutations=false` 那条假绿通道；分数按 PIT 自己的口径算并与 pom 的 `mutationThreshold` 比对。
 - **跳过要有申报预算**：每个通道的跳过条数上限由 `gate.sh` 逐步申报（`STEP_MAX_SKIP`），未申报的通道默认 0。跳过数超预算即红，且 problems 里逐个点名用例与理由——「跳过就是没跑，没跑不能记绿」。
+- **预期失败必须逐条申报且会腐烂**：某通道上「按设计就会红」的用例不能靠 `@Disabled` 藏起来（那样既不跑、也看不出哪天修好），改由 `--expected-failures <file>` 声明（`gate.sh` 用 `STEP_EXPECTED_FAILURES` 逐步点名）。判据是**双向完全相等**：实际失败集多出一条 = 新回归（不是已知差异，不许夹带）；少一条 = 基线腐化（已修好却未删条目，或用例被删/改名）。每条必须带 `issue=` 与 `expires=`，到期未续即红——与 AGENTS.md「禁用要有租约」同一口径。基线条目不在 `--require` 里也判红：那是「申报了却被静默忽略」。当前唯一的基线是 `tools/expected-failures/h2-postgresql.txt`（8 条 PG 兼容模式方言差异，见上「通道拆分」）。**这条判据同时收窄了 mvn 退出码的用法**：申报了基线的步骤，mvn 非零退出只在「失败全部来自 surefire」且「receipt 判绿」时才按预期内解释——`verify` 里 checkstyle/PMD/SpotBugs 的失败不会被这条吞掉。
 
 三件事只有凭证能给出、日志给不出：**skip 清单连理由**（`方言跳过必须可数` 从「PR 里手写」变成自动抽取）、**`~/.m2` 与源码的时间戳倒挂**（`-pl` 不带 `-am` 时会读到旧语义）、以及**跨模块合并口径的条数**（`-am` 反应堆会把 jpa/spring 一起带进来，比单看目标模块多）。
 
-档位与「该跑什么」一一对应：`fast` = 格式化检查 + 架构规则 + `api`/`core` 快测试（无容器）；`pr` = H2 564 + 遗留 727；`ci` = 前者 + 真 MySQL 容器通道 + `-Dnextentity.requireContainer=true`；`night` = `install` 刷快照 + 全量含容器 + 遗留 h2/mysql 双跑 + PIT×4；`release` = `clean verify` + api-compat。`ci`/`pr` 刻意不跑 PIT（单模块分钟级，不该挡 push），PIT 的落点在 `night` 与 `release`。
+档位与「该跑什么」一一对应：`fast` = 格式化检查 + 架构规则 + `api`/`core` 快测试（无容器）；`pr` = H2 564 + PG 兼容模式 564（基线 8 条）+ 遗留 727；`ci` = 前者 + 真 MySQL 容器通道 + `-Dnextentity.requireContainer=true`；`night` = `install` 刷快照 + 全量含容器 + 遗留 h2/mysql 双跑 + PIT×4；`release` = `clean verify` + api-compat。`ci`/`pr` 刻意不跑 PIT（单模块分钟级，不该挡 push），PIT 的落点在 `night` 与 `release`。
 
 **尚未实施**（方向，不是已有能力——写进这里的东西不得当成现状引用）：
 

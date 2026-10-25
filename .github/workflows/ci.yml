@@ -55,25 +55,36 @@ jobs:
           DEST="$RUNNER_TEMP/base-gate"
           mkdir -p "$DEST"
           if [ -z "$BASE" ]; then
+            # 非 PR 触发（push 到 main）没有「基线」这个概念——门禁脚本就用工作树这份。
+            # 早先版本这里 `cp` 了但立刻 `exit 0`，GATE_SCRIPT 从未写入，下一步永远回落到
+            # 工作树那份：行为正确却是死代码，会让人误以为非 PR 路径也在用基线脚本。
             echo "非 PR 触发，无基线分支，使用工作树版本"
-            cp tools/gate.sh tools/gate-receipt.py "$DEST/"
+            echo "GATE_SCRIPT=$PWD/tools/gate.sh" >> "$GITHUB_ENV"
             exit 0
           fi
           git fetch --depth=1 origin "$BASE"
-          for f in gate.sh gate-receipt.py; do
-            if git cat-file -e "origin/$BASE:tools/$f" 2>/dev/null; then
-              git show "origin/$BASE:tools/$f" > "$DEST/$f"
-              echo "已取基线版本 tools/$f ← origin/$BASE"
-            elif [ "$f" = "gate-receipt.py" ]; then
-              # 基线有 gate.sh 却没有 receipt：说明基线处于半成品状态，不能猜。
-              echo "✗ origin/$BASE 有 tools/gate.sh 但缺 tools/gate-receipt.py，基线不自洽" >&2
-              exit 1
-            else
-              # 基线无 gate.sh = 本 PR 首次引入该机制，只能用 PR 版本（并在日志里说清）。
-              echo "origin/$BASE 无 tools/gate.sh，本次使用 PR 版本（首次引入机制）"
-              cp tools/gate.sh tools/gate-receipt.py "$DEST/"
-            fi
-          done
+          # 先判完整性，再决定复制哪些——不能把「校验」和「复制」塞进同一个循环。
+          # 早先版本 `for f in gate.sh gate-receipt.py` 在基线无 tools/ 时：第一轮
+          # f=gate.sh 走「首次引入」分支把两个文件都 cp 了，第二轮 f=gate-receipt.py
+          # 又 `git cat-file -e` 失败 → 走 `elif` → 打印「基线不自洽」并 exit 1。
+          # 结果是首次引入机制的 PR 自己必红，机制永远落不了地（审查员实测 exit=1）。
+          have_sh=0
+          have_receipt=0
+          git cat-file -e "origin/$BASE:tools/gate.sh" 2>/dev/null && have_sh=1
+          git cat-file -e "origin/$BASE:tools/gate-receipt.py" 2>/dev/null && have_receipt=1
+          if [ "$have_sh" = 0 ] && [ "$have_receipt" = 0 ]; then
+            # 基线无 tools/ = 本 PR 首次引入该机制，只能用 PR 版本（并在日志里说清）。
+            echo "origin/$BASE 无 tools/，本次使用 PR 版本（首次引入机制）"
+            cp tools/gate.sh tools/gate-receipt.py "$DEST/"
+          elif [ "$have_sh" = 1 ] && [ "$have_receipt" = 1 ]; then
+            git show "origin/$BASE:tools/gate.sh" > "$DEST/gate.sh"
+            git show "origin/$BASE:tools/gate-receipt.py" > "$DEST/gate-receipt.py"
+            echo "已取基线版本 tools/gate.sh、tools/gate-receipt.py ← origin/$BASE"
+          else
+            # 半成品基线（有其一无其二）：判据无法确定，不能猜，fail-closed。
+            echo "✗ origin/$BASE 的 tools/ 不自洽（gate.sh=$have_sh receipt=$have_receipt），拒绝继续" >&2
+            exit 1
+          fi
           chmod +x "$DEST/gate.sh"
           echo "GATE_SCRIPT=$DEST/gate.sh" >> "$GITHUB_ENV"
 

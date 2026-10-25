@@ -213,10 +213,18 @@ step() {
     local -a skip_args=()
     # STEP_MAX_SKIP 支持空格分隔多条申报（如 "surefire:nextentity-tests-jpa=1"）：
     # 未点名的通道一律用 gate-receipt.py 的默认预算 0，任何跳过都要显式申报。
-    local _spec
-    for _spec in ${STEP_MAX_SKIP:-}; do
-        skip_args+=(--max-skip "$_spec")
-    done
+    #
+    # 用 `read -a` 而不是 `for _spec in ${STEP_MAX_SKIP:-}`：后者是未加引号的参数展开，
+    # 会对每个词做路径名展开。申报里带 `*` 白名单模式，一旦仓库根出现能匹配它的文件名，
+    # spec 就会被改写成文件名而静默失效（当前只因 spec 含 `:` `#` 才侥幸不匹配）。
+    if [ -n "${STEP_MAX_SKIP:-}" ]; then
+        local -a specs=()
+        read -r -a specs <<< "$STEP_MAX_SKIP"
+        local _spec
+        for _spec in "${specs[@]}"; do
+            skip_args+=(--max-skip "$_spec")
+        done
+    fi
     STEP_MAX_SKIP=""
 
     # ③ 拒绝缺 -am 的调用：它会从 ~/.m2 解析依赖模块，陈旧快照会让结论变成「旧产物能跑」。
@@ -255,21 +263,81 @@ step() {
         warns+=(--warn "$label：日志出现 COMPILATION ERROR")
     fi
 
+    # 预期失败基线：只对本步「按设计就会红」的方言通道生效（当前只有 PG 兼容模式）。
+    # 必须显式点名，且基线文件里每条都带 issue= 与 expires=（见 tools/expected-failures/）。
+    local -a baseline=()
+    if [ -n "${STEP_EXPECTED_FAILURES:-}" ]; then
+        if [ ! -f "$STEP_EXPECTED_FAILURES" ]; then
+            # 基线文件不存在时不能静默跳过——那会把「8 条已知方言差异」变回 8 条新红，
+            # 或者更糟（若通道也没声明）让整步变成无检查的绿。
+            echo "✗ [$label] 申报的基线文件不存在：$STEP_EXPECTED_FAILURES" >&2
+            FAILED+=("$label(baseline-missing)")
+            reject_step "$label" "预期失败基线文件不存在：$STEP_EXPECTED_FAILURES"
+            STEP_EXPECTED_FAILURES=""
+            return 1
+        fi
+        baseline+=(--expected-failures "$STEP_EXPECTED_FAILURES")
+        # 提前声明：本步 mvn 必然以非零退出（基线里的用例就是会红的，surefire 一有失败
+        # 就让 verify 失败）。写进凭证而不是只打到 stderr——否则事后看凭证只见到
+        # 「GREEN + skip 2」，看不出「这步 mvn 其实是 exit 1」，会被当成普通绿。
+        warns+=(--warn "$label：本步申报了预期失败基线——若 mvn 非零退出，只有当实际失败集与基线逐条相等时才按预期内解释")
+    fi
+    STEP_EXPECTED_FAILURES=""
+
     local -a noreq=()
-    # 空 require 的快照会跳过所有通道检查、必然绿。只有格式化这类确实不产出报告的步骤
-    # 才许显式声明，其余一律让 gate-receipt.py 判红。
-    [ -n "$require" ] || noreq+=(--allow-no-require)
+    # 空 require 的快照会跳过所有通道检查、必然绿。只有确实不产出测试报告的步骤才许豁免，
+    # 且豁免必须**点名**——早先版本是「require 为空就自动加 --allow-no-require」，等于把
+    # parser 侧「空 require 且未豁免 → 红」这条判据在 wrapper 层永久短路：任何新加的、
+    # 忘写 --require 的步骤一律自动绿，而「漏写 require」恰恰是最容易犯的错。
+    if [ -z "$require" ]; then
+        case "$label" in
+            # 纯准备/纯静态检查：不产出 surefire/failsafe/pit 报告，没有通道可要求。
+            fast-format | night-install | release-install | release-compat)
+                noreq+=(--allow-no-require)
+                ;;
+            *)
+                echo "✗ [$label] 本步没有声明必需通道（--require 为空），且不在豁免清单内。" >&2
+                echo "  产出测试报告的步骤必须声明通道；确无报告的步骤请显式加进本 case 分支。" >&2
+                FAILED+=("$label(no require)")
+                reject_step "$label" "步骤未声明必需通道且不在豁免清单内"
+                return 1
+                ;;
+        esac
+    fi
 
     vrc=0
     "$PY" "$RECEIPT" snapshot --root . --since "$since" --label "$label" \
         --require "$require" --out "$RUNDIR/step-$(printf '%02d' "$STEPN")-$label.json" \
         ${noreq[@]+"${noreq[@]}"} \
-        ${skip_args[@]+"${skip_args[@]}"} ${warns[@]+"${warns[@]}"} || vrc=$?
+        ${skip_args[@]+"${skip_args[@]}"} ${baseline[@]+"${baseline[@]}"} ${warns[@]+"${warns[@]}"} || vrc=$?
 
     if [ "$rc" -ne 0 ]; then
-        echo "  ✗ [$label] mvn 退出码 $rc；日志尾部：" >&2
-        tail -n 25 "$log" | sed 's/^/      /' >&2
-        FAILED+=("$label(exit=$rc)")
+        # 申报了预期失败基线时，mvn 的非零退出是**预期内**的：基线里的用例就是会红的，
+        # 而 surefire 只要有用例失败就让整个 verify 失败。此时权威判据是 receipt 的
+        # 「实际失败集 == 基线」逐条比对结果，不是 mvn 的退出码。
+        #
+        # 但不能无条件放行，要同时满足两条：
+        #   a) receipt 也判绿（vrc==0）——声明通道都新鲜、条数>0、跳过不越预算、失败集与基线相等。
+        #      编译错误会让报告陈旧、通道缺失，那些路径 receipt 一定判红，退不进来。
+        #   b) 日志里**所有** `Failed to execute goal` 都指向 maven-surefire-plugin。
+        #      这条不能省：本步是 `verify`，checkstyle/PMD/SpotBugs/japicmp 都在同一生命周期里。
+        #      若它们失败而测试恰好跑完且全绿，只查 (a) 会把静态检查的红当成「预期内失败」吞掉。
+        local other_goals
+        other_goals=$(grep -o 'Failed to execute goal [^:]*:[^:]*:[^:]*' "$log" 2>/dev/null \
+            | grep -v 'maven-surefire-plugin' | sort -u)
+        if [ "${#baseline[@]}" -gt 0 ] && [ "$vrc" -eq 0 ] && [ -z "$other_goals" ] \
+            && grep -q 'Failed to execute goal' "$log" 2>/dev/null; then
+            echo "  ⚠ [$label] mvn 退出码 $rc，失败只来自 surefire，且 receipt 已逐条核对：" >&2
+            echo "    失败集与预期失败基线完全相等，按基线解释为预期内失败（凭证里已记下这条告警）。" >&2
+        else
+            echo "  ✗ [$label] mvn 退出码 $rc；日志尾部：" >&2
+            if [ -n "$other_goals" ]; then
+                echo "    失败不（只）来自 surefire，不能按预期失败基线解释：" >&2
+                echo "$other_goals" | sed 's/^/      /' >&2
+            fi
+            tail -n 25 "$log" | sed 's/^/      /' >&2
+            FAILED+=("$label(exit=$rc)")
+        fi
     fi
     if [ "$vrc" -ne 0 ]; then
         FAILED+=("$label(receipt)")
@@ -299,9 +367,11 @@ tier_ci() {
     step ci-fast "surefire:nextentity-arch" \
         ./mvnw -B -pl nextentity-arch -am test
     # 预算带上用例名白名单：只限条数的话，未来任何一条与 PG 无关的无理由跳过都会被这 1 条预算吞掉。
-    STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* failsafe:nextentity-tests-jpa=1:*MySqlTemporalWriteIntegrationTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode*"
-    step ci-container "surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa" \
-        ./mvnw -B -pl nextentity-tests-jpa -am verify -Dnextentity.requireContainer=true
+    # 方言矩阵也在本步：`-Pdialect-pg` 让 PG 兼容模式在同一个 verify 里跑第二遍。
+    STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* failsafe:nextentity-tests-jpa=1:*MySqlTemporalWriteIntegrationTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* surefire-pg:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadPreserveTheInstant*"
+    STEP_EXPECTED_FAILURES="tools/expected-failures/h2-postgresql.txt"
+    step ci-container "surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa" \
+        ./mvnw -B -pl nextentity-tests-jpa -am verify -Dnextentity.requireContainer=true -Pdialect-pg
     step ci-legacy "surefire:nextentity-tests-legacy" \
         ./mvnw -B -pl nextentity-tests-legacy -am test
 }
@@ -309,8 +379,14 @@ tier_ci() {
 tier_pr() {    # 容器通道在本档明确不跑（-DskipITs）。凭证会把 failsafe 记为「未声明」而不是「skip=0」。
     EXPECT_STEPS=(pr-h2 pr-legacy)
     STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode*"
-    step pr-h2 "surefire:nextentity-tests-jpa" \
-        ./mvnw -B -pl nextentity-tests-jpa -am verify -DskipITs
+    # `-Pdialect-pg` 在同一次 verify 里加第二个 surefire execution（PG 兼容模式），报告落
+    # `target/surefire-pg-reports/`，凭证按目录认成独立通道 `surefire-pg:...`。
+    # skip 预算也要单独申报：两个模式的跳过项**恰好相反**——默认模式跳「PG 专属那条」，
+    # PG 模式跳「Instant 严格相等那条」（H2 的 PG 兼容模式绑 Instant 会丢偏移）。
+    STEP_MAX_SKIP="$STEP_MAX_SKIP surefire-pg:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadPreserveTheInstant*"
+    STEP_EXPECTED_FAILURES="tools/expected-failures/h2-postgresql.txt"
+    step pr-h2 "surefire:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa" \
+        ./mvnw -B -pl nextentity-tests-jpa -am verify -DskipITs -Pdialect-pg
     # 727 条遗留回归此前完全不在 CI 里：CI 两条命令的 -am 反应堆都不含该模块。
     step pr-legacy "surefire:nextentity-tests-legacy" \
         ./mvnw -B -pl nextentity-tests-legacy -am test
@@ -321,9 +397,10 @@ tier_night() {
     EXPECT_STEPS=(night-install night-container night-legacy night-pit-api night-pit-core night-pit-jpa night-pit-spring)
     step night-install "" ./mvnw -B -q install -DskipTests
     # 本步刻意不带 -am：紧邻的 night-install 已把当前 HEAD 装进 ~/.m2，守卫据此放行。
-    STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* failsafe:nextentity-tests-jpa=1:*MySqlTemporalWriteIntegrationTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode*"
-    step night-container "surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa" \
-        ./mvnw -B -pl nextentity-tests-jpa verify -Dnextentity.requireContainer=true
+    STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* failsafe:nextentity-tests-jpa=1:*MySqlTemporalWriteIntegrationTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* surefire-pg:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadPreserveTheInstant*"
+    STEP_EXPECTED_FAILURES="tools/expected-failures/h2-postgresql.txt"
+    step night-container "surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa" \
+        ./mvnw -B -pl nextentity-tests-jpa verify -Dnextentity.requireContainer=true -Pdialect-pg
     step night-legacy "surefire:nextentity-tests-legacy" \
         ./mvnw -B -pl nextentity-tests-legacy -am test -Ddbc=h2,mysql
     local module
@@ -335,9 +412,16 @@ tier_night() {
 
 tier_release() {
     EXPECT_STEPS=(release-verify release-legacy release-install release-pit-api release-pit-core release-pit-jpa release-pit-spring release-compat)
+    # 与 ci/night 同一条申报：`TemporalWriteContract` 那对用例按 H2 兼容模式互斥，
+    # 默认参数下必有 1 条跳过。此前漏了这一档，导致 AGENTS「发版前 ./tools/gate.sh release」
+    # 恒红——本机制的主题是「无理由跳过不能被预算静默吸收」，那就每一档都得说清这 1 条是谁。
+    STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* failsafe:nextentity-tests-jpa=1:*MySqlTemporalWriteIntegrationTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* surefire-pg:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadPreserveTheInstant*"
+    # 发版前必须把方言矩阵也跑一遍：`clean verify` 会先删 `target/`，PG 通道在
+    # release 档若缺席，那 8 条已知差异就永远不会被重新核对，基线静默烂掉。
+    STEP_EXPECTED_FAILURES="tools/expected-failures/h2-postgresql.txt"
     step release-verify \
-        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-arch,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa" \
-        ./mvnw -B clean verify -Dnextentity.requireContainer=true
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-arch,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa" \
+        ./mvnw -B clean verify -Dnextentity.requireContainer=true -Pdialect-pg
     step release-legacy "surefire:nextentity-tests-legacy" \
         ./mvnw -B -pl nextentity-tests-legacy -am test -Ddbc=h2,mysql
     step release-install "" ./mvnw -B -q install -DskipTests
@@ -382,6 +466,21 @@ case "$TIER" in
     night)   tier_night ;;
     release) tier_release ;;
 esac
+
+# ① 收尾复检工作树：开跑前干净、跑到一半变脏，此前会原样把 clean 交给 merge。
+# 那是结构性的，堵单个 `spotless:apply` 只是堵了一种触发方式；任何写工作树的插件/步骤
+# （japicmp 生成报告、shade、某个新加的 codegen）都会把它原样复发。这里比对一次即可永久关闭。
+PRE_TREE_DIRTY="$TREE_DIRTY"
+check_tree
+if [ "$TREE_DIRTY" != "$PRE_TREE_DIRTY" ]; then
+    echo "" >&2
+    echo "✗ 工作树在门禁过程中发生变化：开跑时=「${PRE_TREE_DIRTY:-clean}」 结束时=「${TREE_DIRTY:-clean}」" >&2
+    echo "  某些步骤写入了工作树，本轮所有「干净树」结论都不成立。" >&2
+    if [ -n "$TREE_DIRTY" ] && [ -z "$PRE_TREE_DIRTY" ]; then
+        TREE_DIRTY="门禁过程中被写脏：$TREE_DIRTY"
+    fi
+    FAILED+=("tree-changed-during-run")
+fi
 
 # ---------------------------------------------------------------------------
 # ⑤ 汇总

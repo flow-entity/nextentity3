@@ -246,4 +246,51 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- 方言矩阵：同一批用例在 H2 的 PG 兼容模式下再跑一遍。
+
+             为什么用 profile 而不是第二次 `mvn verify`：第二次调用要么带 `-am`（把
+             api/core/jpa/spring 全重跑一遍，白烧 2 分钟），要么不带（触发门禁的「-pl 缺 -am」
+             守卫）。放进同一次 verify 的第二个 surefire execution，两边都躲开了。
+
+             为什么报告要分目录：surefire 默认把 XML 写死在 `target/surefire-reports/`，
+             第二遍会**覆盖**第一遍。覆盖之后凭证读到的「564 条 0 失败」其实是 PG 那遍的，
+             MySQL 通道的结果凭空消失——这正是「读产物判绿」最典型的失真。
+             `-Dsurefire.reportsDirectory` 不是 surefire 的 user property（实测传了不生效），
+             只能在这里显式写死目录名；`tools/gate-receipt.py` 按目录名把
+             `target/surefire-pg-reports` 认成独立通道 `surefire-pg:<模块>`。
+
+             为什么默认不激活：PG 兼容模式有 8 条已知的方言渲染差异（group by 用序号而非
+             别名、avg 不需要 cast、PG 的 for share / for no key update 在 H2 兼容层不被支持），
+             它们的清单与租约在 `tools/expected-failures/h2-postgresql.txt`。让这 8 条在
+             每次 `mvn test` 里都红，等于训练所有人忽略红。由 `tools/gate.sh` 的 pr/ci/night
+             档显式带 `-Pdialect-pg`，配合基线文件判定。 -->
+        <profile>
+            <id>dialect-pg</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>pg-dialect</id>
+                                <phase>test</phase>
+                                <goals>
+                                    <goal>test</goal>
+                                </goals>
+                                <configuration>
+                                    <reportsDirectory>${project.build.directory}/surefire-pg-reports</reportsDirectory>
+                                    <systemPropertyVariables>
+                                        <nextentity.h2mode>postgresql</nextentity.h2mode>
+                                    </systemPropertyVariables>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
