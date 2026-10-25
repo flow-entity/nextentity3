@@ -178,7 +178,10 @@ def _static_violations(path: str, tool: str) -> tuple[int, bool]:
     except ET.ParseError:
         return 0, True
     if tool == "checkstyle":
-        # `<file><error line= severity= .../></file>`，每条 error 都算。
+        # `<file><error line= severity= .../></file>`，每条 error 都算，**刻意不按 `severity` 过滤**。
+        # 抬高 `<violationSeverity>warning</violationSeverity>` 是本项目点名过的三种「让 mvn 退出 0
+        # 而报告带违规」的手法之一；Checkstyle 的 XML 里元素名恒为 `<error>`、severity 只是它的属性，
+        # 一旦按 severity 过滤，抬高 severity 就等于把那批条目从计数里剔除，凭证跟着变绿。数元素名才不受它影响。
         return sum(1 for _ in root.iter() if _local_name(_.tag) == "error"), False
     if tool == "pmd":
         # `<suppressedviolation>` 是**被抑制**的，不算违规；只数 `<violation>`。

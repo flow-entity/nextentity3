@@ -62,6 +62,8 @@ NO_RECEIPT=""
 
 FAILED=()
 STEPN=0
+# 本次运行里是否已经跑过 `install`：PIT 例外路径唯一的放行凭据（见 step() 的 ③）。
+SAW_INSTALL=0
 
 usage() {
     # 从 "# 用法" 打到注释块结束，别写死行号（改注释就会错位）。
@@ -210,6 +212,9 @@ step() {
     refresh_lock
     local -a cmd=("$@")
     local joined=" ${cmd[*]} "
+    if [[ "$joined" == *" install "* ]]; then
+        SAW_INSTALL=1
+    fi
     local -a skip_args=()
     # STEP_MAX_SKIP 支持空格分隔多条申报（如 "surefire:nextentity-tests-jpa=1"）：
     # 未点名的通道一律用 gate-receipt.py 的默认预算 0，任何跳过都要显式申报。
@@ -255,7 +260,15 @@ step() {
             reject_step "$label" "带 -pl 没有 -am，本步未执行"
             return 1
         fi
-        echo "  · [$label] PIT 例外路径：依赖从 ~/.m2 解析，已由前置 install 步骤刷新" >&2
+        if [ "$SAW_INSTALL" -eq 0 ]; then
+            echo "✗ [$label] PIT 例外路径要求本次运行里已有 install 步骤把 ~/.m2 刷成当前 HEAD，" >&2
+            echo "  但此前没有任何 install 步骤成功排到。删掉前置 install 之后，PIT 会静默读陈旧快照，" >&2
+            echo "  「旧产物能跑」就成了结论。本步未执行。" >&2
+            FAILED+=("$label(pit-no-install)")
+            reject_step "$label" "PIT 前没有 install 步骤，依赖可能来自陈旧快照"
+            return 1
+        fi
+        echo "  · [$label] PIT 例外路径：依赖从 ~/.m2 解析，前置 install 步骤已刷新" >&2
     fi
 
     local -a warns=()
