@@ -60,7 +60,7 @@ class JpaEmbeddedChainTest extends JpaTestSupport {
     }
 
     @Test
-    @DisplayName("两段嵌入的三段路径：一路 get，语句里不出现 join")
+    @DisplayName("两段嵌入的三段路径：条件落在最内层列上，投影/条件/排序都走仓库自己的列")
     void nestedEmbeddedPathUsesGet() {
         assertThat(meta().association(Warehouse.class, "location")).isFalse();
         assertThat(meta().association(WarehouseLocation.class, "coordinates")).isFalse();
