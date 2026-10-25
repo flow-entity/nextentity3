@@ -1,0 +1,50 @@
+# 门禁载体：把「本机能跑」变成「有人替你跑」。
+#
+# 为什么需要这个文件：`nextentity.requireContainer` 默认 `false`，Docker 不可用时整条容器通道
+# 计为 skip、构建照样绿（本地开发需要这个宽进）。AGENTS.md 要求「CI 必须加
+# `-Dnextentity.requireContainer=true`」，而在本文件出现之前这条要求**没有执行载体**——
+# `nextentity-tests-jpa` 的 512 条容器用例（真 MySQL 8.0.18）只在开发者本机跑过。
+#
+# 三条刻意的取舍：
+# - **最小内容**：架构规则 + 全量 `verify`（含容器通道）。PIT（各模块 95% 阈值）跑得慢，
+#   不放进主流程，留给 nightly / 手动触发。
+# - **不跑方言矩阵**：`-Dnextentity.h2mode=postgresql` 是 opt-in 的手工实验，它在 H2 的 PG
+#   兼容模式下有 8 条**预期红**（3 条 SQL 文本快照 + 5 条 `for no key update` / `for share`
+#   的锁语法，H2 的 PG 兼容模式不认）。没有「只允许这 8 条红」的基线机制之前，把它放进 CI
+#   只会得到一个长期红的 workflow，等于把门禁关掉。
+# - **JDK 由 pom 的 `maven.compiler.release` 决定**，这里显式 setup 同一个大版本，避免
+#   runner 默认 JDK 与本地不一致而让「本地绿、CI 红」变成噪音。
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      # 快速回归 + 架构门禁：无需容器，改任何模块都该先过这一关。
+      - name: Architecture rules and fast tests
+        run: ./mvnw -B -pl nextentity-arch -am test
+
+      # 落库测试：H2 走 surefire，`*IntegrationTest` 走 failsafe 起真 MySQL 容器。
+      # `-Dnextentity.requireContainer=true` 让 Docker 缺失时**构建失败**而不是静默 skip。
+      - name: Database tests (H2 + MySQL container channel)
+        run: ./mvnw -B -pl nextentity-tests-jpa -am verify -Dnextentity.requireContainer=true
