@@ -1,0 +1,65 @@
+# 夜间门禁：跑那些「该跑但不该挡 push」的通道。
+#
+# 存在的理由：ci.yml 只保证「该跑的通道都真跑了」，跑得慢的两类东西被刻意排除，于是它们
+# 长期没有执行载体：
+#   · **PIT 变异分数**（各模块 95% 阈值）——它是「断言够不够紧」的唯一硬度量，却只在发版前
+#     由人手动跑过两次；
+#   · **真 MySQL 上的遗留 727 条回归**（`-Ddbc=h2,mysql` 跑两遍，共 1,454 次执行）——它此前
+#     既不在 CI 的 `-am` 反应堆里，也没有任何自动触发。
+#
+# 与 ci.yml 一样调 `tools/gate.sh`，因此 nightly 也会落 `receipt.json`：PIT 的「零变异但
+# 阈值不校验」是已知的假绿通道（根 pom 的 `failWhenNoMutations=false`），凭证会把
+# `mutations=0` 判成缺口而不是通过。
+#
+# 唯一的宽进：`--allow-dirty` 不适用于本档（night 档默认要求干净树），因为「变异分数是
+# 多少」必须对得上一个确定的 commit。
+name: nightly
+
+on:
+  schedule:
+    # UTC 18:00 = Asia/Shanghai 次日 02:00，避开上班时段的 runner 争用。
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  night:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      # night 档 = install 刷快照 → 全量含容器 → 遗留 h2+mysql → PIT×4。
+      # PIT 不带 `-am`，所以前面那步 install 不是可选项：陈旧快照会让依赖新语义的用例
+      # 集体报「未变异就不通过」，看着像测试坏了，其实是 ~/.m2 里的产物旧了。
+      - name: Gate (night tier + receipt)
+        run: |
+          chmod +x tools/gate.sh
+          tools/gate.sh night --require-clean
+
+      - name: Upload gate receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-receipt
+          path: tmp/gate/**/receipt.json
+          if-no-files-found: warn
+
+      # PIT 的 survived 明细在 HTML/XML 报告里，凭证只存计数；要看「哪一行没被杀死」得留报告。
+      - name: Upload PIT reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pit-reports
+          path: nextentity-*/target/pit-reports/
+          if-no-files-found: ignore

@@ -47,15 +47,17 @@
             <artifactId>assertj-core</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- 自动配置门禁用例：ApplicationContextRunner + mock 掉 EntityManagerFactory/EntityManager -->
+        <!--
+          自动配置门禁用例：`ApplicationContextRunner` 起一个只含本自动配置的上下文。
+          注意这里**没有** mockito：`NextEntityAutoConfigurationTest` 明确改用真 Hibernate + H2
+          建 EMF、用 `SharedEntityManagerCreator` 建共享 EM 代理，因为 mock 的 EMF 拿不到真元模型，
+          断言只能停在「bean 个数」。曾经声明的 `mockito-core` 全仓零引用（`mock(` / `when(` 零命中），
+          留着等于给「顺手 mock 一下 EntityManager」留了个邀请——按红线「mock 只许证形状」，
+          它一旦被用在一致性基类里，覆盖率/变异分数/用例数会全部照绿而正确性证据已经蒸发。
+        -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-core</artifactId>
             <scope>test</scope>
         </dependency>
         <!-- 真实接线用例：真 Hibernate + H2 + 事务绑定的共享 EntityManager 代理（不用 mock 证明语义） -->

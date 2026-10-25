@@ -24,7 +24,7 @@
 | `api` / `core` / `spec` / `compile` / `exec` | `mvn -q spotless:apply` → `mvn -pl nextentity-core,nextentity-arch -am test` |
 | `jpa` / `spring` | `mvn -q spotless:apply` → `mvn -pl nextentity-arch -am test` → `mvn -pl nextentity-tests-jpa -am verify`（含 MySQL 容器通道；无 Docker 时自动跳过，见 DESIGN §5「通道拆分」） |
 | `nextentity-testing`（一致性基类、夹具、`ConsistencySupport`） | `mvn -q spotless:apply` → `mvn -pl nextentity-tests-jpa -am verify`（含 MySQL 容器通道；无 Docker 时自动跳过，见 DESIGN §5「通道拆分」） |
-| `nextentity-tests-legacy` | `mvn -pl nextentity-tests-legacy test`（默认 H2，无容器）；动到方言相关再跑 `-Ddbc=h2,mysql` |
+| `nextentity-tests-legacy` | `mvn -pl nextentity-tests-legacy -am test`（默认 H2，无容器）；动到方言相关再跑 `-Ddbc=h2,mysql` |
 | `core` / `jpa` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-<模块> pitest:mutationCoverage`，变异分数不得低于模块 pom 的阈值 |
 | `spring` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-spring pitest:mutationCoverage`（阈值 95）。注意 PIT 不变异注解，`@ConditionalOnProperty` 的开关语义由 `NextEntityAutoConfigurationTest` 的用例兜，不看分数 |
 | `api` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-api pitest:mutationCoverage`（api 有自己的线格式用例，门禁自足，阈值 95）。api 的语义同时被 `core` 的用例执行，所以 `core` 的 PIT 也要跑；**跑它之前必须先 `mvn -pl nextentity-api install -DskipTests`**——`pitest:mutationCoverage` 不带 `-am`，它从 `~/.m2` 解析 `nextentity-api`，陈旧快照会让依赖新语义的用例集体报「未变异就不通过」，看着像测试坏了，其实是产物旧了 |
@@ -32,7 +32,7 @@
 | 发版前 | `mvn clean verify`（格式 + 静态检查 + 单测 + 覆盖率门槛），更新 CHANGELOG |
 | 文档里的代码示例（`*.md` 的代码块） | 先把示例**原样**抄进 `tmp/scripts/probe/DocExamples.java`，`javac` 对相关模块真实 `target/classes` 编译通过后才写进文档；文档声称的能力必须能在源码里指到 `文件:行`，指不到就删掉或移入「不提供的能力」表 |
 
-- **报「绿」三件套**：commit hash + `git status --short` 为空 + 落盘日志路径；跨模块存在未提交改动期间的口头/单点「绿」一律无效（本轮迁移里它抓出 3 次假绿：陈旧 `.m2` 产物、api 中间态编译错误、flaky 集成用例）。
+- **报「绿」三件套**：commit hash + `git status --short` 为空 + `receipt.json` 路径（`tools/gate.sh` 产出；手跑单点测试时用落盘日志路径）；跨模块存在未提交改动期间的口头/单点「绿」一律无效（本轮迁移里它抓出 3 次假绿：陈旧 `.m2` 产物、api 中间态编译错误、flaky 集成用例）。
 - **不读陈旧产物**：跨模块验证前先 `mvn install`（或一律 `-am` 反应堆构建）；`~/.m2` 里的 `-SNAPSHOT` 可能落后于当前 HEAD，用它跑出的结论只能证明"旧产物能跑"。
 - **构建要独占工作树**：并行跑多个 `mvn` 会共用同一个 `target/`，造出「jar/classes 里缺刚写好的类」这类假红，也会让下一次构建静默复用被写坏的产物（`-am` 与 `-Dmaven.repo.local` 都挡不住，冲突在 `target/` 不在本地仓库）。要并行就各开一个 `git worktree`，或串行排队；看到「明明存在的类找不到」先怀疑产物被覆盖，**不要改代码去凑绿**；日志里出现 `Nothing to compile - all classes are up to date` 时，要意识到本次复用的是前序产物。
 - **测试只跑一遍**：一律 `mvn ... > tmp/test-output/<场景>.log 2>&1`，从落盘日志（及 surefire-reports）看全结论；结论得出后删除日志，**禁止为补看日志重跑**。
@@ -49,18 +49,26 @@
 - **禁用要有租约**：`@Disabled("issue=<链接或编号> expires=<yyyy-MM-dd>")`，两个字段缺一即违规；过了 `expires` 仍在禁用，按违规处理。
 - **一致性基类保持后端中立**：该守哪几条在 [docs/DESIGN.md](docs/DESIGN.md) §5「编写约定」里，此处不再重述；评审逐条对照，命中即违规。
 - **契约拒绝必须钉住**：任何抛 `UnsupportedOperationException` 的分支必须有 `assertThatThrownBy` 用例；缺用例的拒绝分支视为能力缺口被掩盖，不得合入。
-- **方言跳过必须可数**：按方言跳过的用例一律用显式标记（注解或 `@Tag`），不得只在注释或日志里交代。当前**没有** skip 报表机制，因此在报表建成之前，PR 说明里必须点名本次新增/删除了哪些跳过项、并给出与上次的数量差；说不清来由的跳过不许合入。
+- **方言跳过必须可数**：按方言跳过的用例一律用显式标记（注解或 `@Tag`），不得只在注释或日志里交代。skip 清单**由凭证自动抽取**（`tools/gate-receipt.py` 从 surefire/failsafe XML 读 `<skipped>` 连理由，汇总在 `receipt.json` 的 `skips` 字段），所以 PR 说明不再手写：直接贴凭证里的 `skip 总数` 与清单，并说明本次增删的来由。凭证里出现无理由跳过、或总数比上次上升，按违规处理。
 
 # 命令速查
 
 ```bash
+./tools/gate.sh fast                     # 日常：格式化 + 架构规则（无容器，~1 分钟）
+./tools/gate.sh pr                       # 提 PR 前：H2 564 + 遗留 727（无容器）
+./tools/gate.sh ci                       # CI：pr + 真 MySQL 容器通道 + requireContainer=true
+./tools/gate.sh night                    # 夜间：install 刷快照 + 全量含容器 + 遗留双跑 + PIT×4
+./tools/gate.sh release                  # 发版：clean verify + api-compat
+# 五档都落 tmp/gate/<commit>-<ts>/receipt.json（通道条数 / skip 清单 / PIT 分数 / 产物新鲜度），
+# 判定只认这份凭证；「绿」以凭证为准，不以日志末行为准。
+
 ./mvnw clean verify                      # 全量门禁：Spotless + Checkstyle + PMD + SpotBugs + 单测 + 覆盖率
 ./mvnw -q spotless:apply                 # 一键格式化（提交前必跑）
 ./mvnw -pl nextentity-core,nextentity-arch -am test   # 快速回归 + 架构门禁，无需容器
-./mvnw -pl nextentity-tests-jpa verify   # 落库测试：H2 走 surefire + MySQL 容器走 failsafe（-DskipITs 只跳容器通道）
-./mvnw -pl nextentity-tests-jpa verify -Dnextentity.requireContainer=true   # CI 用：Docker 不可用时失败而不是静默跳过
-./mvnw -pl nextentity-tests-legacy test  # 2.2.3 遗留语义回归：H2，无容器
-./mvnw -pl nextentity-tests-legacy test -Ddbc=h2,mysql   # 同上，加真 MySQL（需 Docker 或外部实例，见模块 README）
+./mvnw -pl nextentity-tests-jpa -am verify   # 落库测试：H2 走 surefire + MySQL 容器走 failsafe（-DskipITs 只跳容器通道）
+./mvnw -pl nextentity-tests-jpa -am verify -Dnextentity.requireContainer=true   # CI 用：Docker 不可用时失败而不是静默跳过
+./mvnw -pl nextentity-tests-legacy -am test  # 2.2.3 遗留语义回归：H2，无容器
+./mvnw -pl nextentity-tests-legacy -am test -Ddbc=h2,mysql   # 同上，加真 MySQL（需 Docker 或外部实例，见模块 README）
 ./mvnw -Papi-compat -Djapicmp.oldVersion=3.0.0 -pl nextentity-api verify   # API 兼容检查
 ./mvnw -pl nextentity-api pitest:mutationCoverage    # 变异测试：api，阈值 95%（门禁自足，用例在本模块）
 ./mvnw -pl nextentity-core pitest:mutationCoverage   # 变异测试：core，阈值 95%

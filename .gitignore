@@ -18,3 +18,7 @@ Thumbs.db
 *-local.*
 /tmp/
 .worktree/
+
+### 门禁运行态 ###
+# tools/gate.sh 的独占工作树锁：并行 mvn 共用 target/ 会造出假红假绿。
+.mvn/lock.d/
