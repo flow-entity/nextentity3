@@ -172,7 +172,8 @@ L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（
 **嵌入与时间两份基类用变异注入验过「不是摆设」**（手法见下「变异测试」：改一行生产代码 → 只跑相关契约 → 看红的是不是该红的那一条 → `git checkout` 还原）：
 
 - 把 `JpaPersistExecutor#setValues` 改成「只写 `String`/`Number`/`Boolean`/枚举/时间类型，其余一律 `continue`」（等价于把 `@Embedded` 误当关联跳过）→ 嵌入契约红 **2 条**（`updateFlattensBothEmbeddedsIntoLeafColumns`、`updateWithNullEmbeddedWritesNullLeaves`），时间契约 9 条全绿——两类缺陷互不冒充，没有连带误报；
-- 把 `JpaPredicates` 的 `GE` 从 `greaterThanOrEqualTo` 改成 `greaterThan`（闭区间变开区间）→ 时间契约红 **1 条**（`queryByLocalDateTimeAndLocalDateComparison`），且是**差分 oracle** 打红的（端点行被内存筛选算进来了、真库却漏掉）。
+- 把 `JpaPredicates` 的 `GE` 从 `greaterThanOrEqualTo` 改成 `greaterThan`（闭区间变开区间）→ 时间契约红 **1 条**（`queryByLocalDateTimeAndLocalDateComparison`），且是**差分 oracle** 打红的（端点行被内存筛选算进来了、真库却漏掉）；
+- 把 `JpaPredicates` 的 `LE` 改成 `lessThan`、再把 `LT` 改成 `lessThanOrEqualTo`（两个方向各一次）→ **两次都只红 1 条**，还是 `queryByLocalDateTimeAndLocalDateComparison`。这一对是第三轮审查逼出来的：上界原来取 `2024-03-31`（夹具里没有这个日期），`<=` 变 `<` 返回集合同样是 `[1]`，断言没有区分力；改成取夹具里的 `2024-04-10` 之后，两个方向都能红。
 
 **注入必须带 `-am`（或先 `install`）**：`-pl nextentity-tests-jpa` 单模块跑会从 `~/.m2` 取**未变异**的 `nextentity-jpa` 产物，改的那一行根本不生效，表现是「变异后依然全绿」——第一轮复核就是这么被骗过一次，改成 `-pl nextentity-tests-jpa -am` 后同一变异立刻红 2 条。
 
@@ -192,10 +193,10 @@ L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（
 
 **覆盖率要用合并口径看**：各模块自己的 `jacoco.xml` 只统计本模块 `src/test` 的执行数据，而 L2/L3/L4 的用例跑在 `nextentity-tests-jpa` 的 JVM 里——只看模块报告会把「语义套件跑到了、模块单测没跑到」的行误判成缺口（`JpaOperands` 的 `sub`/`mul`/`div` 分支就是这么被误判的）。所以 `nextentity-tests-jpa/pom.xml` 绑了 `jacoco:report-aggregate`，`mvn -pl nextentity-tests-jpa -am verify` 之后看 `nextentity-tests-jpa/target/site/jacoco-aggregate/jacoco.xml`，那才是「全部测试合起来」的口径。
 
-用合并口径实测（`563` H2 + `535` 容器用例全跑），生产代码里没被执行的行**只剩清单里那些**，但三个模块要分开看口径：
+用合并口径实测（`564` H2 + `536` 容器用例全跑，两个通道各 skip 1 条，见下「方言矩阵」），生产代码里没被执行的行**只剩清单里那些**，但三个模块要分开看口径：
 
-- **聚合报告只含 `nextentity-jpa` 与 `nextentity-testing` 两个 group**（`report-aggregate` 只收直接编译依赖，`api`/`core` 是传递依赖、`spring` 是 test 作用域，都不进聚合文件）。`nextentity-jpa` 组里只剩六行：`jpa/meta/JpaEntityAttribute.java:48-49`、`:58-59` 与 `jpa/exec/JpaExecutor.java:122`、`:124`。
-- `api`/`core`/`spring` 看各自模块的 `jacoco.xml`：`api` 剩 1 行 1 分支（`api/Conditions.java:104`）、`core` 剩 3 行（`core/builder/PathRefs.java:90-92`）、`spring` 零行零分支。
+- **聚合报告只含 `nextentity-jpa` 与 `nextentity-testing` 两个 group**（`report-aggregate` 只收直接编译依赖，`api`/`core` 是传递依赖、`spring` 是 test 作用域，都不进聚合文件）。`nextentity-jpa` 组里只剩四行：`jpa/meta/JpaEntityAttribute.java:48-49`、`:58-59`；`jpa/exec/JpaExecutor.java:122`、`:124` 的**行已被模块单测执行**，只剩分支没走全（见下表对应条目）。
+- `api`/`core`/`spring` 看各自模块的 `jacoco.xml`：`api` 剩 **0 行 1 分支**（`api/Conditions.java:104` 的 `parent == null` 子分支）、`core` 剩 3 行（`core/builder/PathRefs.java:90-92`）、`spring` 零行零分支。
 - 两处口径合起来 = **清单外没有一条未覆盖的生产代码行**。剩余未覆盖行都在 `nextentity-testing/src/main` 的 oracle 自身（各差分基类的内存求值/生成器分支、`Shape` 自检的抛错分支），属于测试基础设施的自检路径，不是产品能力。
 
 行覆盖率不作门禁的理由：覆盖率只说明「执行到了」，不说明「断言到了」——空断言、只断言非空、只断言 `size()` 都能拿到接近 100%。把它设成门禁，只会奖励「多写方法少写断言」。换成上面那条「未覆盖行必须进清单」的判据就不一样：清单本身就要求写清不可达的论证，凑数进不了清单。
@@ -216,17 +217,16 @@ java -jar <同上> report tmp/cov/merged.exec \
     --sourcefiles nextentity-<模块>/src/main/java --xml tmp/cov/<模块>.xml
 ```
 
-**覆盖率快照**（聚合口径，第 4 轮结束时）：`api` 行 286/286（100%）、分支 80/81（98.8%）；`core` 447/450（99.3%）、分支 196/196（100%）；`jpa` 360/364（98.9%）、分支 163/166（98.2%）；`spring` 10/10；`testing` 652/652（100%）、分支 48/48。合计行 1755/1762（99.6%）、分支 487/491（99.2%）。剩下的 8 行 / 4 分支就是下表**前五行**；表里另有三行是「模块级 JaCoCo 归因范围」问题（合并口径下已被执行），逐行说明见对应条目。
+**覆盖率快照**（合并口径，第 5 轮结束时；复算命令见上）：`api` 行 286/286（100%）、分支 80/81（98.8%）；`core` 477/480（99.4%）、分支 222/222（100%）；`jpa` 365/369（98.9%）、分支 163/166（98.2%）；`spring` 12/12、零分支；`testing`（oracle 自身的自检路径）3095/3120（99.2%）、分支 582/623（93.4%）。**生产代码四个模块合计行 1140/1147（99.4%）、分支 465/469（99.2%）**。剩下的 **7 行 / 4 分支**就是下表里 `api/Conditions.java:104`、`core/builder/PathRefs.java:90-92`、`jpa/meta/JpaEntityAttribute.java:48-59`、`jpa/exec/JpaExecutor.java:122/124` 四条（前两条是分支、后两条是行）；表里另有几行是「模块级 JaCoCo 归因范围」与「探针位置」问题（合并口径下已被执行），逐行说明见对应条目。
 
 **已判定不可达与度量限制**（这些未覆盖行**已论证**，不再按缺口追；新增未覆盖行要么补用例，要么先在这里写下论证）：
 
 | 位置 | 为什么不可达 |
 |---|---|
 | `api/Conditions.java:104` 的 `parent == null` 子分支 | `PathOperatorValue` 只在 `AlwaysTrue.or(ref)` 时 `parent` 为 `null`，而那条路径 `suppressed == true`，在 `:102` 就返回了 |
-| `api/Conditions.java:398` `AbstractAggregate.subject()` 的 `return null` | 为满足 `Op` 接口而存在，无调用点：聚合值当主语时 `subject` 挂在 `Leaf` 上 |
 | `core/builder/PathRefs.java:90-92` | `writeReplace.invoke(ref)` 在合法方法引用上不会抛 `ReflectiveOperationException` |
 | `jpa/meta/JpaEntityAttribute.java:48-49`、`:58-59` | `resolveField` 已 `setAccessible(true)`，之后的 `IllegalAccessException` 在正常 JVM 上不会发生 |
-| `jpa/exec/JpaExecutor.java:122`、`:124` | `shapeRow` 的两侧取决于 Hibernate 返回形状，公开查询造不出「单列却返回长度≠1 的 `Object[]`」。**这条不是靠读代码断的**：`STRONGER` 组已经把这四行变异过（`JpaExecutor:121`、`:122`×2、`:124`），注入是真做过的，存活原因是"构造不出能走到另一侧的输入"，不是"没试"。另外单独做了三次定向注入复核（`jpa` + `tests-jpa` 两模块一起跑）：把 `:121` 的 `itemCount == 1` 换成恒真、把 `:122` 的 `array.length == 1` 换成恒真——**都仍然全绿**（多列查询在两条路径上返回的是同一个 `Object[]`，单列查询恒是长度 1 的数组，无输入可区分）；把 `:124` 的整个 else 分支换成"一律包一层"——**红**，说明 `Object[]` 那一侧是活的、`new Object[] {row}` 那一侧才是不可达的。与 `JpaPersistExecutor:89/:90`（detach 分支）同类 |
+| `jpa/exec/JpaExecutor.java:122`、`:124`（行已被模块单测执行，剩 3 个分支未走全） | `shapeRow` 的两侧取决于 Hibernate 返回形状，公开查询造不出「单列却返回长度≠1 的 `Object[]`」。**这条不是靠读代码断的**：`STRONGER` 组已经把这四行变异过（`JpaExecutor:121`、`:122`×2、`:124`），注入是真做过的，存活原因是"构造不出能走到另一侧的输入"，不是"没试"。另外单独做了三次定向注入复核（`jpa` + `tests-jpa` 两模块一起跑）：把 `:121` 的 `itemCount == 1` 换成恒真、把 `:122` 的 `array.length == 1` 换成恒真——**都仍然全绿**（多列查询在两条路径上返回的是同一个 `Object[]`，单列查询恒是长度 1 的数组，无输入可区分）；把 `:124` 的整个 else 分支换成"一律包一层"——**红**，说明 `Object[]` 那一侧是活的、`new Object[] {row}` 那一侧才是不可达的。与 `JpaPersistExecutor:89/:90`（detach 分支）同类 |
 | `jpa/compile/JpaOperands.java:61-63`（`sub`/`mul`/`div`）、`jpa/compile/JpaPredicates.java:77-81`（列对列 `NE`/`GT`/`GE`/`LT`/`LE`）、`jpa/exec/JpaPersistExecutor.java:155-156`（`@Version` 类型不支持的 `UnsupportedOperationException`） | **不是未执行，是模块级 JaCoCo 的归因范围**：这三处的用例在 `nextentity-tests-jpa`（`ArithmeticDifferentialTest` 的五个算术格、`ColumnComparisonDifferentialTest` 的六格、写侧 `short` 版本往返），跑在另一个模块的 JVM 里，`nextentity-jpa` 自己的 `jacoco.xml` 看不到。判据是「模块单测没跑到、语义套件跑到了」——这正是上文「度量口径」说的两层互补 |
 | `testing/TerminalConsistencyTest.java:52`、`ProjectionMapperConsistencyTest.java:103` | **不是未执行，是 JaCoCo 归因限制**：这两个 lambda 体唯一的退出路径是被调方抛异常，探针插在被调方调用之后、`return` 之前，永远到不了。用例本身是通过的，断言也确实生效（已用 `javap` 看探针位置 + `-Xlog:exceptions` 观测到异常进 `catchThrowable` 双向确认）。修不掉，除非给 lambda 套一层只骗探针的空包装——那会把证据写糊 |
 
@@ -246,9 +246,9 @@ java -jar <同上> report tmp/cov/merged.exec \
 | surefire | 除 `*IntegrationTest` 外的全部（H2） | 无 | — |
 | failsafe | `**/*IntegrationTest.java`（显式 `<includes>`） | Docker + `mysql:8.0.18` | `-DskipITs` |
 
-两个方向都写死：surefire `<excludes>` 排掉 `*IntegrationTest`，failsafe `<includes>` 收这些类。failsafe 的默认 includes 是 `**/IT*`、`**/*IT`、`**/*ITCase`，与项目约定的 `*IntegrationTest` 一个都不匹配——不显式配置时容器用例会被 surefire 跑掉、failsafe 一条也收不到。容器用例统一 `@Tag("container")` + `@ExtendWith(MySqlL4Gate.class)`。当前实测条数：surefire **563** 条（全 H2）、failsafe **535** 条（真 MySQL，含 `@Version` 乐观锁、`@Convert`、批量写、悲观锁四类写路径场景，另加嵌入/时间/自增主键三族写侧维度），跳过 0 条。拆分之初是 130 / 110，差额来自后续补的差分 oracle（见下「差分 oracle 台账」）、写侧往返用例与写侧维度覆盖（见上「写侧维度覆盖」）。
+两个方向都写死：surefire `<excludes>` 排掉 `*IntegrationTest`，failsafe `<includes>` 收这些类。failsafe 的默认 includes 是 `**/IT*`、`**/*IT`、`**/*ITCase`，与项目约定的 `*IntegrationTest` 一个都不匹配——不显式配置时容器用例会被 surefire 跑掉、failsafe 一条也收不到。容器用例统一 `@Tag("container")` + `@ExtendWith(MySqlL4Gate.class)`。当前实测条数：surefire **564** 条（全 H2）、failsafe **536** 条（真 MySQL，含 `@Version` 乐观锁、`@Convert`、批量写、悲观锁四类写路径场景，另加嵌入/时间/自增主键三族写侧维度），两个通道各跳过 **1** 条——就是 `TemporalWriteContract` 里那条 PG 兼容模式专用的 `Instant` 偏移用例（`@DisabledIfSystemProperty` 标记，默认两通道都不跑，PG 通道跑它、同时关掉严格相等那条），**不是**新引入的静默跳过。拆分之初是 130 / 110，差额来自后续补的差分 oracle（见下「差分 oracle 台账」）、写侧往返用例与写侧维度覆盖（见上「写侧维度覆盖」）。
 
-**容器通道不许静默降级**：`MySqlL4Gate` 是自定义的 `ExecutionCondition`，默认「没有 Docker 就跳过」（本地开发需要这个宽进），但加上 `-Dnextentity.requireContainer=true` 后不再跳过——Docker 缺失时容器在静态初始化阶段启动失败，构建直接变红。**CI 必须带这个属性**，否则真方言对拍会悄悄变成 skip，报表上看不出区别，L4 就成了纸面门禁（数字以「通道拆分」一节的实测条数为准）。**当前仓库里还没有 CI 配置文件**——这条门禁目前只在本地手动跑，接入 CI 时第一件事就是把它加上，并核对 skip 数为 0。三条路径都实测过：宽进 + 无 Docker → 容器用例全部 skip / SUCCESS；强制 + 无 Docker → 容器类整体 error / FAILURE；强制 + 有 Docker → 530 条全 pass / SUCCESS。
+**容器通道不许静默降级**：`MySqlL4Gate` 是自定义的 `ExecutionCondition`，默认「没有 Docker 就跳过」（本地开发需要这个宽进），但加上 `-Dnextentity.requireContainer=true` 后不再跳过——Docker 缺失时容器在静态初始化阶段启动失败，构建直接变红。**CI 必须带这个属性**，否则真方言对拍会悄悄变成 skip，报表上看不出区别，L4 就成了纸面门禁（数字以「通道拆分」一节的实测条数为准）。**当前仓库里还没有 CI 配置文件**——这条门禁目前只在本地手动跑，接入 CI 时第一件事就是把它加上，并核对 skip 数为 0。三条路径都实测过：宽进 + 无 Docker → 容器用例全部 skip / SUCCESS；强制 + 无 Docker → 容器类整体 error / FAILURE；强制 + 有 Docker → 536 条全 pass（1 条 PG 专用用例按标记 skip）/ SUCCESS。
 
 **镜像源**：容器镜像走 `docker.xuanyuan.run`（`docker.xuanyuan.run/library/mysql:8.0.18` 与 `docker.xuanyuan.run/testcontainers/ryuk:0.11.0`），不走 `registry-1.docker.io`——受限网络下直连 Docker Hub 会 `EOF`，而容器用例是 L4 的唯一载体，镜像拉不到就等于这层没跑。两处细节：`MySQLContainer` 会校验镜像仓库名，用镜像站前缀必须显式 `asCompatibleSubstituteFor("mysql")`，否则被判「不兼容」拒启；Ryuk 是 Testcontainers 另起的回收容器，默认也从 Docker Hub 拉，所以它要单独用 `ryuk.container.image` 属性（同时给 `TESTCONTAINERS_RYUK_CONTAINER_IMAGE` 环境变量，防版本差异只认其中一条）指到同一个源。换源或换版本用 `-Dnextentity.mysql.image=` / `-Dnextentity.ryuk.image=` 覆盖，不必改 pom。实测确认：运行期 `docker ps` 里出现的就是这两个镜像站的引用，跑完由镜像站的 Ryuk 回收干净。
 
@@ -306,7 +306,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 2. **跨算子族的碰撞比族内碰撞更隐蔽**：`contains` 格原先取子串 `bet`（命中 `beta` 那行），与 `ge(beta)` 的期望集合完全相同——把 `contains` 渲染成 `>=` 照样全绿。族内自检（同族算子两两可区分）发现不了这种跨族退化，所以可区分性自检里补了 `contains` vs `ge` 这一对，子串也换成 `am`（只命中 `amber`，`{6}` 在 17 格里唯一）。注意子串作用在**关联方的名字**（`alpha`/`beta`/`aardvark`/`amber`/`alps`）上，不是实体自己的名字——第一版选的 `ch` 命中空集合，当场被「期望集合不能为空」的自检拦下。同类的第二处是下划线通配格：原模式 `_lpha` 只命中 `alpha`，与 `eq(alpha)` 同集合，把 `like` 渲染成 `=` 全绿；改成 `a___`（四字符、以 `a` 开头，只命中 `alps`）后与所有比较格都不同集合，并补了 `eq(alpha)` vs `like(a___)` 这一对。
 3. **模块 PIT 的存活体不能直接当盲区清单**：`STRONGER` 的 16 条存活体里，只有 1 条（`jpa/exec/JpaExecutor:47` 的锁模式下发）是被语义套件真杀死的覆盖，11 条等价、4 条防御性不可达（见上「变异组本身的强度也会骗人」）。把模块分数直接当结论会同时犯两个错：把等价变异当缺口，把语义套件的覆盖当成没覆盖。
 
-**方言矩阵（已实测四次，opt-in，不是默认通道）**：`nextentity-tests-jpa` 的建库入口 `HibernateHarness#start`（`nextentity-tests-jpa/src/test/java/io/github/nextentity/tests/jpa/support/HibernateHarness.java`）按系统属性 `-Dnextentity.h2mode` 分派，判定逻辑是纯函数 `HibernateHarness#resolveMode(String)`：缺省（属性缺省或空白）`mysql`，URL 与从前逐字节相同；`postgresql` 时改连 `MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH` 并钉 `PostgreSQLDialect`；其他取值（含大小写变体）归一化后仍不认识就抛 `IllegalArgumentException`，不静默回退（打错一个字母必须当场炸，否则等于什么都没跑）。**不读环境变量**：环境变量会被 fork 出来的 surefire JVM 继承，一条 `NEXTENTITY_H2MODE=postgresql` 就能让后续所有构建静默跑成另一个方言，而日志里看不出来——方言必须是命令行显式声明的。跑法：`./mvnw -pl nextentity-tests-jpa -am test -DskipITs -Dnextentity.h2mode=postgresql`（**要带 `-am`**；不带时 `nextentity-testing` 从 `~/.m2` 取陈旧快照，表现是新写的基类构造器「找不到方法」）。开关自身的正确性有独立用例 `HibernateHarnessModeTest`（5 条，纯函数，不连库）：钉住 MySQL 模式的 URL 与历史逐字节一致、PG 模式的三个兼容开关一个不少、方言只在 PG 下钉、未知取值失败而不是静默回退、NULL 序映射与方言一致——这几行的错误形态都是「默认通道照样全绿」，只能靠直钉。
+**方言矩阵（已实测五次，opt-in，不是默认通道）**：`nextentity-tests-jpa` 的建库入口 `HibernateHarness#start`（`nextentity-tests-jpa/src/test/java/io/github/nextentity/tests/jpa/support/HibernateHarness.java`）按系统属性 `-Dnextentity.h2mode` 分派，判定逻辑是纯函数 `HibernateHarness#resolveMode(String)`：缺省（属性缺省或空白）`mysql`，URL 与从前逐字节相同；`postgresql` 时改连 `MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH` 并钉 `PostgreSQLDialect`；其他取值（含大小写变体）归一化后仍不认识就抛 `IllegalArgumentException`，不静默回退（打错一个字母必须当场炸，否则等于什么都没跑）。**不读环境变量**：环境变量会被 fork 出来的 surefire JVM 继承，一条 `NEXTENTITY_H2MODE=postgresql` 就能让后续所有构建静默跑成另一个方言，而日志里看不出来——方言必须是命令行显式声明的。跑法：`./mvnw -pl nextentity-tests-jpa -am test -DskipITs -Dnextentity.h2mode=postgresql`（**要带 `-am`**；不带时 `nextentity-testing` 从 `~/.m2` 取陈旧快照，表现是新写的基类构造器「找不到方法」）。开关自身的正确性有独立用例 `HibernateHarnessModeTest`（5 条，纯函数，不连库）：钉住 MySQL 模式的 URL 与历史逐字节一致、PG 模式的三个兼容开关一个不少、方言只在 PG 下钉、未知取值失败而不是静默回退、NULL 序映射与方言一致——这几行的错误形态都是「默认通道照样全绿」，只能靠直钉。
 
 第一次实测（H2 侧 535 条）：**25 红，其中 16 条指向 oracle 而非库**——排序/分组/关联差分的内存侧内建了 MySQL 的「ASC 时 NULL 在前」，PG 是 NULLS LAST。这 16 条按「一致性基类保持后端中立」那条红线属于违规，已修（见下「NULL 序参数化」），不是被当成「已知差异」记下来的。
 
@@ -314,6 +314,8 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 第三次实测（H2 侧 558 条，补完写侧维度用例之后）：**10 红**，上一轮那 8 条一条不多一条不少，新增的 2 条都在 `TemporalWriteContract`（`insertAndReloadPreserveTemporalValues`、`updateWritesAllTemporalColumns`）：`Instant` 写进去 `2024-03-01T10:15:30Z`、读回 `2024-03-01T02:15:30Z`，正好差一个 JVM 时区（+08:00）。**这不是生产缺陷，已用纯 Hibernate 对照证伪**：同一个实体在 PG 模式下不走 `nextentity`、直接 `em.persist` + `em.find`，一样差 8 小时，原生查询取回的原始值是 `OffsetDateTime 2024-03-01T10:15:30+08:00`；两种模式建出来的列类型都是 `timestamp with time zone(6)`（`information_schema.columns` 实测），差异只在 `PostgreSQLDialect` 对 `Instant` 的绑定路径与 H2 的 PG 兼容模式——真 PostgreSQL 的 `timestamptz` 存的是时刻，不会有这个偏移。归入「H2 的 PG 兼容模式不认 PG 语义」这一类（与锁语法同因），不改成跳过、也不削弱断言：默认通道（H2 的 MySQL 模式 + 真 MySQL 容器）两处都逐字通过。
 第四次实测（H2 侧 563 条，补完 reviewer 的两轮整改之后）：**8 红，回到「3 快照 + 5 锁」，零生产缺陷**。上一轮那 2 条 `Instant` 红已消掉，但**不是靠跳过**：`TemporalWriteContract` 里 `Instant` 的往返断言改成按方言分派（[TemporalWriteContract#assertInstantRoundTrip](nextentity-tests-jpa/src/test/java/io/github/nextentity/tests/jpa/TemporalWriteContract.java)：能保时刻的通道钉**相等**，PG 兼容模式钉「非 null 且漂移量小于 24 小时」），于是两种模式下这条用例都在跑、都在断言，skip 计数不变；写成 `assumeTrue` 会让该通道少一条证据且不进任何计数，正是「方言跳过必须可数」要防的那种静默降级。其余 555 条在两个方言下断言逐字相同。
+
+第五次实测（H2 侧 564 条，第三轮审查整改之后）：**仍是 8 红、仍是「3 快照 + 5 锁」，零生产缺陷**（`ItemSqlSnapshotTest` / `ItemProjectionMapperRenderingTest` / `ItemTier1RenderingTest` 各 1 条，`ItemLockConsistencyTest` 3 条、`ItemQueryEntrySnapshotTest` 2 条），另有 1 条 PG 专用用例按标记 skip。这次把 `Instant` 那条从「容忍带」换成**精确断言**：先实测漂移量——PG 兼容模式 `driftSeconds=-28800`、`offsetSeconds=28800`，恰好 `-1 ×` JVM 偏移；H2 的 MySQL 模式 `driftSeconds=0`、读回原值——于是 PG 分支钉 `drift == -offset`。上一轮那个「漂移小于 24 小时」覆盖 UTC−12…UTC+14 全部合法偏移，对「`Instant` 被时区挪动」零区分力，属于假断言，已废弃。严格相等那条与 PG 专用那条用 `@DisabledIfSystemProperty` / `@EnabledIfSystemProperty` 互斥，**两个通道的 skip 计数恒为 1**，且两条都在报表明面上。其余 554 条在两个方言下断言逐字相同。
 
 
 **NULL 序参数化（R1，已落，方言中立那一格补齐）**：`ORDER BY x` 里 `null` 排前还是排后是**后端事实**，不是可推导语义，所以两处都改成显式传入、默认值 = MySQL：
