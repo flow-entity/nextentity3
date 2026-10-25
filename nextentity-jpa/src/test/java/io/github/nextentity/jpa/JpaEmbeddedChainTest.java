@@ -116,10 +116,13 @@ class JpaEmbeddedChainTest extends JpaTestSupport {
                         .map(Warehouse::getId)
                         .toList());
 
+        // 语义断言在前：排查时"3 号行消失了"比"语句多了三个词"直接得多。
+        assertThat(ids).as("嵌入为 null 的 3 号行不能被过滤掉").containsExactlyInAnyOrder(1L, 2L, 3L);
+        // 语句断言在后，它兜的是另一侧：某个实现若不改语句文本、只在结果转换层丢掉 null 嵌入行，
+        // 上面那条能抓；若它给嵌入 join 加了 is not null，语句这里先红。两条是"语义 + 机制"，缺一有盲区。
         assertThat(normalized(drainSql()))
                 .as("排序键必须落在仓库自己的嵌入列上，否则这条用例不经过嵌入路径")
                 .containsExactly("select w1_0.id,w1_0.zone,w1_0.region from warehouse w1_0 order by w1_0.zone");
-        assertThat(ids).as("嵌入为 null 的 3 号行不能被过滤掉").containsExactlyInAnyOrder(1L, 2L, 3L);
     }
 
     private JpaCompiler compiler(EntityManager entityManager) {

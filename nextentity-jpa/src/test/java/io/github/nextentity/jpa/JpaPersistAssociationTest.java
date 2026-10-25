@@ -2,13 +2,17 @@ package io.github.nextentity.jpa;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.nextentity.jpa.entity.Article;
 import io.github.nextentity.jpa.entity.Customer;
+import io.github.nextentity.jpa.entity.Seal;
 import io.github.nextentity.jpa.entity.ShopOrder;
+import io.github.nextentity.jpa.entity.Tag;
 import io.github.nextentity.jpa.entity.VersionedEntry;
 import io.github.nextentity.jpa.entity.VersionedLedger;
 import io.github.nextentity.jpa.exec.JpaPersistExecutor;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -25,9 +29,13 @@ import org.junit.jupiter.api.Test;
 ///
 /// 第 2 层不可省：只断第 1 层时，把 `update` 整个改成空实现也能过。
 ///
-/// 覆盖范围：`@ManyToOne`（`ShopOrder#customer`）与 `@OneToMany`（`VersionedLedger#entries`）
-/// 两种关联形态；`@OneToOne` 与 `@ManyToMany` 没有夹具，仍是未验证项——它们走同一条
-/// `meta.association(...)` 分支，但别当成已覆盖。
+/// 覆盖范围：四种关联形态各有夹具——`@ManyToOne`（`ShopOrder#customer`）、
+/// `@OneToMany`（`VersionedLedger#entries`）、`@ManyToMany`（`Article#tags`，连接表 `article_tag`）、
+/// `@OneToOne`（`Article#seal`，唯一外键 `seal_id`）。
+///
+/// 四种形态不能互相顶替：`@ManyToOne` / `@OneToOne` 的关联列在**实体表**上，跳过它们表现为
+/// "`SET` 少一列"；`@OneToMany` / `@ManyToMany` 的关联在**另一张表**上（子表或连接表），跳过
+/// 它们表现为"那条表一行都不许动"——漏掉后者，把集合关联误当属性处理时会静默删光子行。
 class JpaPersistAssociationTest extends JpaTestSupport {
 
     /// 集合关联要多验一层：`entries` 是**另一张表**，所以「跳过关联」在这里不是"SET 里少一列"，
@@ -80,6 +88,80 @@ class JpaPersistAssociationTest extends JpaTestSupport {
             assertThat(reloaded.getEntries()).as("集合关联被跳过：子行一条都没少").hasSize(2);
             return null;
         });
+    }
+
+    /// 连接表形态（`@ManyToMany`）与唯一外键形态（`@OneToOne`）各验一次：跳过 `@ManyToMany`
+    /// 意味着 `article_tag` 一行都不许动，跳过 `@OneToOne` 意味着 `seal_id` 不进 `SET`。
+    ///
+    /// 清空 `tags` 并把 `seal` 指向另一行，然后 `update`：要求执行器只发一条打在文章表上的
+    /// `UPDATE`，语句里没有 `seal_id`，也**没有任何**语句碰到 `article_tag` 或 `seal` 表；
+    /// 重载后标签仍是两个、印章仍是原来那个。
+    @Test
+    @DisplayName("update：@ManyToMany 连接表与 @OneToOne 外键一律跳过，基本属性照常更新")
+    void updateSkipsJoinTableAndOneToOneAssociations() {
+        inTx(entityManager -> {
+            Tag first = new Tag(1L, "red");
+            Tag second = new Tag(2L, "blue");
+            entityManager.persist(first);
+            entityManager.persist(second);
+            Seal original = new Seal(1L, "original");
+            entityManager.persist(original);
+            entityManager.persist(new Seal(2L, "other"));
+            entityManager.persist(new Article(1L, "draft", original, new ArrayList<>(List.of(first, second))));
+            return null;
+        });
+        drainSql();
+
+        Article detached = inTx(entityManager -> {
+            Article article = entityManager.find(Article.class, 1L);
+            assertThat(article.getTags()).hasSize(2);
+            assertThat(article.getSeal().getId()).isEqualTo(1L);
+            entityManager.detach(article);
+            return article;
+        });
+        drainSql();
+
+        detached.setName("published");
+        detached.setTags(List.of());
+        inTx(entityManager -> {
+            detached.setSeal(entityManager.getReference(Seal.class, 2L));
+            persister(entityManager, Article.class).update(detached);
+            return null;
+        });
+
+        List<String> statements = normalized(drainSql());
+        assertThat(statements.stream().filter(sql -> sql.startsWith("update ")).toList())
+                .as("执行器只该发一条 UPDATE，且只打在文章表上")
+                .singleElement()
+                .satisfies(sql -> assertThat(sql)
+                        .contains("update article")
+                        .contains("name=?")
+                        .doesNotContain("seal_id"));
+        assertThat(statements)
+                .as("连接表与对端表一条语句都不许出现：既不改连接表，也不动 seal")
+                .noneMatch(sql -> sql.contains("article_tag") || sql.contains("seal"));
+
+        inTx(entityManager -> {
+            Article reloaded = entityManager.find(Article.class, 1L);
+            assertThat(reloaded.getName()).as("基本属性照常写").isEqualTo("published");
+            assertThat(reloaded.getTags()).as("连接表被跳过：标签一个都没少").hasSize(2);
+            assertThat(reloaded.getSeal().getId()).as("@OneToOne 被跳过：外键仍是 1").isEqualTo(1L);
+            return null;
+        });
+    }
+
+    /// 文章夹具（`Article` / `Tag` / `Seal`）是跨用例共享的表，用完必须清；
+    /// 连接表要先清——`article_tag` 的外键指向 `article` 与 `tag`。
+    @AfterEach
+    void clearArticles() {
+        inTx(entityManager -> {
+            entityManager.createNativeQuery("delete from article_tag").executeUpdate();
+            entityManager.createQuery("delete from Article").executeUpdate();
+            entityManager.createQuery("delete from Tag").executeUpdate();
+            entityManager.createQuery("delete from Seal").executeUpdate();
+            return null;
+        });
+        drainSql();
     }
 
     /// 台账夹具（`VersionedLedger` / `VersionedEntry`）是跨用例共享的表，用完必须清。
