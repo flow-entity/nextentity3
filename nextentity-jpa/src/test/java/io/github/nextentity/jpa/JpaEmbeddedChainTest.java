@@ -11,6 +11,7 @@ import io.github.nextentity.core.spec.Ordering;
 import io.github.nextentity.core.spec.QuerySpec;
 import io.github.nextentity.core.spec.Window;
 import io.github.nextentity.jpa.compile.JpaCompiler;
+import io.github.nextentity.jpa.entity.Datum;
 import io.github.nextentity.jpa.entity.GeoCoordinates;
 import io.github.nextentity.jpa.entity.Warehouse;
 import io.github.nextentity.jpa.entity.WarehouseLocation;
@@ -40,7 +41,8 @@ class JpaEmbeddedChainTest extends JpaTestSupport {
     void seedWarehouses() {
         inTx(entityManager -> {
             entityManager.createQuery("delete from Warehouse").executeUpdate();
-            entityManager.persist(new Warehouse(1L, new WarehouseLocation("east", new GeoCoordinates("north"))));
+            entityManager.persist(
+                    new Warehouse(1L, new WarehouseLocation("east", new GeoCoordinates("north", new Datum("d-1")))));
             entityManager.persist(new Warehouse(2L, new WarehouseLocation("east", new GeoCoordinates("south"))));
             entityManager.persist(new Warehouse(3L, null));
             return null;
@@ -81,8 +83,8 @@ class JpaEmbeddedChainTest extends JpaTestSupport {
 
         assertThat(ids).containsExactly(1L);
         assertThat(normalized(drainSql()))
-                .containsExactly("select w1_0.id,w1_0.zone,w1_0.region from warehouse w1_0 where w1_0.zone=?"
-                        + " order by w1_0.id");
+                .containsExactly("select w1_0.id,w1_0.datum_code,w1_0.zone,w1_0.region from warehouse w1_0"
+                        + " where w1_0.zone=? order by w1_0.id");
     }
 
     /// 嵌入属性为 `null` 的行必须照样被查出来。
@@ -122,7 +124,39 @@ class JpaEmbeddedChainTest extends JpaTestSupport {
         // 上面那条能抓；若它给嵌入 join 加了 is not null，语句这里先红。两条是"语义 + 机制"，缺一有盲区。
         assertThat(normalized(drainSql()))
                 .as("排序键必须落在仓库自己的嵌入列上，否则这条用例不经过嵌入路径")
-                .containsExactly("select w1_0.id,w1_0.zone,w1_0.region from warehouse w1_0 order by w1_0.zone");
+                .containsExactly("select w1_0.id,w1_0.datum_code,w1_0.zone,w1_0.region from warehouse w1_0"
+                        + " order by w1_0.zone");
+    }
+
+    /// 四段路径（三层嵌入）：`location.coordinates.datum.code`。
+    ///
+    /// 递归是同一段代码，但第四层是**前缀缓存**第一次需要新建前缀项的地方——前三段早被
+    /// 前序路径填满，所以三层路径测不到缓存的行为。只有 1 号行有 `datum`，2 号行的
+    /// `coordinates.datum` 为 `null`：命中一行才说明最内层真的渲染成仓库自己的列。
+    @Test
+    @DisplayName("三层嵌入的四段路径：条件落在最内层列上，语句里不出现 join")
+    void nestedEmbeddedPathAtFourthSegmentUsesGet() {
+        AttributePath code = AttributePath.of(Warehouse.class, "location", "coordinates", "datum", "code");
+        QuerySpec spec = new QuerySpec(
+                Warehouse.class,
+                new EntitySelection(),
+                new Comparison(code, ComparisonOperator.EQ, Literal.of("d-1")),
+                List.of(),
+                null,
+                List.of(new Ordering(AttributePath.of(Warehouse.class, "id"), Ordering.Direction.ASC)),
+                Window.NONE,
+                null);
+
+        List<Long> ids = inTx(entityManager ->
+                executor(entityManager).<Warehouse>list(compiler(entityManager).compile(spec)).stream()
+                        .map(Warehouse::getId)
+                        .toList());
+
+        assertThat(ids).as("只有 1 号行的最内层是 d-1").containsExactly(1L);
+        assertThat(normalized(drainSql()))
+                .as("四段路径一路 get：条件落在 warehouse 自己的 datum_code 列上")
+                .containsExactly("select w1_0.id,w1_0.datum_code,w1_0.zone,w1_0.region from warehouse w1_0"
+                        + " where w1_0.datum_code=? order by w1_0.id");
     }
 
     private JpaCompiler compiler(EntityManager entityManager) {

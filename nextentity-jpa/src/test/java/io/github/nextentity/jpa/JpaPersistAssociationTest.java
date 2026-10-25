@@ -90,24 +90,21 @@ class JpaPersistAssociationTest extends JpaTestSupport {
         });
     }
 
-    /// 连接表形态（`@ManyToMany`）与唯一外键形态（`@OneToOne`）各验一次：跳过 `@ManyToMany`
-    /// 意味着 `article_tag` 一行都不许动，跳过 `@OneToOne` 意味着 `seal_id` 不进 `SET`。
+    /// 连接表形态（`@ManyToMany`）：`tags` 住在 `article_tag` 里，所以跳过它**不是**"`SET` 少一列"，
+    /// 而是"连接表一行都不许动"——既不许 `delete`，也不许重建。
     ///
-    /// 清空 `tags` 并把 `seal` 指向另一行，然后 `update`：要求执行器只发一条打在文章表上的
-    /// `UPDATE`，语句里没有 `seal_id`，也**没有任何**语句碰到 `article_tag` 或 `seal` 表；
-    /// 重载后标签仍是两个、印章仍是原来那个。
+    /// 与 `@OneToOne` 那条**拆成两个方法**是有意的：合成一个方法时，注入「不跳过关联」后集合属性
+    /// 会先在 `CriteriaUpdate.set(集合属性)` 处抛异常，后面 `doesNotContain("seal_id")` 那行根本
+    /// 执行不到——`@OneToOne` 的跳过就成了"只在绿路上被断言、没被变异独立证明过"。
     @Test
-    @DisplayName("update：@ManyToMany 连接表与 @OneToOne 外键一律跳过，基本属性照常更新")
-    void updateSkipsJoinTableAndOneToOneAssociations() {
+    @DisplayName("update：@ManyToMany 连接表一行都不动，基本属性照常更新")
+    void updateSkipsJoinTableAssociation() {
         inTx(entityManager -> {
             Tag first = new Tag(1L, "red");
             Tag second = new Tag(2L, "blue");
             entityManager.persist(first);
             entityManager.persist(second);
-            Seal original = new Seal(1L, "original");
-            entityManager.persist(original);
-            entityManager.persist(new Seal(2L, "other"));
-            entityManager.persist(new Article(1L, "draft", original, new ArrayList<>(List.of(first, second))));
+            entityManager.persist(new Article(1L, "draft", null, new ArrayList<>(List.of(first, second))));
             return null;
         });
         drainSql();
@@ -115,7 +112,6 @@ class JpaPersistAssociationTest extends JpaTestSupport {
         Article detached = inTx(entityManager -> {
             Article article = entityManager.find(Article.class, 1L);
             assertThat(article.getTags()).hasSize(2);
-            assertThat(article.getSeal().getId()).isEqualTo(1L);
             entityManager.detach(article);
             return article;
         });
@@ -123,6 +119,48 @@ class JpaPersistAssociationTest extends JpaTestSupport {
 
         detached.setName("published");
         detached.setTags(List.of());
+        inTx(entityManager -> {
+            persister(entityManager, Article.class).update(detached);
+            return null;
+        });
+
+        List<String> statements = normalized(drainSql());
+        assertThat(statements.stream().filter(sql -> sql.startsWith("update ")).toList())
+                .as("执行器只该发一条 UPDATE，且只打在文章表上")
+                .singleElement()
+                .satisfies(sql -> assertThat(sql).contains("update article").contains("name=?"));
+        assertThat(statements).as("连接表一条语句都不许出现：既不删行，也不重建集合").noneMatch(sql -> sql.contains("article_tag"));
+
+        inTx(entityManager -> {
+            Article reloaded = entityManager.find(Article.class, 1L);
+            assertThat(reloaded.getName()).as("基本属性照常写").isEqualTo("published");
+            assertThat(reloaded.getTags()).as("连接表被跳过：标签一个都没少").hasSize(2);
+            return null;
+        });
+    }
+
+    /// 唯一外键形态（`@OneToOne`）：`seal_id` 是实体表上的一列，跳过它表现为"`SET` 里没有这一列"。
+    @Test
+    @DisplayName("update：@OneToOne 唯一外键不进 SET，基本属性照常更新")
+    void updateSkipsOneToOneAssociation() {
+        inTx(entityManager -> {
+            entityManager.persist(new Seal(1L, "original"));
+            entityManager.persist(new Seal(2L, "other"));
+            entityManager.persist(
+                    new Article(2L, "draft", entityManager.getReference(Seal.class, 1L), new ArrayList<>()));
+            return null;
+        });
+        drainSql();
+
+        Article detached = inTx(entityManager -> {
+            Article article = entityManager.find(Article.class, 2L);
+            assertThat(article.getSeal().getId()).isEqualTo(1L);
+            entityManager.detach(article);
+            return article;
+        });
+        drainSql();
+
+        detached.setName("published");
         inTx(entityManager -> {
             detached.setSeal(entityManager.getReference(Seal.class, 2L));
             persister(entityManager, Article.class).update(detached);
@@ -137,14 +175,11 @@ class JpaPersistAssociationTest extends JpaTestSupport {
                         .contains("update article")
                         .contains("name=?")
                         .doesNotContain("seal_id"));
-        assertThat(statements)
-                .as("连接表与对端表一条语句都不许出现：既不改连接表，也不动 seal")
-                .noneMatch(sql -> sql.contains("article_tag") || sql.contains("seal"));
+        assertThat(statements).as("对端表一条语句都不许出现：关联被跳过，不去碰 seal").noneMatch(sql -> sql.contains("seal"));
 
         inTx(entityManager -> {
-            Article reloaded = entityManager.find(Article.class, 1L);
+            Article reloaded = entityManager.find(Article.class, 2L);
             assertThat(reloaded.getName()).as("基本属性照常写").isEqualTo("published");
-            assertThat(reloaded.getTags()).as("连接表被跳过：标签一个都没少").hasSize(2);
             assertThat(reloaded.getSeal().getId()).as("@OneToOne 被跳过：外键仍是 1").isEqualTo(1L);
             return null;
         });
