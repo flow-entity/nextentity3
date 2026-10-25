@@ -84,7 +84,9 @@ abstract class GeneratedIdInsertContract {
 
         // 逐条 insert 走的是各自的 persist + 取号路径，与 insertAll 的批量路径不是同一段代码
         assertThat(second.id()).as("第二次取号必须前进（同号说明取号被缓存或复用）").isGreaterThan(first.id());
-        assertThat(reload(second.id()).name()).isEqualTo("second");
+        GeneratedItemEntity reloadedSecond = reload(second.id());
+        assertThat(reloadedSecond).as("第二条必须真的落库").isNotNull();
+        assertThat(reloadedSecond.name()).isEqualTo("second");
     }
 
     @Test
@@ -107,8 +109,8 @@ abstract class GeneratedIdInsertContract {
     }
 
     @Test
-    @DisplayName("insert：删掉一行后继续插入，不复用已删的号")
-    void insertAfterDeleteDoesNotReuseTheDeletedId() {
+    @DisplayName("insert：删掉一行后继续插入，生成的号继续前进（不复用已删的号）")
+    void insertAfterDeleteKeepsAdvancingTheGeneratedId() {
         GeneratedItemEntity first = new GeneratedItemEntity("alpha");
         insert(first);
         GeneratedItemEntity second = new GeneratedItemEntity("beta");
@@ -152,7 +154,9 @@ abstract class GeneratedIdInsertContract {
         assertThat(setClause(statement)).as("主键不进 SET 子句").isEqualTo("name=?");
         assertThat(statement).as("WHERE 必须落在主键上").contains("where").contains("id=?");
 
-        assertThat(reload(row.id()).name()).isEqualTo("after");
+        GeneratedItemEntity reloaded = reload(row.id());
+        assertThat(reloaded).as("行必须还在（update 不得删行）").isNotNull();
+        assertThat(reloaded.name()).isEqualTo("after");
         // count(*) 的返回类型由方言决定（H2 给 Long，MySQL 可能给 BigInteger），统一按 Number 取
         long rowCount = support().inTransaction(() -> ((Number) support()
                         .entityManager()

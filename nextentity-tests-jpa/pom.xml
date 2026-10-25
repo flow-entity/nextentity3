@@ -165,8 +165,12 @@
              这个区分力，跑测机器若在 UTC 上，该断言对「按 JVM 时区换算」这类缺陷的区分力归零。
              所以由 surefire/failsafe 在 fork 出的 JVM 上钉死，而不是在用例的 `@BeforeEach` 里设——
              Hibernate 在 `buildSessionFactory()` 时就缓存了默认时区，`@BeforeEach` 晚于它
-             （装置由子类字段初始化创建），顺序上等于没钉。换时区验证兼容性用
-             `-DargLine=-Duser.timezone=America/New_York` 整通道跑。 -->
+             （装置由子类字段初始化创建），顺序上等于没钉。
+             换时区验证兼容性用 `-Dpinned.timezone=America/New_York` 整通道跑——这个属性同时进
+             `-Duser.timezone`（fork 出的 JVM）与 `-Dnextentity.pinnedTimezone`（契约自检的期望），
+             两处同源，「换过时区也全绿」才有意义。**不要**用 `-DargLine=...`：jacoco
+             `prepare-agent` 会覆盖 `argLine` 属性，且本 pom 已把 `-Duser.timezone` 写进同一个
+             `argLine`，后写胜出，改了等于没改。 -->
         <pinned.timezone>Asia/Shanghai</pinned.timezone>
         <!-- 空默认值：`@{argLine}` 是 late-replacement，读的是 jacoco `prepare-agent` 写进
              `argLine` 属性的 agent 参数。属性不存在时 late-replacement 会报错（`-Djacoco.skip=true`
@@ -210,8 +214,9 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <!-- `@{argLine}` 必须保留：jacoco 的 agent 参数走这个属性，直接写死会把它覆盖掉 -->
-                    <argLine>@{argLine} -Duser.timezone=${pinned.timezone}</argLine>
+                    <!-- `@{argLine}` 必须保留：jacoco 的 agent 参数走这个属性，直接写死会把它覆盖掉。
+                         两个 `-D` 必须来自同一个属性，否则契约的自检期望会和 JVM 实际时区分家。 -->
+                    <argLine>@{argLine} -Duser.timezone=${pinned.timezone} -Dnextentity.pinnedTimezone=${pinned.timezone}</argLine>
                     <excludes>
                         <exclude>**/*IntegrationTest.java</exclude>
                     </excludes>
@@ -221,7 +226,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <configuration>
-                    <argLine>@{argLine} -Duser.timezone=${pinned.timezone}</argLine>
+                    <argLine>@{argLine} -Duser.timezone=${pinned.timezone} -Dnextentity.pinnedTimezone=${pinned.timezone}</argLine>
                     <includes>
                         <include>**/*IntegrationTest.java</include>
                     </includes>

@@ -51,7 +51,9 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 /// 子类字段初始化创建，早于任何 `@BeforeEach`——在 `@BeforeEach` 里 `TimeZone.setDefault` 是「晚于
 /// 建连」的，实测会把 `LocalDate.of(2024,3,10)` 写成 `2024-03-09`，等于把装置搞成非法的时区实验。
 /// 钉没钉上是可断言的事实（见 [TemporalWriteContract#resetBefore]）。要验证「换时区仍然对」，
-/// **整通道**跑一次：`./mvnw -pl nextentity-tests-jpa test -DargLine=-Duser.timezone=America/New_York`。
+/// **整通道**跑一次：`./mvnw -pl nextentity-tests-jpa test -Dpinned.timezone=America/New_York`
+/// （同一个属性既改 fork 的 `-Duser.timezone`、又改下面的 `PINNED_ZONE` 自检期望；
+/// 用 `-DargLine=...` 改不动——jacoco `prepare-agent` 会覆盖那个属性）。
 abstract class TemporalWriteContract {
 
     /// 行 1 的时刻：三条列各不相同，便于发现「用错列/用错绑定路径」。
@@ -69,8 +71,13 @@ abstract class TemporalWriteContract {
     /// 夹具的内存副本：差分 oracle 的输入，与灌进库里的那三行逐字段相同。
     private List<TemporalItemEntity> fixture = List.of();
 
-    /// 装置钉住的 JVM 时区偏移：与 pom 的 `pinned.timezone` 是同一个值，`resetBefore` 拿它自检。
-    static final ZoneOffset PINNED_OFFSET = ZoneOffset.ofHours(8);
+    /// 装置应当钉住的 JVM 时区：由 pom 的 `pinned.timezone` 经 `-Dnextentity.pinnedTimezone` 传进来，
+    /// `resetBefore` 拿它自检。**期望值只从这一个来源取**，不从 `ZoneId.systemDefault()` 现算——
+    /// 两边都现算的话，「时区被换掉」时期望会和实测一起漂移，互相不出卖。
+    static final ZoneId PINNED_ZONE = ZoneId.of(System.getProperty("nextentity.pinnedTimezone", "Asia/Shanghai"));
+
+    /// 该时区在本夹具时刻上的偏移（当前 `Asia/Shanghai` = `+08:00`）。
+    static final ZoneOffset PINNED_OFFSET = PINNED_ZONE.getRules().getOffset(CREATED_1);
 
     /// 被测装置：子类只决定接哪条库。
     protected abstract WriteRoundTripSupport<TemporalItemEntity> support();
@@ -86,9 +93,9 @@ abstract class TemporalWriteContract {
     void resetBefore() {
         // 时区由 pom 的 `-Duser.timezone` 在 fork 启动时钉住（见类注释），这里把它变成**可断言的
         // 事实**：钉不上就等于所有 `Instant` 断言在 UTC 机器上失去区分力，那种「绿」没有意义。
-        assertThat(ZoneId.systemDefault().getRules().getOffset(CREATED_1))
-                .as("JVM 时区必须被 pom 的 -Duser.timezone 钉在 %s（见 nextentity-tests-jpa/pom.xml）", PINNED_OFFSET)
-                .isEqualTo(PINNED_OFFSET);
+        assertThat(ZoneId.systemDefault())
+                .as("JVM 时区必须被 pom 的 -Duser.timezone 钉在 %s（见 nextentity-tests-jpa/pom.xml）", PINNED_ZONE)
+                .isEqualTo(PINNED_ZONE);
         resetRows();
     }
 
@@ -103,6 +110,7 @@ abstract class TemporalWriteContract {
         insert(row(1L, "first", CREATED_1, UPDATED_1, DUE_1));
 
         TemporalItemEntity reloaded = reload(1L);
+        assertThat(reloaded).as("行必须还在").isNotNull();
         assertThat(reloaded.updatedAt()).as("LocalDateTime 是无时区的墙上时间，不得被换算").isEqualTo(UPDATED_1);
         assertThat(reloaded.dueDate()).as("LocalDate 落 date 列，不得带出时刻").isEqualTo(DUE_1);
     }
@@ -110,7 +118,10 @@ abstract class TemporalWriteContract {
     @Test
     @DisabledIfSystemProperty(
             named = "nextentity.h2mode",
-            matches = "postgresql",
+            // `matches` 是 `String.matches`（整串、区分大小写、不 trim），而 `HibernateHarness#resolveMode`
+            // 宽容大小写与空白（`" PostgreSQL "` 也合法），所以这里必须同样宽容，否则
+            // `-Dnextentity.h2mode=PostgreSQL` 会让这条严格相等的用例照跑、报一条假红。
+            matches = "(?i)\s*postgresql\s*",
             disabledReason = "H2 的 PG 兼容模式把 Instant 绑成丢偏移的 timestamp，本通道的形态由"
                     + " insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode 单独钉")
     @DisplayName("insert/reload：Instant 回到同一个时刻，不被时区挪动")
@@ -131,7 +142,7 @@ abstract class TemporalWriteContract {
     /// 断言不留容忍带——写成「漂移小于 24 小时」会把所有合法时区差（UTC−12…UTC+14）都放过去，
     /// 对这个用例唯一要抓的缺陷类别（时刻被时区挪动）零区分力。
     @Test
-    @EnabledIfSystemProperty(named = "nextentity.h2mode", matches = "postgresql")
+    @EnabledIfSystemProperty(named = "nextentity.h2mode", matches = "(?i)\s*postgresql\s*")
     @Tag("dialect-h2-postgresql")
     @DisplayName("insert/reload（PG 兼容模式）：Instant 丢掉的偏移恰好是一个 JVM 时区偏移")
     void insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode() {
@@ -140,7 +151,9 @@ abstract class TemporalWriteContract {
         TemporalItemEntity reloaded = reload(1L);
         assertThat(reloaded).as("行必须还在").isNotNull();
         long drift = Duration.between(CREATED_1, reloaded.createdAt()).getSeconds();
-        long offset = ZoneId.systemDefault().getRules().getOffset(CREATED_1).getTotalSeconds();
+        // 期望值取自 `PINNED_ZONE`（声明的时区），实测值来自库里的行——两侧不同源，
+        // 所以「JVM 时区被换掉」时只有实测那侧会变，这条必须红。
+        long offset = PINNED_OFFSET.getTotalSeconds();
         assertThat(drift)
                 .as("%s（丢的必须恰好是一个 JVM 时区偏移：偏移量变了、方向反了、或哪天不丢了都要红）", reloaded.createdAt())
                 .isEqualTo(-offset);
@@ -370,8 +383,7 @@ abstract class TemporalWriteContract {
         if (instantRoundTripKeepsTheInstant()) {
             return value;
         }
-        return value.minusSeconds(
-                ZoneId.systemDefault().getRules().getOffset(value).getTotalSeconds());
+        return value.minusSeconds(PINNED_ZONE.getRules().getOffset(value).getTotalSeconds());
     }
 
     /// 该通道下 `Instant` 的往返是否保持时刻不变。
