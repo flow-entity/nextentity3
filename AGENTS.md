@@ -37,6 +37,7 @@
 - **构建要独占工作树**：并行跑多个 `mvn` 会共用同一个 `target/`，造出「jar/classes 里缺刚写好的类」这类假红，也会让下一次构建静默复用被写坏的产物（`-am` 与 `-Dmaven.repo.local` 都挡不住，冲突在 `target/` 不在本地仓库）。要并行就各开一个 `git worktree`，或串行排队；看到「明明存在的类找不到」先怀疑产物被覆盖，**不要改代码去凑绿**；日志里出现 `Nothing to compile - all classes are up to date` 时，要意识到本次复用的是前序产物。
 - **测试只跑一遍**：一律 `mvn ... > tmp/test-output/<场景>.log 2>&1`，从落盘日志（及 surefire-reports）看全结论；结论得出后删除日志，**禁止为补看日志重跑**。
 - **分层跑测试**：`api`/`core` 单测无需容器；`nextentity-arch` 只跑架构规则（无容器，改任何模块都要跑）；`nextentity-tests-jpa` 是落库测试，H2 用例走 surefire、`*IntegrationTest` 走 failsafe 跑真 MySQL 容器（`testcontainers:mysql`，见 [docs/DESIGN.md](docs/DESIGN.md) §5「通道拆分」），只在改动 `jpa`/`spring`/`nextentity-testing` 或发版前跑。**CI 必须加 `-Dnextentity.requireContainer=true`**：默认无 Docker 时整条容器通道计为 skip、构建照样绿（本地开发要这个宽进），CI 不加就等于把 L4 变成纸面门禁；加上之后 Docker 不可用会直接构建失败。
+- **静态检查以凭证为准**：checkstyle / PMD / SpotBugs 的结论不认 `mvn` 退出码——`failOnViolation` 改 false、`violationSeverity` 抬高、删掉模块 pom 里的插件 `<execution>` 块，三种都能让 `mvn verify` 退出 0 而报告缺席或带违规。`tools/gate-receipt.py` 为每个模块立 `static:<模块>` 通道，自己数报告里的违规条目（checkstyle `error` / PMD `violation`，被抑制的不算 / SpotBugs `BugInstance`），**缺席、不新鲜、有违规三条任一即红**。期望集按模块形状推导（`pom` 打包只要 checkstyle、有 `src/main/java` 要三件套、纯测试模块要 checkstyle+PMD），**不从模块 pom 的插件配置读**——删执行块时若期望一起消失，检查就等于没写；仓库明文例外（`nextentity-tests-legacy` 是移植语料）以 `STATIC_EXEMPT` 列在凭证工具里，改它要动门禁脚本本身。因此「我本地 verify 过了」不构成静态检查的证据，只有 `receipt.json` 里的 `static_violations` 构成。
 - **测试命名**：快测试 `*Test`，落库场景 `*IntegrationTest`；集成测试启动容器后须在 `@AfterEach` 复位被改状态。
 - **提交信息**：Conventional Commits（`feat:` / `fix:` / `refactor:` / `test:` / `docs:`），一行一件事；PR 说明受影响模块 + 本地实际跑过的命令。
 
@@ -50,7 +51,7 @@
 - **一致性基类保持后端中立**：该守哪几条在 [docs/DESIGN.md](docs/DESIGN.md) §5「编写约定」里，此处不再重述；评审逐条对照，命中即违规。
 - **契约拒绝必须钉住**：任何抛 `UnsupportedOperationException` 的分支必须有 `assertThatThrownBy` 用例；缺用例的拒绝分支视为能力缺口被掩盖，不得合入。
 - **方言跳过必须可数**：按方言跳过的用例一律用显式标记（注解或 `@Tag`），不得只在注释或日志里交代。跳过条数**由凭证判定**：`tools/gate.sh` 给每个通道申报 skip 预算（默认 0），`tools/gate-receipt.py` 从 surefire/failsafe XML 读 `<skipped>` 连理由汇总到 `receipt.json` 的 `skip_report` 字段，**超预算即红**。所以 PR 说明不手写清单：直接贴凭证里的 `skip_report.total` 与条目。
-- **预期失败要有台账且会腐烂**：某通道上「按设计就会红」的用例不许用 `@Disabled` 藏（既不跑、也看不出哪天修好），必须逐条写进 `tools/expected-failures/<通道>.txt`，每条带 `type=`、`issue=` 与 `expires=`。判据是**双向完全相等**：实际失败集多一条 = 新回归，少一条 = 基线腐化（已修好仍留着条目），过期未续也算违规；`type`（`failure` / `error`）也必须相等——断言不符悄悄变成被测代码抛异常时，名字和条数都不变。`expires` 不得超过今天 + 180 天，空基线文件按配置错误处理。只许在 `tools/gate.sh` 里由 `STEP_EXPECTED_FAILURES` 点名的步骤生效；申报了基线的通道若不在该步的 `--require` 里，同样判红（「申报了却被静默忽略」）；该步会自动带 `-Dmaven.test.failure.ignore=true`，好让 `verify` 阶段的 checkstyle/PMD/SpotBugs/jacoco 照常执行，判定权交给凭证。方言矩阵通道还要求与基础通道**跑同一批用例**（条数相等），少跑即红。
+- **预期失败要有台账且会腐烂**：某通道上「按设计就会红」的用例不许用 `@Disabled` 藏（既不跑、也看不出哪天修好），必须逐条写进 `tools/expected-failures/<通道>.txt`，每条带 `type=`、`issue=` 与 `expires=`。判据是**双向完全相等**：实际失败集多一条 = 新回归，少一条 = 基线腐化（已修好仍留着条目），过期未续也算违规；`type`（`failure` / `error`）也必须相等——断言不符悄悄变成被测代码抛异常时，名字和条数都不变。`expires` 不得超过今天 + 180 天，空基线文件按配置错误处理。只许在 `tools/gate.sh` 里由 `STEP_EXPECTED_FAILURES` 点名的步骤生效；申报了基线的通道若不在该步的 `--require` 里，同样判红（「申报了却被静默忽略」）；「测试红但生命周期不中断」由 `nextentity-tests-jpa/pom.xml` 的 `pg-dialect` execution 上的 `<testFailureIgnore>true</testFailureIgnore>` 承担，好让 `verify` 阶段的 checkstyle/PMD/SpotBugs/jacoco 照常执行；**不要**用 `-Dmaven.test.failure.ignore=true` 全局属性代替——它会把同一反应堆里 api/core/jpa/spring 的失败一并吞掉。判定权交给凭证。方言矩阵通道还要求与基础通道**跑同一批用例**（条数相等），少跑即红。
 
 # 命令速查
 

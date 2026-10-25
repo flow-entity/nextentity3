@@ -133,6 +133,120 @@ def _scan_xml_reports(root: str, kind: str, since: float) -> dict[str, dict]:
     return out
 
 
+STATIC_REPORTS = {
+    "checkstyle": "checkstyle-result.xml",
+    "pmd": "pmd.xml",
+    "spotbugs": "spotbugsXml.xml",
+}
+
+# 按模块形状推导期望集时，必须扣掉**仓库明文规定**的例外。这里只能放「模块自己的
+# README/注释里写清了理由」的项，并且写在凭证工具里（改它要走门禁脚本的 diff、
+# 而门禁脚本在 CI 里是从基线分支取的，PR 改不动自己的判据）。
+# 反例：从模块 pom 的插件配置里读 `skip`——那正是 S2 要堵的漏洞（删执行块 = 期望一起消失）。
+STATIC_EXEMPT = {
+    # 移植载体：源文件刻意与上游同排版以便逐文件 diff，故跳过 spotless/checkstyle/PMD。
+    # 见 nextentity-tests-legacy/README.md 与 AGENTS「移植语料是范围例外」。
+    "nextentity-tests-legacy": ("checkstyle", "pmd"),
+}
+
+
+def _local_name(tag: str) -> str:
+    """去掉 ElementTree 的 `{namespace}` 前缀（PMD 的报告带默认命名空间）。"""
+    return tag.rpartition("}")[2]
+
+
+def _static_violations(path: str, tool: str) -> tuple[int, bool]:
+    """数报告里的违规条目。返回 (条数, 是否无法解析)。
+
+    违规数必须由凭证自己数，不能只看 mvn 退出码：`check` 目标靠 `failOnViolation`
+    决定是否失败，把它改成 false、或把 `violationSeverity` 抬到 error 以上，
+    mvn 就退出 0 而报告里照样有违规——退出码在这件事上不是证据。
+    """
+    try:
+        root = ET.parse(path).getroot()
+    except ET.ParseError:
+        return 0, True
+    if tool == "checkstyle":
+        # `<file><error line= severity= .../></file>`，每条 error 都算。
+        return sum(1 for _ in root.iter() if _local_name(_.tag) == "error"), False
+    if tool == "pmd":
+        # `<suppressedviolation>` 是**被抑制**的，不算违规；只数 `<violation>`。
+        return sum(1 for _ in root.iter() if _local_name(_.tag) == "violation"), False
+    return sum(1 for _ in root.iter() if _local_name(_.tag) == "BugInstance"), False
+
+
+def _module_packaging(root: str, module: str) -> str:
+    pom = os.path.join(root, module, "pom.xml")
+    try:
+        tree = ET.parse(pom).getroot()
+    except (OSError, ET.ParseError):
+        return "jar"
+    for child in tree:
+        if _local_name(child.tag) == "packaging" and child.text:
+            return child.text.strip()
+    return "jar"
+
+
+def _expected_static_tools(root: str, module: str) -> tuple[str, ...]:
+    """该模块**应当**产出哪些静态检查报告。按模块形状推导，不读插件配置。
+
+    这是 S2 的要害：此前的漏洞是「删掉某个模块 pom 里的 spotbugs `<execution>`
+    块 → `mvn verify` 退出 0、不产报告 → 凭证绿到底」。若期望集从 pom 的插件配置里
+    读，删掉执行块的同时期望也一起消失，检查等于没写。改从**模块形状**推导
+    （是不是 pom 打包、有没有 `src/main/java`），删插件配置就只会让报告缺席 → 红。
+
+    - `pom` 打包（bom）：只有 checkstyle 会跑（无源码，PMD/SpotBugs 无输入）。
+    - 有 `src/main/java`：三件套全跑。
+    - 其余（纯测试模块：arch / tests-jpa / tests-legacy）：checkstyle + PMD
+      （无 main 字节码，SpotBugs 按仓库约定 `spotbugs.skip=true`）。
+    """
+    if _module_packaging(root, module) == "pom":
+        return ("checkstyle",)
+    exempt = STATIC_EXEMPT.get(module, ())
+    if os.path.isdir(os.path.join(root, module, "src", "main", "java")):
+        expected = ("checkstyle", "pmd", "spotbugs")
+    else:
+        expected = ("checkstyle", "pmd")
+    return tuple(tool for tool in expected if tool not in exempt)
+
+
+def _scan_static(root: str, since: float) -> dict[str, dict]:
+    """扫 checkstyle / PMD / SpotBugs 报告，按模块聚合成 `static:<module>` 通道。
+
+    报告 mtime 逐文件比 `since`（与 surefire 扫描同口径）：`target/` 会留上一轮的
+    三份 XML，只跑 `-DskipTests` 时若不比 mtime，本步会拿旧报告判绿。
+    """
+    out: dict[str, dict] = {}
+    for module in modules(root):
+        tools: dict[str, dict] = {}
+        for tool, filename in STATIC_REPORTS.items():
+            path = os.path.join(root, module, "target", filename)
+            entry = {"present": False, "mtime": 0.0, "violations": 0, "unparsable": False}
+            if os.path.isfile(path):
+                entry["present"] = True
+                entry["mtime"] = os.stat(path).st_mtime
+                entry["violations"], entry["unparsable"] = _static_violations(path, tool)
+            tools[tool] = entry
+        expected = _expected_static_tools(root, module)
+        # 全豁免的模块（`STATIC_EXEMPT` 把它的工具全扣掉了，例如移植语料 nextentity-tests-legacy）
+        # 也要建通道：它的「零报告」是一条**要被断言**的事实，不是可以省掉的一行——
+        # 省掉之后 `--require` 里点它的步骤会报「本步没有产出任何报告」，或者（更糟）
+        # 把它的名字从 require 里删掉，从此没人记得它本该被检查。
+        # 其余模块只在真有报告时才建通道：不在本步反应堆里的模块（pr 档的 arch / bom）
+        # 不该凭空出现、更不该被判红。
+        if expected and not any(entry["present"] for entry in tools.values()):
+            continue
+        out["static:%s" % module] = {
+            "kind": "static",
+            "module": module,
+            "tools": tools,
+            "expected": list(expected),
+            "exempt": not expected,
+            "mtime": max(entry["mtime"] for entry in tools.values()),
+        }
+    return out
+
+
 def _pit_threshold(root: str, module: str) -> float | None:
     """读模块 pom 的 `mutationThreshold`，凭证用它交叉核对 PIT 自己的分数。
 
@@ -218,6 +332,9 @@ def scan(root: str, since: float = 0.0) -> dict[str, dict]:
     # 既看不出是哪个模式红的，也没法给 PG 模式单独挂预期失败基线。
     channels.update(_scan_xml_reports(root, "surefire-pg", since))
     channels.update(_scan_pit(root))
+    # 静态检查通道：checkstyle / PMD / SpotBugs 的违规数必须由凭证自己数。
+    # `mvn verify` 退出 0 在这件事上不是证据（见 `_static_violations` 的注释）。
+    channels.update(_scan_static(root, since))
     return channels
 
 
@@ -302,7 +419,10 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
     channels = scan(args.root, args.since)
     fresh, stale, missing = {}, {}, []
     for name, info in channels.items():
-        if info["mtime"] >= args.since - FRESH_TOLERANCE:
+        # 全豁免的静态通道没有报告可读，`mtime` 恒为 0——它断言的是「本模块按仓库明文规定
+        # 不跑静态检查」，没有「新鲜」可言，直接算新鲜。若哪天豁免被撤销，`expected` 变非空，
+        # 这条路不再适用，缺席就照常判红。
+        if info.get("exempt") or info["mtime"] >= args.since - FRESH_TOLERANCE:
             fresh[name] = info
         else:
             stale[name] = info
@@ -343,22 +463,31 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
     # 相等关系照样成立，凭证仍绿（等于允许把矩阵悄悄削成空壳）。
     # 下限是**单调**的：加用例不用改它，只有删用例才会撞红——正好是我们要人停下来解释的动作。
     min_tests: dict[str, int] = {}
+    bad_min_tests: list[str] = []
     for spec in args.min_tests or []:
         key, _, value = spec.partition("=")
         key = key.strip()
         if not key or ":" not in key:
-            bad_specs.append("%s（缺少 `类型:模块` 通道名）" % spec)
+            bad_min_tests.append("%s（缺少 `类型:模块` 通道名）" % spec)
             continue
         try:
-            min_tests[key] = int(value.strip())
+            floor = int(value.strip())
         except ValueError:
-            bad_specs.append("%s（用例数 `%s` 不是整数）" % (spec, value.strip()))
+            bad_min_tests.append("%s（用例数 `%s` 不是整数）" % (spec, value.strip()))
+            continue
+        if floor < 1:
+            # 0 或负数等于没申报：`tests < 0` 恒假，这条下限会被静默吸收。
+            bad_min_tests.append("%s（用例数下限必须 ≥ 1，`%s` 等于没申报）" % (spec, floor))
+            continue
+        min_tests[key] = floor
 
     problems: list[str] = []
     warnings_extra: list[str] = []
     notes: list[str] = []
     for bad in bad_specs:
         problems.append("--max-skip 申报格式非法：%s" % bad)
+    for bad in bad_min_tests:
+        problems.append("--min-tests 申报格式非法：%s" % bad)
 
     # 预期失败基线：显式 `--expected-failures <file>`。不传 = 任何失败都判红（默认最严）。
     baseline: dict[str, dict[str, dict]] = {}
@@ -412,6 +541,35 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
                     "%s：%d 个变异体 RUN_ERROR（测试 JVM 崩了），这部分既不计分母也不计分子，不能算过"
                     % (name, info["run_errors"])
                 )
+            continue
+        if info.get("kind") == "static":
+            # 每个**应当**产出的报告都必须真产出且新鲜；违规数必须为 0。
+            # 三条判据缺一不可：
+            #  - 缺席 → 「删掉插件执行块」这条通道（mvn 照样退出 0）；
+            #  - 陈旧 → 上一轮的 XML 留在 target/ 下冒充本步结果；
+            #  - 有违规 → `failOnViolation=false` / `violationSeverity` 被抬高的通道。
+            for tool in info["expected"]:
+                entry = info["tools"].get(tool) or {}
+                if not entry.get("present"):
+                    problems.append(
+                        "%s：应当产出 %s 报告（target/%s）但没有——插件执行块被删或被 skip，"
+                        "`mvn verify` 退出 0 说明不了这件事"
+                        % (name, tool, STATIC_REPORTS[tool])
+                    )
+                elif entry.get("mtime", 0.0) < args.since - FRESH_TOLERANCE:
+                    problems.append(
+                        "%s：%s 报告存在但不新鲜（mtime %.0f < 本轮开始 %.0f）"
+                        "——这是上一轮的结论，别读它"
+                        % (name, tool, entry["mtime"], args.since)
+                    )
+                elif entry.get("unparsable"):
+                    problems.append("%s：%s 报告无法解析（截断的 XML 不能算通过）" % (name, tool))
+                elif entry.get("violations"):
+                    problems.append(
+                        "%s：%s 报告里有 %d 条违规，但 mvn 仍判成功"
+                        "——`failOnViolation` / `violationSeverity` 大概被调松了"
+                        % (name, tool, entry["violations"])
+                    )
             continue
         if name in baseline:
             # 基线比对必须**无条件**跑，不能只在「有失败」时跑：某通道一条都没失败恰恰是
@@ -714,6 +872,19 @@ def _print_step(receipt: dict) -> None:
                 )
             )
             continue
+        if info.get("kind") == "static":
+            if info.get("exempt"):
+                print("  ✓ %-46s 静态 全豁免（STATIC_EXEMPT）" % name)
+                continue
+            parts = []
+            for tool in info["expected"]:
+                entry = info["tools"].get(tool) or {}
+                parts.append(
+                    "%s=%s"
+                    % (tool, entry.get("violations", 0) if entry.get("present") else "缺席")
+                )
+            print("  ✓ %-46s 静态 %s" % (name, " ".join(parts)))
+            continue
         print(
             "  ✓ %-46s %4d 条  skip %d  fail %d"
             % (name, info["tests"], info["skipped"], info["failures"] + info["errors"])
@@ -725,6 +896,11 @@ def _print_step(receipt: dict) -> None:
             print(
                 "    %-46s 变异 %3d / 杀 %3d / %s%%"
                 % (name, info["mutations"], info["detected"], info["coverage"])
+            )
+        elif info.get("kind") == "static":
+            print(
+                "    %-46s 静态（未纳入本步判定）"
+                % name
             )
         else:
             print("    %-46s %4d 条  skip %d" % (name, info["tests"], info["skipped"]))
@@ -807,6 +983,14 @@ def cmd_merge(args: argparse.Namespace) -> int:
                 "skipped": info.get("skipped", 0),
                 "mutations": info.get("mutations", 0),
                 "coverage_raw": info.get("coverage_raw"),
+                # 静态检查的违规数同样要进最终凭证：CI 只上传 receipt.json，
+                # 否则「三件套跑过且零违规」在凭证上无从查证。
+                "static_violations": {
+                    tool: entry.get("violations", 0)
+                    for tool, entry in (info.get("tools") or {}).items()
+                    if entry.get("present")
+                }
+                or None,
             }
             for step in steps
             for name, info in sorted(step["channels"].items())

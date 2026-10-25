@@ -242,17 +242,20 @@ step() {
     STEP_MIN_TESTS=""
 
     # ③ 拒绝缺 -am 的调用：它会从 ~/.m2 解析依赖模块，陈旧快照会让结论变成「旧产物能跑」。
-    # 两个例外：PIT 目标（-am 会把 PIT 拖到上游模块上跑），以及紧跟在 `install -DskipTests`
-    # 之后的步骤——那时 ~/.m2 里就是当前 HEAD，缺 -am 不再失真。
-    if [[ "$joined" == *" -pl "* && "$joined" != *" -am "* && "${FRESH_SNAPSHOT:-0}" != "1" ]]; then
+    # 唯一例外是 PIT 目标：`-am` 会把 PIT 拖到上游模块上跑，所以它只能 `-pl`，依赖从
+    # `~/.m2` 取——各档都先用一个显式的 `install -DskipTests` 步骤把 `~/.m2` 刷成当前 HEAD。
+    #
+    # 这里刻意**不留**「刚 install 过就放行任意 -pl」的宽进口子（曾经有过 FRESH_SNAPSHOT）：
+    # 它会让将来任何新增的 `-pl` 无 `-am` 步骤被静默放行，而「陈旧产物」正是本项目抓出过的
+    # 假绿之一。判据只认目标本身，不认「之前跑过什么」。
+    if [[ "$joined" == *" -pl "* && "$joined" != *" -am "* ]]; then
         if [[ "$joined" != *"pitest:mutationCoverage"* ]]; then
             echo "✗ [$label] 带 -pl 却没有 -am：会从 ~/.m2 解析依赖模块，陈旧产物会让结论失真。" >&2
-            echo "  （若本步之前刚跑过 install -DskipTests，用一个独立的 install 步骤把它标成新鲜快照）" >&2
             FAILED+=("$label(no -am)")
-            reject_step "$label" "带 -pl 没有 -am，且没有前置 install 刷新 ~/.m2，本步未执行"
+            reject_step "$label" "带 -pl 没有 -am，本步未执行"
             return 1
         fi
-        echo "  · [$label] PIT 例外路径：依赖从 ~/.m2 解析，已由 install 步骤刷新" >&2
+        echo "  · [$label] PIT 例外路径：依赖从 ~/.m2 解析，已由前置 install 步骤刷新" >&2
     fi
 
     local -a warns=()
@@ -288,11 +291,6 @@ step() {
     rc=0
     "${cmd[@]}" >"$log" 2>&1 || rc=$?
     refresh_lock
-
-    # 整仓 install 成功后，后续 -pl 步骤可以从 ~/.m2 取当前 HEAD 的产物。
-    if [ "$rc" -eq 0 ] && [[ "$joined" == *" install "* ]]; then
-        FRESH_SNAPSHOT=1
-    fi
 
     if grep -q 'Nothing to compile - all classes are up to date' "$log" 2>/dev/null; then
         warns+=(--warn "$label：日志出现 Nothing to compile，本次复用了前序产物")
@@ -400,7 +398,7 @@ tier_ci() {
     STEP_MIN_TESTS="surefire:nextentity-api=147 surefire:nextentity-core=267 surefire:nextentity-jpa=73 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=564 failsafe:nextentity-tests-jpa=536 surefire-pg:nextentity-tests-jpa=564"
     STEP_EXPECTED_FAILURES="tools/expected-failures/h2-postgresql.txt"
     step ci-container \
-        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa" \
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa,static:nextentity-api,static:nextentity-core,static:nextentity-jpa,static:nextentity-spring,static:nextentity-testing,static:nextentity-tests-jpa" \
         ./mvnw -B -pl nextentity-tests-jpa -am verify -Dnextentity.requireContainer=true -Pdialect-pg
     STEP_MIN_TESTS="surefire:nextentity-tests-legacy=727 surefire:nextentity-api=147 surefire:nextentity-core=267 surefire:nextentity-jpa=73"
     step ci-legacy \
@@ -421,7 +419,7 @@ tier_pr() {    # 容器通道在本档明确不跑（-DskipITs）。凭证会把
     STEP_MIN_TESTS="surefire:nextentity-api=147 surefire:nextentity-core=267 surefire:nextentity-jpa=73 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=564 surefire-pg:nextentity-tests-jpa=564"
     STEP_EXPECTED_FAILURES="tools/expected-failures/h2-postgresql.txt"
     step pr-h2 \
-        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa" \
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa,static:nextentity-api,static:nextentity-core,static:nextentity-jpa,static:nextentity-spring,static:nextentity-testing,static:nextentity-tests-jpa" \
         ./mvnw -B -pl nextentity-tests-jpa -am verify -DskipITs -Pdialect-pg
     # 727 条遗留回归此前完全不在 CI 里：CI 两条命令的 -am 反应堆都不含该模块。
     STEP_MIN_TESTS="surefire:nextentity-api=147 surefire:nextentity-core=267 surefire:nextentity-jpa=73 surefire:nextentity-tests-legacy=727"
@@ -441,7 +439,7 @@ tier_night() {
     # 本档就一条都不跑（night 是最强档，不能比 pr 弱）。night-install 仍然保留——PIT 步骤
     # 不带 -am，要从 ~/.m2 解析当前 HEAD 的产物。
     step night-container \
-        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa" \
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa,static:nextentity-api,static:nextentity-core,static:nextentity-jpa,static:nextentity-spring,static:nextentity-testing,static:nextentity-tests-jpa" \
         ./mvnw -B -pl nextentity-tests-jpa -am verify -Dnextentity.requireContainer=true -Pdialect-pg
     STEP_MIN_TESTS="surefire:nextentity-api=147 surefire:nextentity-core=267 surefire:nextentity-jpa=73 surefire:nextentity-tests-legacy=727"
     step night-legacy \
@@ -467,7 +465,7 @@ tier_release() {
     # 全部产能报告都要进 --require（否则那几处的失败不进凭证，退出码又被基线降级分支吸收）。
     STEP_MIN_TESTS="surefire:nextentity-api=147 surefire:nextentity-core=267 surefire:nextentity-arch=24 surefire:nextentity-jpa=73 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=564 surefire:nextentity-tests-legacy=727 failsafe:nextentity-tests-jpa=536 surefire-pg:nextentity-tests-jpa=564"
     step release-verify \
-        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-arch,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,surefire:nextentity-tests-legacy,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa" \
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-arch,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,surefire:nextentity-tests-legacy,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa,static:nextentity-api,static:nextentity-core,static:nextentity-arch,static:nextentity-jpa,static:nextentity-spring,static:nextentity-testing,static:nextentity-tests-jpa,static:nextentity-bom" \
         ./mvnw -B clean verify -Dnextentity.requireContainer=true -Pdialect-pg
     STEP_MIN_TESTS="surefire:nextentity-api=147 surefire:nextentity-core=267 surefire:nextentity-jpa=73 surefire:nextentity-tests-legacy=727"
     step release-legacy \

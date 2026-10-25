@@ -342,16 +342,25 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 **Spring 接线的容器变体（已补）**：`nextentity-spring` 的 `NextEntityRealBackendTest` 跑的是 H2，而「自动配置 + `SharedEntityManagerCreator` 的事务绑定代理 + 真方言」这一组合此前没有任何实证。现由 `nextentity-tests-jpa` 的 `MySqlSpringRepositoryIntegrationTest`（4 条，容器通道）补上：自动配置产出的工厂喂给 `AbstractRepository` 子类，在真 MySQL 上断三件事——回滚真丢数据（`setRollbackOnly` 后 `count()` 为 0）、本线程未提交的行对另一线程不可见（插入若被静默自动提交会立刻变红）、4 线程并发各查各的行。它用自己的实体 `SpringWiredEntity` 独占一张表，理由是**行集隔离**：多个容器类都在断言精确行集（`containsExactly`），共用一张表会互相污染行集。`create-drop` 不是理由——它只处理本 PU 映射的表，不会删别人的表，JUnit 默认也串行。这与 H2 版不是重复证据——H2 版证「代理是线程绑定的」，这里证「绑定的是真 MySQL 连接且提交边界正确」。
 
-**执行凭证（`tools/gate.sh` + `tools/gate-receipt.py`，L0）**：前面每一条门禁都有一类共同的失效方式——**构建绿了，但该跑的通道没跑**。`-DskipITs`、无 Docker、`@Disabled`、PIT 的零变异、`~/.m2` 里的陈旧产物，五种都能让 `BUILD SUCCESS` 与「证据为零」同时成立，而人读日志只看最后一行。所以门禁的产物不是日志而是**凭证**：`tools/gate.sh <fast|ci|pr|night|release>` 跑完把 surefire/failsafe XML 与 PIT 报告一起解析成 `tmp/gate/<commit>-<ts>/receipt.json`，判定只看这份 JSON。
+**执行凭证（`tools/gate.sh` + `tools/gate-receipt.py`，L0）**：前面每一条门禁都有一类共同的失效方式——**构建绿了，但该跑的通道没跑**。`-DskipITs`、无 Docker、`@Disabled`、PIT 的零变异、`~/.m2` 里的陈旧产物，五种都能让 `BUILD SUCCESS` 与「证据为零」同时成立，而人读日志只看最后一行。所以门禁的产物不是日志而是**凭证**：`tools/gate.sh <fast|ci|pr|night|release>` 跑完把 surefire/failsafe XML、静态检查报告与 PIT 报告一起解析成 `tmp/gate/<commit>-<ts>/receipt.json`，判定只看这份 JSON。
 
-判据不是「报告存在」，而是六条：
+判据不是「报告存在」，而是七条：
 
 - **报告比本轮新**：`mtime >= 本轮开始 epoch`。上一次构建留下的报告不算——这是「`Nothing to compile` 复用前序产物」的直接防线。
 - **条数有下限**：`tests == 0` 的通道报「报告存在但 tests=0」，不报通过；每个通道另有**绝对下限**（`gate.sh` 的 `STEP_MIN_TESTS` 逐步申报，如 `surefire:nextentity-tests-jpa=564`），低于下限即红。只钉「方言通道与基础通道条数相等」不够——两边一起被缩到只剩那 8 条基线用例时相等仍成立，等于允许把矩阵悄悄削成空壳。下限是单调的：加用例不用改它，只有删用例才会撞红，正好是要人停下来解释的那个动作。
 - **必需通道必须真跑**：`-DskipITs` 下 failsafe 一份报告都不新（目录里上一轮的 XML 还在，靠逐文件 mtime 过滤才抓得住，这也是 `--require` 必须点名通道的原因）、`-Dnextentity.requireContainer` 下容器类整体 error，两种都判缺口；档位声明的步骤没落快照（被 `-am` 守卫拦下）同样算缺口，见 `merge --expect-step`。
 - **PIT 不许零变异**：除阈值外额外要求 `mutations > 0`，堵住根 pom `failWhenNoMutations=false` 那条假绿通道；分数按 PIT 自己的口径算并与 pom 的 `mutationThreshold` 比对。
+- **静态检查也要进凭证**：checkstyle / PMD / SpotBugs 都绑在 `verify`，改一处
+  `failOnViolation`、把 `violationSeverity` 抬高、或删掉某个模块 pom 里的插件 `<execution>` 块，
+  `mvn verify` 照旧退出 0 而报告缺席或带违规——退出码在这件事上不是证据。所以 `gate-receipt.py`
+  另立 `static:<模块>` 通道：违规条数由凭证自己数 XML（checkstyle 的 `error`、PMD 的 `violation`，
+  被抑制的不算、SpotBugs 的 `BugInstance`），报告缺席 / 不新鲜 / 有违规三条任一即红。
+  **期望集按模块形状推导**（`pom` 打包只要 checkstyle；有 `src/main/java` 要三件套；纯测试模块要
+  checkstyle+PMD），**不读模块 pom 的插件配置**——后者正是漏洞本身：删执行块的同时期望也一起消失，
+  检查等于没写。仓库明文规定的例外（`nextentity-tests-legacy` 是移植语料，跳过 checkstyle/PMD）
+  以 `STATIC_EXEMPT` 常量列在凭证工具里，改它要走门禁脚本的 diff，而 CI 取的是基线分支的脚本版。
 - **跳过要有申报预算**：每个通道的跳过条数上限由 `gate.sh` 逐步申报（`STEP_MAX_SKIP`），未申报的通道默认 0。跳过数超预算即红，且 problems 里逐个点名用例与理由——「跳过就是没跑，没跑不能记绿」。
-- **预期失败必须逐条申报且会腐烂**：某通道上「按设计就会红」的用例不能靠 `@Disabled` 藏起来（那样既不跑、也看不出哪天修好），改由 `--expected-failures <file>` 声明（`gate.sh` 用 `STEP_EXPECTED_FAILURES` 逐步点名）。判据是**双向完全相等**：实际失败集多出一条 = 新回归（不是已知差异，不许夹带）；少一条 = 基线腐化（已修好却未删条目，或用例被删/改名）。基线条目不在 `--require` 里也判红：那是「申报了却被静默忽略」。当前唯一的基线是 `tools/expected-failures/h2-postgresql.txt`（8 条 PG 兼容模式方言差异，见上「通道拆分」）。四条配套约束，缺一条基线就会变成垃圾桶：
+- **预期失败必须逐条申报且会腐烂**：某通道上「按设计就会红」的用例不能靠 `@Disabled` 藏起来（那样既不跑、也看不出哪天修好），改由 `--expected-failures <file>` 声明（`gate.sh` 用 `STEP_EXPECTED_FAILURES` 逐步点名）。判据是**双向完全相等**：实际失败集多出一条 = 新回归（不是已知差异，不许夹带）；少一条 = 基线腐化（已修好却未删条目，或用例被删/改名）。基线条目不在 `--require` 里也判红：那是「申报了却被静默忽略」。当前唯一的基线是 `tools/expected-failures/h2-postgresql.txt`（8 条 PG 兼容模式方言差异，见上「通道拆分」）。五条配套约束，缺一条基线就会变成垃圾桶：
   - **失败性质参与比对**：每条带 `type=failure|error`。`failure` 是断言不符（方言渲染差异），`error` 是被测代码抛异常。只比用例名的话，某条已知差异哪天变成生产代码 NPE，名字不变、失败条数不变，凭证照旧判绿。
   - **租约与字段都收紧**：`type` / `issue` / `expires` 三个字段必填，其余字段一律报错（拼错的字段写了不生效还不报错，比没写更危险）；`expires` 用 `date.fromisoformat` 校验（只校验形状的话 `2026-13-45` 能过且字典序比较下永不过期），且不得超过今天 + 180 天——期限长到看不见就等于没有期限。空基线文件按配置错误处理：空基线等于没有基线。
   - **规模也要相等**：方言矩阵通道必须与基础通道跑同一批用例（`surefire-pg.tests == surefire.tests`）。只钉失败集不钉规模，等于允许把矩阵悄悄缩到只剩那几条预期红。同理，同名失败用例被折叠（`@ParameterizedTest` 的 display name 撞车）会判红——否则一条基线条目能盖住 N 条失败。
@@ -360,7 +369,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 三件事只有凭证能给出、日志给不出：**skip 清单连理由**（`方言跳过必须可数` 从「PR 里手写」变成自动抽取）、**`~/.m2` 与源码的时间戳倒挂**（`-pl` 不带 `-am` 时会读到旧语义）、以及**跨模块合并口径的条数**（`-am` 反应堆会把 jpa/spring 一起带进来，比单看目标模块多）。
 
-档位与「该跑什么」一一对应：`fast` = 格式化检查 + 架构规则 + `api`/`core` 快测试（无容器）；`pr` = H2 564 + PG 兼容模式 564（基线 8 条）+ 遗留 727；`ci` = 前者 + 真 MySQL 容器通道 + `-Dnextentity.requireContainer=true`；`night` = `install` 刷快照 + 全量含容器 + 遗留 h2/mysql 双跑 + PIT×4；`release` = `clean verify` + api-compat。`ci`/`pr` 刻意不跑 PIT（单模块分钟级，不该挡 push），PIT 的落点在 `night` 与 `release`。
+档位与「该跑什么」一一对应：`fast` = 格式化检查 + 架构规则 + `api`/`core` 快测试（无容器；跑 `test` 阶段，故不含静态检查——静态检查只在 `verify` 上，落点在 `pr` 及以后各档）；`pr` = H2 564 + PG 兼容模式 564（基线 8 条）+ 遗留 727；`ci` = 前者 + 真 MySQL 容器通道 + `-Dnextentity.requireContainer=true`；`night` = `install` 刷快照 + 全量含容器 + 遗留 h2/mysql 双跑 + PIT×4；`release` = `clean verify` + api-compat。`ci`/`pr` 刻意不跑 PIT（单模块分钟级，不该挡 push），PIT 的落点在 `night` 与 `release`。
 
 **尚未实施**（方向，不是已有能力——写进这里的东西不得当成现状引用）：
 
