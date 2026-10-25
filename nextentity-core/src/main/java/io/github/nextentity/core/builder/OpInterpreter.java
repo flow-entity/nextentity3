@@ -141,7 +141,9 @@ final class OpInterpreter {
         return new ArithmeticOperand(operator, left(op), operand(op.arguments().getFirst()));
     }
 
-    /// 逻辑取反：非 `Op` 实参是"恒真占位"，取反即恒假。
+    /// 逻辑取反：非 `Op` 实参只有一种来源——`SkippedCondition` 占位（`AlwaysTrue.not()` 会给它包一层
+    /// `NOT` 节点），恒真取反即恒假。第三方谓词的 `not()` 由它自己实现，不会把非 `Op` 实参送到这里；
+    /// 其余非 `Op` 表达式在 `where` / `having` / `and` / `or` 处已被拒绝。
     ///
     /// 顺带消去双重否定（`NOT(NOT(x))` = `x`）：Hibernate 的 `Predicate.not()` 对「最内层是比较谓词」
     /// 的嵌套取反只生效一次，原样下推会得到 `NOT(x)` 的结果（`AndOrPredicateIntegrationTest` 复现）。

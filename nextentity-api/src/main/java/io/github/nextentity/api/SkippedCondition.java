@@ -9,4 +9,8 @@ package io.github.nextentity.api;
 /// `where(自造谓词)` 的处理是**当场拒绝**（`IllegalArgumentException`），不是"当作恒真
 /// 占位把条件悄悄丢掉"。这条区分是必要的：[Op] 是 sealed 的，外部本来就造不出可下发的
 /// 条件节点，若再把非 `Op` 的谓词一律当占位，第三方的自定义谓词会静默退化成全表。
+///
+/// **外部不要实现本接口**：实现它等于向所有后端声明"我是恒真、请把我的条件丢掉"。
+/// 它不是无副作用的注解，而是一条会让 `where` / `having` / `and` / `or` 整体失效的契约——
+/// 在 `or(...)` 里更是按 `a ∨ TRUE = TRUE` 处理，整条条件恒真。
 public interface SkippedCondition {}
