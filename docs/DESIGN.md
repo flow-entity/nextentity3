@@ -172,7 +172,7 @@ L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（
 
 **覆盖率要用合并口径看**：各模块自己的 `jacoco.xml` 只统计本模块 `src/test` 的执行数据，而 L2/L3/L4 的用例跑在 `nextentity-tests-jpa` 的 JVM 里——只看模块报告会把「语义套件跑到了、模块单测没跑到」的行误判成缺口（`JpaOperands` 的 `sub`/`mul`/`div` 分支就是这么被误判的）。所以 `nextentity-tests-jpa/pom.xml` 绑了 `jacoco:report-aggregate`，`mvn -pl nextentity-tests-jpa -am verify` 之后看 `nextentity-tests-jpa/target/site/jacoco-aggregate/jacoco.xml`，那才是「全部测试合起来」的口径。
 
-用合并口径实测（`533` H2 + `504` 容器用例全跑）：`api`/`core`/`jpa`/`spring` 四个模块的生产代码里，**只剩 `jpa/meta/JpaEntityAttribute.java:48-49`、`:58-59` 四行没被执行**——全部落在下面「已判定不可达」清单里，即清单外没有一条未覆盖的生产代码行。剩余未覆盖行都在 `nextentity-testing/src/main` 的 oracle 自身（各差分基类的内存求值/生成器分支、`Shape` 自检的抛错分支），属于测试基础设施的自检路径，不是产品能力。
+用合并口径实测（`535` H2 + `505` 容器用例全跑）：`api`/`core`/`jpa`/`spring` 四个模块的生产代码里，**只剩六行没被执行**——`jpa/meta/JpaEntityAttribute.java:48-49`、`:58-59` 与 `jpa/exec/JpaExecutor.java:122`、`:124`，全部落在下面「已判定不可达」清单里，即清单外没有一条未覆盖的生产代码行。剩余未覆盖行都在 `nextentity-testing/src/main` 的 oracle 自身（各差分基类的内存求值/生成器分支、`Shape` 自检的抛错分支），属于测试基础设施的自检路径，不是产品能力。
 
 行覆盖率不作门禁的理由：覆盖率只说明「执行到了」，不说明「断言到了」——空断言、只断言非空、只断言 `size()` 都能拿到接近 100%。把它设成门禁，只会奖励「多写方法少写断言」。换成上面那条「未覆盖行必须进清单」的判据就不一样：清单本身就要求写清不可达的论证，凑数进不了清单。
 
@@ -222,7 +222,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 | surefire | 除 `*IntegrationTest` 外的全部（H2） | 无 | — |
 | failsafe | `**/*IntegrationTest.java`（显式 `<includes>`） | Docker + `mysql:8.0.18` | `-DskipITs` |
 
-两个方向都写死：surefire `<excludes>` 排掉 `*IntegrationTest`，failsafe `<includes>` 收这些类。failsafe 的默认 includes 是 `**/IT*`、`**/*IT`、`**/*ITCase`，与项目约定的 `*IntegrationTest` 一个都不匹配——不显式配置时容器用例会被 surefire 跑掉、failsafe 一条也收不到。容器用例统一 `@Tag("container")` + `@ExtendWith(MySqlL4Gate.class)`。当前实测条数：surefire **533** 条（全 H2）、failsafe **504** 条（真 MySQL，含 `@Version` 乐观锁、`@Convert`、批量写、悲观锁四类写路径场景），跳过 0 条。拆分之初是 130 / 110，差额来自后续补的差分 oracle（见下「差分 oracle 台账」）与写侧往返用例。
+两个方向都写死：surefire `<excludes>` 排掉 `*IntegrationTest`，failsafe `<includes>` 收这些类。failsafe 的默认 includes 是 `**/IT*`、`**/*IT`、`**/*ITCase`，与项目约定的 `*IntegrationTest` 一个都不匹配——不显式配置时容器用例会被 surefire 跑掉、failsafe 一条也收不到。容器用例统一 `@Tag("container")` + `@ExtendWith(MySqlL4Gate.class)`。当前实测条数：surefire **535** 条（全 H2）、failsafe **505** 条（真 MySQL，含 `@Version` 乐观锁、`@Convert`、批量写、悲观锁四类写路径场景），跳过 0 条。拆分之初是 130 / 110，差额来自后续补的差分 oracle（见下「差分 oracle 台账」）与写侧往返用例。
 
 **容器通道不许静默降级**：`MySqlL4Gate` 是自定义的 `ExecutionCondition`，默认「没有 Docker 就跳过」（本地开发需要这个宽进），但加上 `-Dnextentity.requireContainer=true` 后不再跳过——Docker 缺失时容器在静态初始化阶段启动失败，构建直接变红。**CI 必须带这个属性**，否则真方言对拍会悄悄变成 skip，报表上看不出区别，L4 就成了纸面门禁（数字以「通道拆分」一节的实测条数为准）。**当前仓库里还没有 CI 配置文件**——这条门禁目前只在本地手动跑，接入 CI 时第一件事就是把它加上，并核对 skip 数为 0。三条路径都实测过：宽进 + 无 Docker → 110 skip / SUCCESS；强制 + 无 Docker → 18 个类 error / FAILURE；强制 + 有 Docker → 110 pass / SUCCESS。
 
@@ -235,7 +235,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 | 模块 | 变异范围 | 生成 | 杀死 | 分数 | 已知存活 |
 |---|---|---|---|---|---|
 | `api` | `io.github.nextentity.api.*` | 186 | 185 | 99% | 1 条等价变异 |
-| `core` | `io.github.nextentity.core.*` | 241 | 241 | 100% | — |
+| `core` | `io.github.nextentity.core.*` | 242 | 242 | 100% | — |
 | `jpa` | `io.github.nextentity.jpa.*`（全模块，约 28s） | 125 | 123 | 98% | 2 条等价变异 |
 | `spring` | `io.github.nextentity.spring.*` | 3 | 3 | 100% | — |
 
@@ -250,12 +250,15 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 `jpa` 的门禁原先只覆盖 `jpa.compile.*`（49 个变异），理由是「exec/meta 每个变异都要起 Hibernate，太慢」；实测全模块只需 28s，该理由不成立，已扩到全模块并把阈值从 90 提到 95。
 
-**变异组本身的强度也会骗人（`STRONGER` 组，一次性测量，不进流水线）**：默认 `DEFAULTS` 组只做条件取反、算术值替换、返回值常量替换三类，而「整条 `if (...)` 被换成恒真/恒假」与「操作符互换」都在 `STRONGER` 里——恰好是 fail-open 缺陷的形状。用 `-Dmutators=STRONGER -DmutationThreshold=0` 跑四个模块，比 `DEFAULTS` 多出 20 条存活体（api 3 / core 5 / jpa 13 / spring 0）。逐条核对后 **18 条是被语义套件杀死的**（模块级 PIT 只看本模块 `src/test`，见上「度量口径」），剩下 2 条 + 上一节已有的 2 条已判定为等价变异（api 的两条在下面第 1、2 项，`jpa` 的 13 条全被语义套件覆盖）：
+**变异组本身的强度也会骗人（`STRONGER` 组，一次性测量，不进流水线）**：默认 `DEFAULTS` 组只做条件取反、算术值替换、返回值常量替换三类，而「整条 `if (...)` 被换成恒真/恒假」与「操作符互换」都在 `STRONGER` 里——恰好是 fail-open 缺陷的形状。用 `-Dmutators=STRONGER -DmutationThreshold=0` 跑四个模块，实测 **api 218 生成 / 215 杀、core 321 / 320、jpa 187 / 175、spring 3 / 3**，比同一次 `DEFAULTS` 测量（186 / 185、242 / 242、125 / 123、3 / 3）多出 **16 条存活体（api 3 / core 1 / jpa 12 / spring 0）**。逐条核对后：**1 条是被语义套件杀死的**（`jpa/exec/JpaExecutor:47` 的锁模式下发，语义套件的锁用例覆盖它，而模块级 PIT 只看本模块 `src/test`，见上「度量口径」），**11 条判等价**（下面各条），**4 条是防御性不可达分支**（`jpa/exec/JpaExecutor:121`、`:122`×2、`:124` 的 `shapeRow`：Hibernate 的 `createQuery(Object[].class)` + `builder.array(...)` 恒返回 `Object[]`，`return row` 与 `new Object[] {row}` 两侧都到不了——处置原则见上文「已判定不可达与度量限制」表）。等价清单：
 
 - `api/Conditions:101` 的 `if (suppressed) return alwaysTrue();` 整个分支：`suppressed == true` 只由 `AlwaysTrue.or(PathRef)` 产生（`Conditions:196` 显式传 `parent = null`），而 `skip()` 的 `parent == null` 分支返回的是同一个 `ALWAYS_TRUE` 单例，两条路径的可观测结果完全相同。
 - `api/Conditions:104` 的 `return parent == null ? alwaysTrue() : parent;` 被换成 `return parent;`：`skip()` 只有 `or(PathRef)` 造出的链才走得到，而 `PathOperatorValue` 的两个构造点里，传 `parent = null` 的那个（`Conditions:196`）同时 `suppressed = true`——执行到第 104 行时 `parent` 必然非 `null`，`parent == null` 这一支是死代码。**已实验证实**：注入后跑 `-pl nextentity-api test -Dtest=PredicateOrOperatorTest` 全绿（41/41）。
-- `core/spec/Window.limited()` 的 `return limit != null` 被换成 `return offset != null`：该方法全仓库只在 `QueryBuilder#spec(Window)` 读一次，而到达那里的 `Window` 要么两字段皆 `null`（`Window.NONE`），要么两字段皆非 `null`（`first()` / `limit(n)` / `slice(offset, limit)`），两种写法对该判定等价。
-- `core/builder/ImmutableList.ofIterable` 的 `iterable instanceof Collection<?> sized` 同理（只影响新建 `ArrayList` 的初始容量）。
+- `core/spec/Window.limited()` 的 `return limit != null` 被换成 `return offset != null`：该方法全仓库只在 `QueryBuilder#spec(Window)` 读一次，而到达那里的 `Window` 要么两字段皆 `null`（`Window.NONE`），要么两字段皆非 `null`（`first()` / `limit(n)` / `slice(offset, limit)`），两种写法对该判定等价。**这条等价依赖"读点只有一个"**：`QuerySpec#forExists()` 造的是 `new Window(null, 1)`（只有 `limit` 非 `null`），现在没人读 `limited()` 所以无差异；哪天 exists 路径开始读它，这个变异就不再等价。
+- `core/util/ImmutableList.ofIterable` 的 `iterable instanceof Collection<?> sized` 同理（只影响新建 `ArrayList` 的初始容量）。
+- `jpa/compile/JpaPaths:62` 的 `meta.association(...)` 判定被换成恒真（中段一律 `join`）：Hibernate 7 对嵌入属性的 `join` 是"虚拟"的——渲染成同一批列，语句与结果逐字节不变。**已实验证实两次**：单层嵌入（`Shipment#address.city`，`JpaPathsNestedTest#embeddedMiddleSegmentUsesGet`）与两段嵌入（`Warehouse#location.coordinates.zone`，`JpaEmbeddedChainTest#nestedEmbeddedPathUsesGet`）在注入后都仍然绿，且整句 SQL 一字不差。要杀它只能改生产代码（例如把 `association` 判定换成显式的 `get`/`join` 双分支断言），或换一个不把嵌入 `join` 摊平的 JPA 实现。
+- `jpa/meta/JpaMeta:53` 的 `resolved instanceof PluralAttribute` 判定被换成恒假：`PluralAttribute#isAssociation()` 本来就返回 `true`，集合关联（`VersionedLedger#entries`）在去掉这条特判后仍然走 `isAssociation()` 一侧，结果不变。
+- `jpa/compile/JpaQueryBuilder:60`、`:70` 的 `!spec.groupBy().isEmpty()` / `!spec.orderBy().isEmpty()` 判定被换成恒真：`builder.groupBy(List.of())` / `builder.orderBy(List.of())` 是 JPA 的 no-op，空列表照样下发与不下发等价。
 
 所以「`STRONGER` 下还有存活体」不等于「还有盲区」：判定顺序永远是「先确认语义套件是否已覆盖（它不在任何变异分数里），再确认是否等价」，两步都不成立才是缺口。
 
@@ -271,12 +274,13 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 同时暴露一个门禁漏洞：**默认 `mvn test` 在第一个失败的模块就停**，12 个缺陷的「先红」全是既有 `core`/`jpa` 单测，`nextentity-tests-jpa` 的 L4 真库层在默认流水线里根本没跑；必须加 `-Dmaven.test.failure.ignore=true` 才看得到分层结果。这也说明「跑绿了」与「每一层都跑了」是两件事，夜间档要按层落日志、按层判读。
 
-**第二轮故障注入（36 条，覆盖面换成 api 短路语义 / 分页与投影的静默降级 / 写侧版本与影响行数）**：脚本 `tmp/scripts/fault-campaign.ps1`（一次性本地产物，不入库），单个 `git worktree add ../nextentity3-semantic-pit`，逐条「`Get-Content -Raw` 精确替换 → `mvnw -pl nextentity-api,nextentity-core,nextentity-jpa,nextentity-tests-jpa test -DskipITs -fae` → `git checkout -- .` 还原」，按退出码判 KILLED / SURVIVED，另按日志里的 `COMPILATION ERROR` 判 PATCH-BROKEN（注入本身把代码写坏，不算测试漏洞）。结果 **33 杀 / 3 等价 / 1 脚本自身编译失败**，**零真盲区**。存活的三条都在 api `Conditions#skip()`：`if (suppressed) return alwaysTrue();` 与末行 `return parent == null ? alwaysTrue() : parent;` 的两支。判等价的过程值得记下来，因为它差点被当成缺口：第一支靠「`suppressed ⇒ parent == null`」推出来，第二支一开始按「无 parent 时会返回 `null`」判成**真盲区**并补了用例，结果把末行改成 `return parent;` 后那条新用例仍然全绿——查下去才发现 `skip()` 只有 `or(PathRef)` 造出来的链走得到，而两个构造点一个传 `this`（`Conditions:156`）、一个传 `null` 但 `suppressed = true`（`Conditions:196`），`parent == null` 这一支是死代码。**结论：等价变异只能靠"注入后跑一遍"证明，不能靠读代码论证**——所以那条 api 用例保留了，但改为钉另一半（`PathValues` 自己的短路必须返回恒真占位而不是 `null`，否则 `Path.of(X).eqIfNotNull(null).or(Y::getScore)` 会 NPE），javadoc 里写明"`skip()` 末行是等价变异"。
+**第二轮故障注入（35 条，覆盖面换成 api 短路语义 / 分页与投影的静默降级 / 写侧版本与影响行数）**：脚本 `tmp/scripts/fault-campaign.ps1`（一次性本地产物，不入库），单个 `git worktree add ../nextentity3-semantic-pit`，逐条「`Get-Content -Raw` 精确替换 → `mvnw -pl nextentity-api,nextentity-core,nextentity-jpa,nextentity-tests-jpa test -DskipITs -fae` → `git checkout -- .` 还原」，按日志判读。结果 **30 杀 / 4 等价 / 1 脚本自身编译失败（30 + 4 + 1 = 35），零真盲区**。**判读口径本身踩过坑**：第一版按「退出码 ≠ 0 = KILLED」判，把注入后格式不合规的 4 条（`core14`、`jpa07`、`jpa08`、`jpa17`）算成了 KILLED——`spotless:check` 绑在 `validate`，格式违规同样让构建失败。按日志重新分类、再加 `-Dspotless.check.skip=true` 复跑后，这 4 条里 3 条确实是真 KILLED，第 4 条（`jpa08`：嵌套路径一律 `join`）**是 SURVIVED**。也就是说「退出码不为 0」只证明"构建没过"，要证明"测试抓到了"必须看失败来自哪个阶段。四条的等价论证：api `Conditions#skip()` 的两支、`core/spec/Window.limited()`、`jpa/compile/JpaPaths:62`（见上等价清单）。其中 api 第二支判等价的过程值得记下来，因为它差点被当成缺口：一开始按「无 parent 时会返回 `null`」判成**真盲区**并补了用例，结果把末行改成 `return parent;` 后那条新用例仍然全绿——查下去才发现 `skip()` 只有 `or(PathRef)` 造出来的链走得到，而两个构造点一个传 `this`（`Conditions:156`）、一个传 `null` 但 `suppressed = true`（`Conditions:196`），`parent == null` 这一支是死代码。**结论：等价变异只能靠"注入后跑一遍"证明，不能靠读代码论证**——所以那条 api 用例保留了，但改为钉另一半（`PathValues` 自己的短路必须返回恒真占位而不是 `null`，否则 `Path.of(X).eqIfNotNull(null).or(Y::getScore)` 会 NPE），javadoc 里写明"`skip()` 末行是等价变异"。
 
 这轮还确认了两件此前只有猜测的事：
 
-1. **夹具退化会把一整族用例变成同义反复**：关联嵌套路径的 17 个谓词格，在「只有 alpha / beta 两个非空取值」的夹具下只剩 4 个不同结果集——`gt(alpha) ≡ ne(alpha)`、`le(alpha) ≡ eq(alpha)`、`between(alpha, beta) ≡ isNotNull`、`like("al%") ≡ like("_lpha")`，于是把 `gt` 渲染成 `<>`、把 `between` 渲染成 `is not null`、把 `_` 通配丢掉都能全绿（每格原有的"期望非空 / 非全表"自检挡不住这种退化）。已把夹具扩到 7 行（`aardvark` < `alpha` < `alps` < `amber` < `beta` 五个可区分取值 + 一个 `null` 关联锚点），并新增 `AssociationDifferentialTest#predicateCellsAreMutuallyDistinguishable()` 逐对断言「该互相区分的格子，期望集合确实不同」——**夹具再退化就先在这里红**，而不是让 17 条谓词格继续假装在验证算子。
-2. **模块 PIT 的存活体不能直接当盲区清单**：20 条 `STRONGER` 存活体里 18 条已被语义套件覆盖（见上「变异组本身的强度也会骗人」）。
+1. **夹具退化会把一整族用例变成同义反复**：关联嵌套路径的 17 个谓词格，在「只有 alpha / beta 两个非空取值」的夹具下只产出 6 种不同结果集——`gt(alpha) ≡ ne(alpha)`、`le(alpha) ≡ eq(alpha)`、`between(alpha, beta) ≡ isNotNull`、`like("al%") ≡ like("_lpha")`，于是把 `gt` 渲染成 `<>`、把 `between` 渲染成 `is not null`、把 `_` 通配丢掉都能全绿（每格原有的"期望非空 / 非全表"自检挡不住这种退化）。已把夹具扩到 7 行（`aardvark` < `alpha` < `alps` < `amber` < `beta` 五个可区分取值 + 一个 `null` 关联锚点），结果集从 6 种涨到 13 种，并新增 `AssociationDifferentialTest#predicateCellsAreMutuallyDistinguishable()` 逐对断言「该互相区分的格子，期望集合确实不同」——**夹具再退化就先在这里红**，而不是让 17 条谓词格继续假装在验证算子。
+2. **跨算子族的碰撞比族内碰撞更隐蔽**：`contains` 格原先取子串 `bet`（命中 `beta` 那行），与 `ge(beta)` 的期望集合完全相同——把 `contains` 渲染成 `>=` 照样全绿。族内自检（同族算子两两可区分）发现不了这种跨族退化，所以可区分性自检里补了 `contains` vs `ge` 这一对，子串也换成 `am`（只命中 `amber`，`{6}` 在 17 格里唯一）。注意子串作用在**关联方的名字**（`alpha`/`beta`/`aardvark`/`amber`/`alps`）上，不是实体自己的名字——第一版选的 `ch` 命中空集合，当场被「期望集合不能为空」的自检拦下。
+3. **模块 PIT 的存活体不能直接当盲区清单**：`STRONGER` 的 16 条存活体里，只有 1 条（`jpa/exec/JpaExecutor:47` 的锁模式下发）是被语义套件真杀死的覆盖，11 条等价、4 条防御性不可达（见上「变异组本身的强度也会骗人」）。把模块分数直接当结论会同时犯两个错：把等价变异当缺口，把语义套件的覆盖当成没覆盖。
 
 **尚未实施**（方向，不是已有能力——写进这里的东西不得当成现状引用）：
 
