@@ -121,9 +121,11 @@ class JpaPathsNestedTest extends JpaTestSupport {
         // 100 号订单的客户是 Alice，101 号客户为空：丢掉 where 会数出 2，丢掉 join 会直接报错
         assertThat(count).isEqualTo(1L);
         assertThat(normalized(drainSql()))
-                .as("count 丢了 join 或 where 都会让这条变成「数全表」")
-                .anySatisfy(sql -> assertThat(sql)
-                        .contains("count(")
+                .as("批次里必须有且只有一条 count 语句——否则断言可能靠别的语句通过")
+                .filteredOn(sql -> sql.contains("count("))
+                .singleElement()
+                .satisfies(sql -> assertThat(sql)
+                        .as("count 丢了 join 或 where 都会让这条变成「数全表」")
                         .contains("left join customer c1_0 on c1_0.id=so1_0.customer_id")
                         .contains("where c1_0.name=?"));
     }
@@ -140,9 +142,12 @@ class JpaPathsNestedTest extends JpaTestSupport {
                 .exists());
 
         assertThat(hit).isTrue();
-        assertThat(normalized(drainSql())).as("嵌入路径的 exists 必须把条件渲染成仓库自己的列").anySatisfy(sql -> assertThat(sql)
-                .contains("from shipment s1_0")
-                .contains("where s1_0.city=?"));
+        assertThat(normalized(drainSql()))
+                .as("批次里必须有且只有一条 exists 语句")
+                .filteredOn(sql -> sql.contains("from shipment s1_0"))
+                .singleElement()
+                .satisfies(
+                        sql -> assertThat(sql).as("嵌入路径的 exists 必须把条件渲染成仓库自己的列").contains("where s1_0.city=?"));
 
         drainSql();
 
