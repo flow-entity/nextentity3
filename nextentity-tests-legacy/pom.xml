@@ -85,6 +85,7 @@
                     <systemPropertyVariables>
                         <api.version>${docker.api.version}</api.version>
                         <nextentity.requireContainer>${nextentity.requireContainer}</nextentity.requireContainer>
+                        <nextentity.mysql.image>${nextentity.mysql.image}</nextentity.mysql.image>
                         <ryuk.container.image>${nextentity.ryuk.image}</ryuk.container.image>
                     </systemPropertyVariables>
                     <environmentVariables>

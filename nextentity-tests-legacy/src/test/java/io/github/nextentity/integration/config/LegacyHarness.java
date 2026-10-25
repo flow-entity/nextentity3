@@ -70,9 +70,16 @@ public final class LegacyHarness implements AutoCloseable {
             configuration.addAnnotatedClass(entityClass);
         }
         LegacyHarness harness = new LegacyHarness(configuration.buildSessionFactory(), environment);
-        harness.createSchema();
-        harness.reset();
-        return harness;
+        try {
+            harness.createSchema();
+            harness.reset();
+            return harness;
+        } catch (RuntimeException | Error failure) {
+            // 建表/写夹具失败时，SessionFactory 与 EntityManager 已经建好了。调用方拿不到这个实例，
+            // 也就关不掉它——容器由 Ryuk 兜底回收，Hibernate 侧没有兜底，只能在这里自己关。
+            harness.close();
+            throw failure;
+        }
     }
 
     /// 当前线程用的 `EntityManager`（整个环境只有一个，用例串行执行）。
