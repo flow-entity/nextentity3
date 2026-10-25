@@ -88,6 +88,15 @@ S  （后端语句）
 
 微调预算与破坏性变更的前置条件见 [AGENTS.md](../AGENTS.md)「公开 API 是契约」。
 
+**这条红线当前没有执法者**（实测，2026-10）：`nextentity-api/pom.xml` 的 `api-compat` profile 用 `nextentity-core:${japicmp.oldVersion}` 作基线（2.2.3 没发布过 `nextentity-api`，`io.github.nextentity.api.*` 的类在 core 的 jar 里），并开了 `breakBuildBasedOnSemanticVersioning`。该开关的语义是「主版本号上跳就允许破坏」，于是 `3.0.0-SNAPSHOT ← 2.2.3` 这个跃迁下**任何破坏都放行**：跑 `-Djapicmp.oldVersion=2.2.3` 实测报告里 624 处不兼容标记（`---! REMOVED INTERFACE` / `===! UNCHANGED INTERFACE` 一整片）而 `BUILD SUCCESS`。所以它现在只是「影响面报告生成器」，不是门禁。
+
+同时有两个**看起来绿、其实什么都没校验**的坑，写在这里免得下一个人再踩：
+
+- 把 `oldVersion` 填成 `nextentity-api:1.2.1`（而不是 core 的基线）同样是绿——旧 jar 里根本没有 `io.github.nextentity.api.*` 这些类，japicmp 看到的全是「新增」，天然无不兼容。**基线的 artifact 与版本两者都必须对，错一个就静默变成空检查。**
+- `3.0.0` 这个版本号从未发布，抄进命令只会得到「artifact 无法解析」，与兼容性无关。
+
+要让红线真的生效，得把判据从「japicmp 退出码」换成「不兼容条目数 ≤ 预算」：解析 `target/japicmp/japicmp.xml` 计数、与一份逐条台账比对（与 `tools/equivalents/`、`tools/expected-failures/` 同款双向判据），预算按「同一主版本内相邻发布版之间」计。3.0.0 发布后基线挪到 `3.0.0` 才有意义——**在此之前别声称兼容门禁在管**。
+
 **已知的待收敛项**（实施时按此处理，均不破坏现有调用点）：
 
 | 项 | 处理 |

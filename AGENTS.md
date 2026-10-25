@@ -28,7 +28,7 @@
 | `core` / `jpa` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-<模块> pitest:mutationCoverage`，变异分数不得低于模块 pom 的阈值（**PIT 不带 `-am`**，跑前先 `mvn install -DskipTests` 刷 `~/.m2`，理由见下表 api 行） |
 | `spring` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-spring pitest:mutationCoverage`（阈值 95，同样先 install）。注意 PIT 不变异注解，`@ConditionalOnProperty` 的开关语义由 `NextEntityAutoConfigurationTest` 的用例兜，不看分数 |
 | `api` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-api pitest:mutationCoverage`（api 有自己的线格式用例，门禁自足，阈值 95）。api 的语义同时被 `core` 的用例执行，所以 `core` 的 PIT 也要跑；**跑任何 PIT 之前必须先 `mvn install -DskipTests`**——`pitest:mutationCoverage` 不带 `-am`，它从 `~/.m2` 解析依赖模块，陈旧快照会让依赖新语义的用例集体报「未变异就不通过」，看着像测试坏了，其实是产物旧了 |
-| 公开签名变更 | 额外 `mvn -Papi-compat -Djapicmp.oldVersion=<上一发布版> -pl nextentity-api -am verify`（`<上一发布版>` 必须是**中央仓库真能解析到**的版本：当前只有 `1.2.1`，写 `3.0.0` 会以「artifact 无法解析」失败，而不是报告兼容性） |
+| 公开签名变更 | 额外 `mvn -Papi-compat -Djapicmp.oldVersion=2.2.3 -pl nextentity-api -am verify`。两个坑：①基线 artifact 是 **`nextentity-core`**（2.2.3 没发布过 `nextentity-api`，`io.github.nextentity.api.*` 的类在 `nextentity-core-2.2.3.jar` 里）；②示例版本号必须是中央仓库**真能解析到**的（`3.0.0` 从未发布，抄下来只会报「artifact 无法解析」）。**当前这条只产报告、不判红**：`breakBuildBasedOnSemanticVersioning=true` 在 `3.0.0-SNAPSHOT ← 2.2.3` 这种主版本跃迁下允许一切破坏（实测 624 处不兼容仍 `BUILD SUCCESS`），所以「破坏性变更每版 ≤ 5 处」这条红线**现在没有执法者**，3.0.0 发布后基线挪到 `3.0.0` 才真正生效 |
 | 发版前 | `./tools/gate.sh release`（档位构成见 [docs/DESIGN.md](docs/DESIGN.md) §5「执行凭证」），并更新 CHANGELOG |
 | 文档里的代码示例（`*.md` 的代码块） | 先把示例**原样**抄进 `tmp/scripts/probe/DocExamples.java`，`javac` 对相关模块真实 `target/classes` 编译通过后才写进文档；文档声称的能力必须能在源码里指到 `文件:行`，指不到就删掉或移入「不提供的能力」表 |
 
@@ -72,7 +72,7 @@
 ./mvnw -pl nextentity-tests-jpa -am verify -Dnextentity.requireContainer=true   # CI 用：Docker 不可用时失败而不是静默跳过
 ./mvnw -pl nextentity-tests-legacy -am test  # 2.2.3 遗留语义回归：H2，无容器
 ./mvnw -pl nextentity-tests-legacy -am test -Ddbc=h2,mysql -Dnextentity.requireContainer=true   # 同上，加真 MySQL（需 Docker 或外部实例，见模块 README）；不带 require 时容器不可用会静默只跑 H2
-./mvnw -Papi-compat -Djapicmp.oldVersion=1.2.1 -pl nextentity-api -am verify   # API 兼容检查（1.2.1 是当前唯一可解析的已发布版；3.x 还没发布）
+./mvnw -Papi-compat -Djapicmp.oldVersion=2.2.3 -pl nextentity-api -am verify   # API 兼容报告（基线是 nextentity-core:2.2.3；主版本跃迁下只产报告不判红，见验证规范）
 ./mvnw -pl nextentity-api test-compile pitest:mutationCoverage    # 变异测试：api，阈值 95%（门禁自足，用例在本模块）
 ./mvnw -pl nextentity-core test-compile pitest:mutationCoverage   # 变异测试：core，阈值 95%
 ./mvnw -pl nextentity-jpa test-compile pitest:mutationCoverage    # 变异测试：jpa 全模块，阈值 95%
