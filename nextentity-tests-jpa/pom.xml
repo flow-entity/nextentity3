@@ -14,6 +14,62 @@
     <name>nextentity-tests-jpa</name>
     <description>JPA 集成测试：SQL 快照 + 真实方言</description>
 
+    <dependencyManagement>
+        <dependencies>
+            <!-- 底座版本先钉，再 import Boot BOM：Maven 里「先声明者赢」，import 会被就地展开并
+                 压过父 pom 继承来的条目。这四条框定的是本模块跑语料用的引擎与测试框架，
+                 必须与 nextentity-jpa / nextentity-core 的 H2 通道保持同一版本，否则「同一套
+                 语料换后端也对拍得上」这个前提就不成立（Boot BOM 会把它们分别抬到
+                 h2 2.4.x / JUnit 6 / Testcontainers 2.x）。 -->
+            <dependency>
+                <groupId>com.h2database</groupId>
+                <artifactId>h2</artifactId>
+                <version>${h2.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.assertj</groupId>
+                <artifactId>assertj-core</artifactId>
+                <version>${assertj.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers</artifactId>
+                <version>${testcontainers.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>mysql</artifactId>
+                <version>${testcontainers.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <version>${testcontainers.version}</version>
+            </dependency>
+            <!-- JUnit 全家（jupiter + platform + vintage）一律从根 pom 的 junit-bom 取。这条必须排在
+                 spring-boot-dependencies 之前：Boot 4.0.0 自带 junit-bom 6.0.1，两个 import 竞争时
+                 先声明者赢；只钉 junit-jupiter 是不够的——jupiter 会停在 5.11.4，而 platform 仍被
+                 Boot 抬到 6.0.1，同一模块里混两套 JUnit 大版本（实测如此，且 540 条照样能跑，
+                 属于运气而不是门禁）。 -->
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${junit.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Spring 侧接线用例要真 spring-tx / spring-orm：版本仍由 Spring Boot BOM 统一管理，
+                 与 nextentity-spring 模块保持同一套版本，避免两处漂移。 -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
         <dependency>
             <groupId>io.github.flow-entity</groupId>
@@ -63,6 +119,30 @@
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>
             <version>8.0.33</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Spring 侧真实接线在**真 MySQL** 上的容器变体：`nextentity-spring` 的
+             `NextEntityRealBackendTest` 只跑 H2，事务绑定的共享 EM 代理 + 真方言 + 回滚
+             这一组合此前没有任何证据。 -->
+        <dependency>
+            <groupId>io.github.flow-entity</groupId>
+            <artifactId>nextentity-spring</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-orm</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-tx</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
