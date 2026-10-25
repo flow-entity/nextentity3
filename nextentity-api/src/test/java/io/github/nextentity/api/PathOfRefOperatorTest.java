@@ -74,11 +74,12 @@ class PathOfRefOperatorTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("nullShortCircuitCalls")
-    @DisplayName("*IfNotNull(null)：返回恒真占位（不实现 Op），且是同一个共享实例")
+    @DisplayName("*IfNotNull(null)：返回带 SkippedCondition 标记的同一个共享占位（不实现 Op）")
     void nullShortCircuit(String name, Function<Path<Order, Integer>, Predicate<Order>> call) {
         Predicate<Order> shortCircuited = call.apply(Path.of(Order::getAge));
 
-        assertThat(shortCircuited).isNotInstanceOf(Op.class);
+        assertThat(shortCircuited).as("%s 的短路结果", name).isNotInstanceOf(Op.class);
+        assertThat(shortCircuited).isInstanceOf(SkippedCondition.class);
         assertThat(shortCircuited).isSameAs(Path.of(Order::getAge).eqIfNotNull(null));
     }
 

@@ -95,7 +95,8 @@ class PredicateOrOperatorTest {
         Predicate<Order> alwaysTrue = Path.of(Order::getAge).eqIfNotNull(null);
         Predicate<Order> shortCircuited = call.apply(alwaysTrue.or(Order::getScore));
 
-        assertThat(shortCircuited).isNotInstanceOf(Op.class);
+        assertThat(shortCircuited).as("%s 的短路结果", name).isNotInstanceOf(Op.class);
+        assertThat(shortCircuited).isInstanceOf(SkippedCondition.class);
         assertThat(shortCircuited).isSameAs(Path.of(Order::getAge).ltIfNotNull(null));
     }
 

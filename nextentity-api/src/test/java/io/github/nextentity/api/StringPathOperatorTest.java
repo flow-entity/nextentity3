@@ -40,11 +40,14 @@ class StringPathOperatorTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("shortCircuitCalls")
-    @DisplayName("字符串短路：返回恒真占位（不实现 Op），且是同一个共享实例")
+    @DisplayName("字符串短路：返回带 SkippedCondition 标记的同一个共享占位（不实现 Op）")
     void shortCircuit(String name, Function<StringPath<Order>, Predicate<Order>> call) {
         Predicate<Order> shortCircuited = call.apply(customerName());
 
-        assertThat(shortCircuited).isNotInstanceOf(Op.class);
+        assertThat(shortCircuited).as("%s 的短路结果", name).isNotInstanceOf(Op.class);
+        // 标记接口才是后端判定"这条条件没写"的依据（`OpInterpreter.isPlaceholder`），
+        // 只断"不是 Op"会放过"返回了一个既非 Op 又非占位的自造谓词"这种退化。
+        assertThat(shortCircuited).isInstanceOf(SkippedCondition.class);
         assertThat(shortCircuited).isSameAs(Path.of(Order::getAge).eqIfNotNull(null));
     }
 

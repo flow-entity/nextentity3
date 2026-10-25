@@ -47,6 +47,7 @@ class AggregateValueOperatorTest {
 
         Predicate<Order> shortCircuited = max.eqIfNotNull(null);
         assertThat(shortCircuited).isNotInstanceOf(Op.class);
+        assertThat(shortCircuited).isInstanceOf(SkippedCondition.class);
         assertThat(shortCircuited).isSameAs(Path.of(Order::getAge).eqIfNotNull(null));
     }
 
@@ -90,6 +91,7 @@ class AggregateValueOperatorTest {
 
         Predicate<Order> shortCircuited = plus.eqIfNotNull(null);
         assertThat(shortCircuited).isNotInstanceOf(Op.class);
+        assertThat(shortCircuited).isInstanceOf(SkippedCondition.class);
         assertThat(shortCircuited).isSameAs(Path.of(Order::getAge).eqIfNotNull(null));
 
         Op negation = (Op) plus.notBetween(1000.0, 2000.0);
