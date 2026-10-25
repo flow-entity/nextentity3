@@ -250,11 +250,11 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 **时区必须钉在构建参数上，不能钉在用例里**：`nextentity-tests-jpa/pom.xml` 的 `pinned.timezone`（默认 `Asia/Shanghai`）同时进 surefire/failsafe 的 `-Duser.timezone` 与 `-Dnextentity.pinnedTimezone`，后者是时间契约自检的期望值——两个 `-D` 同源，「换过时区也全绿」才不是空话。理由有两层：`Instant` 往返断言的区分力全在「墙钟被挪过就会差整小时」，跑测机器若在 UTC，这条断言对「按 JVM 时区换算」这类缺陷的区分力归零；而 Hibernate 在 `buildSessionFactory()` 时就缓存了默认时区，装置又由子类字段初始化创建，所以 `@BeforeEach` 里 `TimeZone.setDefault` 是「晚于建连」的——实测会把 `LocalDate.of(2024,3,10)` 写成 `2024-03-09`，等于把装置变成非法的时区实验。换时区验证用 `-Dpinned.timezone=America/New_York` 整通道跑；**不要**用 `-DargLine=...`，jacoco `prepare-agent` 会覆盖 `argLine` 属性、且 pom 已把 `-Duser.timezone` 写进同一个 `argLine`，后写胜出，改了等于没改。副作用要记住：这是**模块级** fork 参数，本模块全部 564 条用例都在该时区下跑（本模块只有 `TemporalWriteContract` 读 `ZoneId.systemDefault()`，其余用例与时间无关），CI 机器若在别的时区，行为与本地不同。
 
-**容器通道不许静默降级**：`MySqlL4Gate` 是自定义的 `ExecutionCondition`，默认「没有 Docker 就跳过」（本地开发需要这个宽进），但加上 `-Dnextentity.requireContainer=true` 后不再跳过——Docker 缺失时容器在静态初始化阶段启动失败，构建直接变红。**CI 必须带这个属性**，否则真方言对拍会悄悄变成 skip，报表上看不出区别，L4 就成了纸面门禁（数字以「通道拆分」一节的实测条数为准）。**CI 已接入**：`.github/workflows/ci.yml`（push/PR）与 `nightly.yml`（每日 02:00 Asia/Shanghai）都经 `tools/gate.sh` 的 `ci`/`night` 档调 `-Dnextentity.requireContainer=true`，且凭证解析把「容器通道 skip 数 > 0」直接判成缺口——所以这条门禁不再依赖人记得加属性。三条路径都实测过：宽进 + 无 Docker → 容器用例全部 skip / SUCCESS；强制 + 无 Docker → 容器类整体 error / FAILURE；强制 + 有 Docker → 536 条全 pass（1 条 PG 专用用例按标记 skip）/ SUCCESS。
+**容器通道不许静默降级**：`MySqlL4Gate` 是自定义的 `ExecutionCondition`，默认「没有 Docker 就跳过」（本地开发需要这个宽进），但加上 `-Dnextentity.requireContainer=true` 后不再跳过——Docker 缺失时容器在静态初始化阶段启动失败，构建直接变红。**CI 必须带这个属性**，否则真方言对拍会悄悄变成 skip，报表上看不出区别，L4 就成了纸面门禁（数字以「通道拆分」一节的实测条数为准）。**CI 已接入**：`.github/workflows/ci.yml`（push/PR）与 `nightly.yml`（每日 02:00 Asia/Shanghai）都经 `tools/gate.sh` 的 `ci`/`night` 档调 `-Dnextentity.requireContainer=true`，且凭证对「跳过数超过申报预算」判缺口（容器通道在 `ci`/`night` 档申报预算 `1`，就是那条 PG 专用用例；预算写死在 `tier_ci`/`tier_night` 里，改不动的是默认值 0）——所以这条门禁不再依赖人记得加属性。三条路径都实测过：宽进 + 无 Docker → 容器用例全部 skip / SUCCESS；强制 + 无 Docker → 容器类整体 error / FAILURE；强制 + 有 Docker → 536 条全 pass（1 条 PG 专用用例按标记 skip）/ SUCCESS。
 
 **镜像源**：容器镜像走 `docker.xuanyuan.run`（`docker.xuanyuan.run/library/mysql:8.0.18` 与 `docker.xuanyuan.run/testcontainers/ryuk:0.11.0`），不走 `registry-1.docker.io`——受限网络下直连 Docker Hub 会 `EOF`，而容器用例是 L4 的唯一载体，镜像拉不到就等于这层没跑。两处细节：`MySQLContainer` 会校验镜像仓库名，用镜像站前缀必须显式 `asCompatibleSubstituteFor("mysql")`，否则被判「不兼容」拒启；Ryuk 是 Testcontainers 另起的回收容器，默认也从 Docker Hub 拉，所以它要单独用 `ryuk.container.image` 属性（同时给 `TESTCONTAINERS_RYUK_CONTAINER_IMAGE` 环境变量，防版本差异只认其中一条）指到同一个源。换源或换版本用 `-Dnextentity.mysql.image=` / `-Dnextentity.ryuk.image=` 覆盖，不必改 pom。实测确认：运行期 `docker ps` 里出现的就是这两个镜像站的引用，跑完由镜像站的 Ryuk 回收干净。
 
-**变异测试（PIT，已接入四个模块）**：`mvn -pl nextentity-api pitest:mutationCoverage`、`-pl nextentity-core`、`-pl nextentity-jpa`、`-pl nextentity-spring`。它只出分数、不新增用例形态，所以是**度量层**而不是五层防线之一。四处阈值都是 **95%**，写在各模块 pom，低于阈值构建失败；都不绑生命周期，由 `tools/gate.sh night` 与发版前的 `release` 档显式执行（`ci`/`pr` 档刻意不跑：单模块 PIT 分钟级，不该挡 push）。**零变异是已知假绿通道**：根 pom 的 `failWhenNoMutations=false` 让「一条都没变异」也算 BUILD SUCCESS，所以凭证额外要求 `mutations > 0` 且 `killed/effective >= 阈值`，见下「执行凭证」。`spring` 只有两个类（`AbstractRepository` 纯委派、`NextEntityAutoConfiguration` 纯条件装配），但「漏委托一个方法」（把某个 `query()`/写方法漏换成直通）与「开关条件写错」（`@ConditionalOnProperty` 的前缀/名字/`havingValue` 打错）正是编译过、测试假绿的典型形态，所以也纳入。**注意 PIT 不变异注解**，所以开关条件那一格由 `NextEntityAutoConfigurationTest` 的四条用例（缺失/`false`/`1` 不注册、`true` 注册且能解析真元模型）兜，不由变异分数兜。
+**变异测试（PIT，已接入四个模块）**：`mvn -pl nextentity-api pitest:mutationCoverage`、`-pl nextentity-core`、`-pl nextentity-jpa`、`-pl nextentity-spring`。它只出分数、不新增用例形态，所以是**度量层**而不是五层防线之一。四处阈值都是 **95%**，写在各模块 pom，低于阈值构建失败；都不绑生命周期，由 `tools/gate.sh night` 与发版前的 `release` 档显式执行（`ci`/`pr` 档刻意不跑：单模块 PIT 分钟级，不该挡 push）。**零变异是已知假绿通道**：根 pom 的 `failWhenNoMutations=false` 让「一条都没变异」也算 BUILD SUCCESS，所以凭证额外要求 `mutations > 0`，并把这个分数按 PIT 自己的口径（`detected / (detected + survived + no_coverage)`）与模块 pom 的 `mutationThreshold` 交叉核对，两条任一不满足即红，见下「执行凭证」。`spring` 只有两个类（`AbstractRepository` 纯委派、`NextEntityAutoConfiguration` 纯条件装配），但「漏委托一个方法」（把某个 `query()`/写方法漏换成直通）与「开关条件写错」（`@ConditionalOnProperty` 的前缀/名字/`havingValue` 打错）正是编译过、测试假绿的典型形态，所以也纳入。**注意 PIT 不变异注解**，所以开关条件那一格由 `NextEntityAutoConfigurationTest` 的四条用例（缺失/`false`/`1` 不注册、`true` 注册且能解析真元模型）兜，不由变异分数兜。
 
 当前实测：
 
@@ -333,25 +333,26 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 **Spring 接线的容器变体（已补）**：`nextentity-spring` 的 `NextEntityRealBackendTest` 跑的是 H2，而「自动配置 + `SharedEntityManagerCreator` 的事务绑定代理 + 真方言」这一组合此前没有任何实证。现由 `nextentity-tests-jpa` 的 `MySqlSpringRepositoryIntegrationTest`（4 条，容器通道）补上：自动配置产出的工厂喂给 `AbstractRepository` 子类，在真 MySQL 上断三件事——回滚真丢数据（`setRollbackOnly` 后 `count()` 为 0）、本线程未提交的行对另一线程不可见（插入若被静默自动提交会立刻变红）、4 线程并发各查各的行。它用自己的实体 `SpringWiredEntity` 独占一张表，理由是**行集隔离**：多个容器类都在断言精确行集（`containsExactly`），共用一张表会互相污染行集。`create-drop` 不是理由——它只处理本 PU 映射的表，不会删别人的表，JUnit 默认也串行。这与 H2 版不是重复证据——H2 版证「代理是线程绑定的」，这里证「绑定的是真 MySQL 连接且提交边界正确」。
 
-**尚未实施**（方向，不是已有能力——写进这里的东西不得当成现状引用）：
-
-- ~~排序差分的方言化~~（已完成，见上「NULL 序参数化」）：`NULLS FIRST` / `NULLS LAST` 已是显式参数，接第二后端只需在适配器里覆盖一行。
-- 故障注入常驻化：现在只是两次一次性实验（12 条 + 35 条手工注入），还没进流水线；连接中断、锁超时、方言不支持路径这三类也还没注入过。
-- 变异测试的历史文件（`historyInputFile` / `historyOutputFile`）：现在每次都全量重算，接上增量后夜间档可以更快。
-- L2 的参数绑定取值：`StatementInspector` 只拿得到语句文本，`where id = ?` 的两个占位符互换后 SQL 逐字节相同。唯一"文本相同而结果不同"的组合是 `single()` + `lock`，已补成同时断返回行（见上「L2 只证明…」一段）；其余位置由 L3 真库结果兜底。
-
 **执行凭证（`tools/gate.sh` + `tools/gate-receipt.py`，L0）**：前面每一条门禁都有一类共同的失效方式——**构建绿了，但该跑的通道没跑**。`-DskipITs`、无 Docker、`@Disabled`、PIT 的零变异、`~/.m2` 里的陈旧产物，五种都能让 `BUILD SUCCESS` 与「证据为零」同时成立，而人读日志只看最后一行。所以门禁的产物不是日志而是**凭证**：`tools/gate.sh <fast|ci|pr|night|release>` 跑完把 surefire/failsafe XML 与 PIT 报告一起解析成 `tmp/gate/<commit>-<ts>/receipt.json`，判定只看这份 JSON。
 
 判据不是「报告存在」，而是四条：
 
 - **报告比本轮新**：`mtime >= 本轮开始 epoch`。上一次构建留下的报告不算——这是「`Nothing to compile` 复用前序产物」的直接防线。
 - **条数 > 0**：`tests == 0` 的通道报「报告存在但 tests=0」，不报通过。
-- **必需通道必须真跑**：`-DskipITs` 下 failsafe-reports 目录不存在、`-Dnextentity.requireContainer` 下容器类整体 error，两种都判缺口。
-- **PIT 不许零变异**：除阈值外额外要求 `mutations > 0`，堵住根 pom `failWhenNoMutations=false` 那条假绿通道。
+- **必需通道必须真跑**：`-DskipITs` 下 failsafe 一份报告都不新（目录里上一轮的 XML 还在，靠逐文件 mtime 过滤才抓得住，这也是 `--require` 必须点名通道的原因）、`-Dnextentity.requireContainer` 下容器类整体 error，两种都判缺口；档位声明的步骤没落快照（被 `-am` 守卫拦下）同样算缺口，见 `merge --expect-step`。
+- **PIT 不许零变异**：除阈值外额外要求 `mutations > 0`，堵住根 pom `failWhenNoMutations=false` 那条假绿通道；分数按 PIT 自己的口径算并与 pom 的 `mutationThreshold` 比对。
+- **跳过要有申报预算**：每个通道的跳过条数上限由 `gate.sh` 逐步申报（`STEP_MAX_SKIP`），未申报的通道默认 0。跳过数超预算即红，且 problems 里逐个点名用例与理由——「跳过就是没跑，没跑不能记绿」。
 
 三件事只有凭证能给出、日志给不出：**skip 清单连理由**（`方言跳过必须可数` 从「PR 里手写」变成自动抽取）、**`~/.m2` 与源码的时间戳倒挂**（`-pl` 不带 `-am` 时会读到旧语义）、以及**跨模块合并口径的条数**（`-am` 反应堆会把 jpa/spring 一起带进来，比单看目标模块多）。
 
 档位与「该跑什么」一一对应：`fast` = 格式化 + 架构规则（无容器）；`pr` = H2 564 + 遗留 727；`ci` = 前者 + 真 MySQL 容器通道 + `-Dnextentity.requireContainer=true`；`night` = `install` 刷快照 + 全量含容器 + 遗留 h2/mysql 双跑 + PIT×4；`release` = `clean verify` + api-compat。`ci`/`pr` 刻意不跑 PIT（单模块分钟级，不该挡 push），PIT 的落点在 `night` 与 `release`。
+
+**尚未实施**（方向，不是已有能力——写进这里的东西不得当成现状引用）：
+
+- ~~排序差分的方言化~~（已完成，见上「NULL 序参数化」）：`NULLS FIRST` / `NULLS LAST` 已是显式参数，接第二后端只需在适配器里覆盖一行。
+- 故障注入常驻化：现在只是两次一次性实验（12 条 + 35 条手工注入），还没进流水线；连接中断、锁超时、方言不支持路径这三类也还没注入过。
+- 变异测试的历史文件（`historyInputFile` / `historyOutputFile`）：现在每次都全量重算，接上增量后夜间档可以更快。
+- L2 的参数绑定取值：`StatementInspector` 只拿得到语句文本，`where id = ?` 的两个占位符互换后 SQL 逐字节相同。唯一"文本相同而结果不同"的组合是 `single()` + `lock`，已补成同时断返回行（见上「L2 只证明…」一段）；其余位置由 L3 真库结果兜底。
 
 **与 §6 的关系**：L3 是第二后端的验收口——新后端必须原样通过同一套一致性用例，不得为它新增特例分支（见 §6 第 8 条）。
 

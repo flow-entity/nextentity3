@@ -22,7 +22,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
@@ -43,6 +43,23 @@ jobs:
           distribution: temurin
           java-version: "25"
           cache: maven
+
+      # 判据不能由被判对象提供：`tools/gate-receipt.py` 若跟着 PR 一起改，
+      # 改一行 `problems=[]` 就能把自己判绿，而 `--require-clean` 管不着（改动已提交）。
+      # 所以先用基线分支的版本覆盖回来——基线里没有这两个文件时（首次引入本机制）跳过。
+      - name: Restore gate scripts from base branch
+        run: |
+          BASE="${{ github.base_ref }}"
+          if [ -z "$BASE" ]; then echo "非 PR 触发，无基线分支，保持工作树版本"; exit 0; fi
+          git fetch --depth=1 origin "$BASE"
+          for f in tools/gate.sh tools/gate-receipt.py; do
+            if git cat-file -e "origin/$BASE:$f" 2>/dev/null; then
+              git show "origin/$BASE:$f" > "$f"
+              echo "已回退 $f 到 origin/$BASE"
+            else
+              echo "origin/$BASE 无 $f，保留本 PR 版本（首次引入）"
+            fi
+          done
 
       # ci 档 = 架构规则 + H2 全量 + 容器通道（强制）+ 遗留 727 条回归。
       # `--require-clean`：CI 上凭证必须对得上一个 commit，脏树直接拒。

@@ -179,8 +179,9 @@ class ArchitectureTest {
     /// 合法地依赖 JUnit / AssertJ（它本身就是测试基座）。用通配包名会把它一起判红——一旦它被加进
     /// 本模块 classpath（修好 `TESTING_STAYS_BACKEND_FREE` 的正确做法），这条规则就会假红。
     ///
-    /// 测试代码里的 mock 不在范围内：`spring` 的自动配置用例正当地 mock 掉
-    /// `EntityManagerFactory` / `EntityManager`；本类用 `DoNotIncludeTests` 导入，天然只看生产代码。
+    /// 测试代码不在范围内：本类用 `DoNotIncludeTests` 导入，天然只看生产代码。测试模块要 mock
+    /// 什么是它们的自由（`nextentity-spring` 现在连 `mockito-core` 都不在 classpath 上了，
+    /// 自动配置用例改用真 Hibernate + H2，见模块 pom 的说明），与这条规则无关。
     @ArchTest
     static final ArchRule PRODUCTION_CODE_IS_FREE_OF_TEST_FRAMEWORKS = noClasses()
             .that()

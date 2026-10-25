@@ -22,3 +22,5 @@ Thumbs.db
 ### 门禁运行态 ###
 # tools/gate.sh 的独占工作树锁：并行 mvn 共用 target/ 会造出假红假绿。
 .mvn/lock.d/
+# gate-receipt.py 被 gate.sh 以子进程调用，Python 会顺手生成字节码缓存。
+__pycache__/

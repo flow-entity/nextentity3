@@ -22,8 +22,10 @@ from __future__ import annotations
 
 import argparse
 import glob
+import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -45,11 +47,16 @@ def modules(root: str) -> list[str]:
     )
 
 
-def _scan_xml_reports(root: str, kind: str) -> dict[str, dict]:
+def _scan_xml_reports(root: str, kind: str, since: float) -> dict[str, dict]:
     """扫 surefire / failsafe 报告，按模块聚合。
 
     聚合的是 `<testsuite>` 的四个计数属性 + 跳过/失败用例的**具名清单**——
     只有数字没有名字的跳过报表，等于没有报表（AGENTS「方言跳过必须可数」要求点名）。
+
+    **按文件 mtime 过滤**（不是只比聚合 mtime）：`target/` 会留着上一轮的 53 个报告，
+    只跑 `-Dtest=OneTest` 时若不逐文件过滤，本步会报「564 条、绿」——数字全是旧的。
+    全陈旧的通道保留一条 mtime<since 的空壳记录，好让调用方区分
+    「报告在但不新鲜」与「压根没产出报告」。
     """
     out: dict[str, dict] = {}
     for module in modules(root):
@@ -65,11 +72,20 @@ def _scan_xml_reports(root: str, kind: str) -> dict[str, dict]:
             "errors": 0,
             "skipped": 0,
             "mtime": 0.0,
+            "stale_files": 0,
             "skipped_tests": [],
             "failed_tests": [],
             "unparsable": [],
         }
         for path in files:
+            try:
+                file_mtime = os.stat(path).st_mtime
+            except OSError:
+                continue
+            if file_mtime < since - FRESH_TOLERANCE:
+                agg["stale_files"] += 1
+                agg["mtime"] = max(agg["mtime"], file_mtime)
+                continue
             try:
                 suite = ET.parse(path).getroot()
             except ET.ParseError:
@@ -94,9 +110,30 @@ def _scan_xml_reports(root: str, kind: str) -> dict[str, dict]:
     return out
 
 
+def _pit_threshold(root: str, module: str) -> float | None:
+    """读模块 pom 的 `mutationThreshold`，凭证用它交叉核对 PIT 自己的分数。
+
+    PIT 的退出码才是权威门禁（`mvn ... pitest:mutationCoverage` 不达阈值即非零退出）；
+    这里读一遍是为了让凭证里的百分比和 HTML 报表对得上，而不是各算一套。
+    """
+    pom = os.path.join(root, module, "pom.xml")
+    try:
+        text = open(pom, encoding="utf-8").read()
+    except OSError:
+        return None
+    match = re.search(r"<mutationThreshold>\s*([0-9.]+)\s*</mutationThreshold>", text)
+    return float(match.group(1)) if match else None
+
+
 def _scan_pit(root: str) -> dict[str, dict]:
     """扫 PIT 报告。`failWhenNoMutations=false` 下「零变异 + 阈值不校验」是已知假绿通道，
-    所以这里把 `mutations` 计数单独提出来，`0` 会被 verify 当成缺口。"""
+    所以这里把 `mutations` 计数单独提出来，`0` 会被 verify 当成缺口。
+
+    分数按 **PIT 自己的口径**算：`coverage = detected / (detected + survived + no_coverage)`，
+    `detected` 含 `TIMED_OUT`（PIT 把超时算检出）。`NON_VIABLE` 不进分母——它既不是活下来
+    的变异也不是被检出的变异。旧实现用 `killed / generated`，把 `NON_VIABLE` 算进分母，
+    于是凭证里的百分比永远比 PIT HTML 低几个点，两边对不上。
+    """
     out: dict[str, dict] = {}
     for module in modules(root):
         path = os.path.join(root, module, "target", "pit-reports", "mutations.xml")
@@ -106,38 +143,48 @@ def _scan_pit(root: str) -> dict[str, dict]:
             suite = ET.parse(path).getroot()
         except ET.ParseError:
             continue
-        generated = killed = 0
+        generated = 0
+        status_counts: dict[str, int] = {}
         survived: list[str] = []
         for mutation in suite.iter("mutation"):
             generated += 1
-            status = mutation.get("status", "")
-            if mutation.get("detected") == "true" or status == "KILLED":
-                killed += 1
-            else:
+            status = mutation.get("status", "") or "UNKNOWN"
+            status_counts[status] = status_counts.get(status, 0) + 1
+            detected = mutation.get("detected") == "true" or status in ("KILLED", "TIMED_OUT")
+            if not detected:
                 survived.append(
-                    "%s:%s:%s"
+                    "%s:%s:%s(%s)"
                     % (
                         mutation.findtext("mutatedClass") or "?",
                         mutation.findtext("lineNumber") or "?",
                         (mutation.findtext("mutator") or "?").rsplit(".", 1)[-1],
+                        status,
                     )
                 )
+        detected_n = sum(n for s, n in status_counts.items() if s in ("KILLED", "TIMED_OUT"))
+        effective = sum(n for s, n in status_counts.items() if s in ("KILLED", "TIMED_OUT", "SURVIVED", "NO_COVERAGE"))
         out["pit:%s" % module] = {
             "kind": "pit",
             "module": module,
             "mutations": generated,
-            "killed": killed,
+            "detected": detected_n,
+            "effective": effective,
+            "statuses": status_counts,
             "survived": survived,
-            "score": round(100.0 * killed / generated, 1) if generated else None,
+            "coverage": round(100.0 * detected_n / effective, 1) if effective else None,
+            "test_strength": round(100.0 * detected_n / (detected_n + status_counts.get("SURVIVED", 0)), 1)
+            if detected_n + status_counts.get("SURVIVED", 0)
+            else None,
+            "threshold": _pit_threshold(root, module),
             "mtime": os.stat(path).st_mtime,
         }
     return out
 
 
-def scan(root: str) -> dict[str, dict]:
+def scan(root: str, since: float = 0.0) -> dict[str, dict]:
     channels: dict[str, dict] = {}
-    channels.update(_scan_xml_reports(root, "surefire"))
-    channels.update(_scan_xml_reports(root, "failsafe"))
+    channels.update(_scan_xml_reports(root, "surefire", since))
+    channels.update(_scan_xml_reports(root, "failsafe", since))
     channels.update(_scan_pit(root))
     return channels
 
@@ -220,7 +267,7 @@ def stale_artifacts(root: str) -> list[str]:
 
 
 def cmd_snapshot(args: argparse.Namespace) -> int:
-    channels = scan(args.root)
+    channels = scan(args.root, args.since)
     fresh, stale, missing = {}, {}, []
     for name, info in channels.items():
         if info["mtime"] >= args.since - FRESH_TOLERANCE:
@@ -232,13 +279,21 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
     absent = [r for r in required if r not in fresh]
     missing = absent
 
+    # 每通道的 skip 预算：`--max-skip name=N` 可重复。默认 0——**任何跳过都要显式申报**，
+    # 否则「容器通道 44 条全 skip」会以 tests=44/skipped=44 的姿态判绿（实测过）。
+    budgets: dict[str, int] = {}
+    for spec in args.max_skip or []:
+        key, _, value = spec.partition("=")
+        budgets[key.strip()] = int(value) if value.strip() else 0
+    default_budget = args.max_skip_default
+
     problems: list[str] = []
     for name in missing:
         if name in stale:
             problems.append(
-                "%s：报告存在但不新鲜（mtime %.0f < 本轮开始 %.0f）——本步没真跑，"
-                "上一轮的 %d 条记录还在 target/ 下，别读它"
-                % (name, stale[name]["mtime"], args.since, stale[name]["tests"])
+                "%s：报告存在但不新鲜（mtime %.0f < 本轮开始 %.0f，另有 %d 个陈旧报告文件）"
+                "——本步没真跑，上一轮的记录还在 target/ 下，别读它"
+                % (name, stale[name]["mtime"], args.since, stale[name].get("stale_files", 0))
             )
         else:
             problems.append("%s：本步没有产出任何报告" % name)
@@ -251,6 +306,14 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
                 problems.append(
                     "%s：零变异。`failWhenNoMutations=false` 下这会变成「BUILD SUCCESS 且零证据」" % name
                 )
+                continue
+            threshold = info.get("threshold")
+            coverage = info.get("coverage")
+            if threshold is not None and coverage is not None and coverage + 1e-9 < threshold:
+                problems.append(
+                    "%s：变异覆盖率 %.1f%% < pom 阈值 %.1f%%（detected %d / effective %d，状态 %s）"
+                    % (name, coverage, threshold, info["detected"], info["effective"], info["statuses"])
+                )
             continue
         if info["failures"] or info["errors"]:
             problems.append(
@@ -259,6 +322,18 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
             )
         if info["tests"] == 0:
             problems.append("%s：报告存在但 tests=0（没有任何用例被执行）" % name)
+        if info["unparsable"]:
+            problems.append(
+                "%s：%d 个报告无法解析（%s）——截断的 XML 不能算通过"
+                % (name, len(info["unparsable"]), ", ".join(info["unparsable"][:3]))
+            )
+        budget = budgets.get(name, default_budget)
+        if info["skipped"] > budget:
+            named = ", ".join("%s(%s)" % (s["test"], s["reason"] or "无理由") for s in info["skipped_tests"][:5])
+            problems.append(
+                "%s：跳过 %d 条 > 预算 %d（%s）——跳过就是没跑，没跑不能记绿"
+                % (name, info["skipped"], budget, named or "未点名")
+            )
 
     receipt = {
         "step": args.label,
@@ -290,8 +365,15 @@ def _print_step(receipt: dict) -> None:
             continue
         if info.get("kind") == "pit":
             print(
-                "  ✓ %-46s 变异 %3d / 杀 %3d / %s%%"
-                % (name, info["mutations"], info["killed"], info["score"])
+                "  ✓ %-46s 变异 %3d / 杀 %3d / %s%%（PIT 口径 %s%%，阈值 %s）"
+                % (
+                    name,
+                    info["mutations"],
+                    info["detected"],
+                    info["coverage"],
+                    info["coverage"],
+                    info["threshold"],
+                )
             )
             continue
         print(
@@ -302,7 +384,10 @@ def _print_step(receipt: dict) -> None:
         if name in receipt["required"]:
             continue
         if info.get("kind") == "pit":
-            print("    %-46s 变异 %3d / %s%%" % (name, info["mutations"], info["score"]))
+            print(
+                "    %-46s 变异 %3d / 杀 %3d / %s%%"
+                % (name, info["mutations"], info["detected"], info["coverage"])
+            )
         else:
             print("    %-46s %4d 条  skip %d" % (name, info["tests"], info["skipped"]))
     for warning in receipt["warnings"]:
@@ -321,6 +406,11 @@ def cmd_merge(args: argparse.Namespace) -> int:
         print("没有 step 快照：%s/step-*.json" % args.dir, file=sys.stderr)
         return 2
 
+    # 缺步骤就是缺证据：`step()` 的 -am 守卫 `return 1` 时不落快照，若只看「已存在的快照
+    # 全绿」就会把「容器通道一步没跑」判成绿。期望清单由档位自己声明，缺一个即红。
+    present = {s["step"] for s in steps}
+    absent_steps = [label for label in (args.expect_step or []) if label not in present]
+
     skips: list[dict] = []
     seen: set[str] = set()
     for step in steps:
@@ -334,29 +424,49 @@ def cmd_merge(args: argparse.Namespace) -> int:
                 seen.add(key)
                 skips.append({"channel": name, "test": entry["test"], "reason": entry["reason"]})
 
+    tree = (args.tree or "").strip()
+    verdict = "green"
+    if absent_steps or any(s["verdict"] != "green" for s in steps):
+        verdict = "red"
+    elif tree:
+        # 干净树是「凭证能对上 commit」的前提。脏树不是「红」（代码可能没问题），
+        # 但也绝不能叫 green：它只能证明「工作树里这份未提交的东西能跑」。
+        verdict = "dirty"
+
     receipt = {
         "head": args.head,
         "tier": args.tier,
+        "tree": {"clean": not tree, "status": tree},
+        "tree_digest": hashlib.sha256(tree.encode("utf-8")).hexdigest()[:16],
         "steps": [
             {"step": s["step"], "verdict": s["verdict"], "problems": s["problems"]} for s in steps
         ],
+        "absent_steps": absent_steps,
         "skip_report": {"total": len(skips), "entries": skips},
         "stale_artifacts": stale_artifacts(args.root),
-        "verdict": "green" if all(s["verdict"] == "green" for s in steps) else "red",
+        "verdict": verdict,
     }
+    with open(args.out, "w", encoding="utf-8") as handle:
+        json.dump(receipt, handle, ensure_ascii=False, indent=2)
+    digest = hashlib.sha256(open(args.out, "rb").read()).hexdigest()
+    receipt["receipt_digest"] = digest
     with open(args.out, "w", encoding="utf-8") as handle:
         json.dump(receipt, handle, ensure_ascii=False, indent=2)
 
     print("\n════ 凭证汇总 %s / %s ════" % (args.tier, args.head))
     for step in receipt["steps"]:
         print("  %-28s %s" % (step["step"], step["verdict"].upper()))
+    for label in absent_steps:
+        print("  %-28s MISSING（本档声明要跑，但没有快照）" % label)
+    if tree:
+        print("  ⚠ 工作树不干净（%d 行改动），本次凭证不记绿" % len(tree.splitlines()))
     print("  skip 总数：%d" % len(skips))
     for entry in skips:
         print("    - [%s] %s  %s" % (entry["channel"], entry["test"], entry["reason"]))
     for warning in receipt["stale_artifacts"]:
         print("  ⚠ %s" % warning)
     print("  总判定：%s" % receipt["verdict"].upper())
-    print("  凭证：%s" % args.out)
+    print("  凭证：%s（sha256 %s…）" % (args.out, digest[:16]))
     return 0 if receipt["verdict"] == "green" else 1
 
 
@@ -376,6 +486,19 @@ def main(argv: list[str]) -> int:
     snap.add_argument("--since", type=float, required=True, help="本步开始 epoch 秒")
     snap.add_argument("--label", required=True)
     snap.add_argument("--require", default="", help="逗号分隔的必需通道，如 surefire:nextentity-core")
+    snap.add_argument(
+        "--max-skip",
+        action="append",
+        default=[],
+        metavar="CHANNEL=N",
+        help="该通道允许的跳过条数（可重复）；不写则用 --max-skip-default",
+    )
+    snap.add_argument(
+        "--max-skip-default",
+        type=int,
+        default=0,
+        help="未单独申报的通道允许的跳过条数，默认 0（任何跳过都要显式申报）",
+    )
     snap.add_argument("--warn", action="append", default=[], help="可重复的告警行")
     snap.add_argument("--out")
     snap.set_defaults(func=cmd_snapshot)
@@ -386,6 +509,18 @@ def main(argv: list[str]) -> int:
     merge.add_argument("--head", required=True)
     merge.add_argument("--tier", required=True)
     merge.add_argument("--out", required=True)
+    merge.add_argument(
+        "--expect-step",
+        action="append",
+        default=[],
+        metavar="LABEL",
+        help="本档必须出现的步骤名（可重复）：缺一步即判红，防止「守卫拦下某步 → 没快照 → 仍判绿」",
+    )
+    merge.add_argument(
+        "--tree",
+        default="",
+        help="工作树状态（git status --short 原文，空表示干净）：写进凭证，让 dirty 可发现",
+    )
     merge.set_defaults(func=cmd_merge)
 
     args = parser.parse_args(argv)

@@ -9,21 +9,20 @@
 # 本脚本的唯一职责：让「未执行」和「跑绿」长得不一样。
 #
 # 用法
-#   tools/gate.sh fast              保存/提交前：架构规则 + 快测试（无容器）
+#   tools/gate.sh fast              保存/提交前：spotless + 架构规则 + 快测试（无容器）
 #   tools/gate.sh pr                push 前自查：H2 全量 + 遗留 727 条（无容器，-DskipITs）
 #   tools/gate.sh ci                CI 权威档：容器通道必须真跑 + 遗留 727 条
 #   tools/gate.sh night             夜间：全量含容器 + 遗留 MySQL + PIT×4
 #   tools/gate.sh release           发版前：clean verify + 全矩阵 + PIT + api 兼容
 #
 # 选项
-#   --allow-dirty      工作树脏也放行（默认 fast/pr 放行但记入凭证，night/release 拒绝）
+#   --allow-dirty      工作树脏也放行；此时凭证记 `dirty`，**永远不会是 green**
 #   --require-clean    任何档都要求工作树干净
 #   --no-receipt       不写凭证；此时凭证状态记 `unverified`，绝不记 green
-#   --keep             保留本次日志（默认保留，删日志靠 tmp/ 清理）
 #
 # 退出码
-#   0  声明的通道全部真跑了且零失败
-#   1  有通道缺失 / 不新鲜 / 有失败 / 工作树不合规
+#   0  声明的通道全部真跑了、零失败、零越预算跳过、工作树干净
+#   1  有通道缺失 / 不新鲜 / 有失败 / 跳过超预算 / 工作树不干净
 #   2  用法或环境错误
 #
 # 诚实边界：本地凭证可伪造，**CI 重算才是权威**。它的价值是（i）不让自己先被骗，
@@ -88,31 +87,50 @@ esac
 # 静默复用被写坏的产物（-am 与 -Dmaven.repo.local 都挡不住，冲突在 target/ 不在仓库）。
 # Windows 的 git-bash 没有 flock，所以用 mkdir 的原子性。
 LOCK=.mvn/lock.d
-ZOMBIE_SECONDS=1800
+# night/release 实测时长（install + 容器 + legacy 双跑 + PIT×4）远超半小时，1800s 会把**正在跑**
+# 的夜间档判成僵尸并抢锁；被抢者退出时又无条件 rm -rf，反把新锁删掉，第三个进程即可进来。
+# 阈值提到 4h，并让每个步骤刷新 heartbeat，长档不会误判。
+ZOMBIE_SECONDS=14400
 
 release_lock() {
-    rm -rf "$LOCK" 2>/dev/null
+    # 只删自己的锁：被抢过锁的旧进程退出时不能删掉新持有者的锁。
+    local owner_pid
+    owner_pid=$(sed -n 's/^pid=//p' "$LOCK/owner" 2>/dev/null)
+    if [ "${owner_pid:-}" = "$$" ]; then
+        rm -rf "$LOCK" 2>/dev/null
+    fi
+}
+
+write_owner() {
+    printf 'pid=%s\nstarted=%s\ntier=%s\n' "$$" "$(date +%s)" "$TIER" > "$LOCK/owner"
+    date +%s > "$LOCK/heartbeat"
+}
+
+refresh_lock() {
+    [ -d "$LOCK" ] && date +%s > "$LOCK/heartbeat" 2>/dev/null
 }
 
 acquire_lock() {
     mkdir -p .mvn || exit 2
     if mkdir "$LOCK" 2>/dev/null; then
-        printf 'pid=%s\nstarted=%s\ntier=%s\n' "$$" "$(date +%s)" "$TIER" > "$LOCK/owner"
+        write_owner
         trap release_lock EXIT INT TERM
         return 0
     fi
-    local owner_started age
-    owner_started=$(sed -n 's/^started=//p' "$LOCK/owner" 2>/dev/null)
-    age=$(( $(date +%s) - ${owner_started:-0} ))
-    if [ "${owner_started:-}" != "" ] && [ "$age" -gt "$ZOMBIE_SECONDS" ]; then
-        echo "⚠ 清理僵尸锁（${age}s 未释放，超过 ${ZOMBIE_SECONDS}s）" >&2
+    local beat now age
+    beat=$(cat "$LOCK/heartbeat" 2>/dev/null)
+    [ -n "${beat:-}" ] || beat=$(sed -n 's/^started=//p' "$LOCK/owner" 2>/dev/null)
+    now=$(date +%s)
+    age=$(( now - ${beat:-$now} ))
+    if [ -n "${beat:-}" ] && [ "$age" -gt "$ZOMBIE_SECONDS" ]; then
+        echo "⚠ 清理僵尸锁（心跳停了 ${age}s，超过 ${ZOMBIE_SECONDS}s）" >&2
         rm -rf "$LOCK"
         mkdir "$LOCK" 2>/dev/null || { echo "✗ 抢锁失败" >&2; exit 2; }
-        printf 'pid=%s\nstarted=%s\ntier=%s\n' "$$" "$(date +%s)" "$TIER" > "$LOCK/owner"
+        write_owner
         trap release_lock EXIT INT TERM
         return 0
     fi
-    echo "✗ 另一个门禁正在跑（$LOCK，已 ${age}s）。" >&2
+    echo "✗ 另一个门禁正在跑（$LOCK，心跳 ${age}s 前）。" >&2
     echo "  并行 mvn 会共用 target/ 造出假红假绿。等它结束，或确认进程已死后删除该目录。" >&2
     exit 2
 }
@@ -123,7 +141,13 @@ acquire_lock() {
 
 check_tree() {
     local dirty
-    dirty=$(git status --porcelain --untracked-files=all -- . ':(exclude)tmp' 2>/dev/null)
+    dirty=$(git status --porcelain --untracked-files=all -- . ':(exclude)tmp' 2>&1)
+    if [ $? -ne 0 ]; then
+        # 吞掉 git 报错的后果是 dirty 为空 → 当干净树放行。宁可红。
+        echo "✗ git status 失败，无法确认工作树状态：$dirty" >&2
+        exit 2
+    fi
+    TREE_DIRTY="$dirty"
     if [ -z "$dirty" ]; then
         TREE_STATE="clean"
         return 0
@@ -144,17 +168,39 @@ check_tree() {
 # 步骤执行
 # ---------------------------------------------------------------------------
 
+# 守卫拦下某步时也要留一份红快照：否则 merge 只看「已存在的快照全绿」，
+# 「容器通道一步没跑」会以绿凭证的姿态出现（实测过）。
+reject_step() {
+    local label="$1" msg="$2"
+    local out="$RUNDIR/step-$(printf '%02d' "$STEPN")-$label.json"
+    printf '{"step": "%s", "since": 0.0, "required": [], "channels": {}, "stale_channels": {}, "problems": ["%s"], "verdict": "red"}\n' \
+        "$label" "$msg" > "$out"
+}
+
 step() {
     local label="$1" require="$2"; shift 2
     STEPN=$((STEPN + 1))
+    refresh_lock
     local -a cmd=("$@")
     local joined=" ${cmd[*]} "
+    local -a skip_args=()
+    # STEP_MAX_SKIP 支持空格分隔多条申报（如 "surefire:nextentity-tests-jpa=1"）：
+    # 未点名的通道一律用 gate-receipt.py 的默认预算 0，任何跳过都要显式申报。
+    local _spec
+    for _spec in ${STEP_MAX_SKIP:-}; do
+        skip_args+=(--max-skip "$_spec")
+    done
+    STEP_MAX_SKIP=""
 
     # ③ 拒绝缺 -am 的调用：它会从 ~/.m2 解析依赖模块，陈旧快照会让结论变成「旧产物能跑」。
-    if [[ "$joined" == *" -pl "* && "$joined" != *" -am "* ]]; then
+    # 两个例外：PIT 目标（-am 会把 PIT 拖到上游模块上跑），以及紧跟在 `install -DskipTests`
+    # 之后的步骤——那时 ~/.m2 里就是当前 HEAD，缺 -am 不再失真。
+    if [[ "$joined" == *" -pl "* && "$joined" != *" -am "* && "${FRESH_SNAPSHOT:-0}" != "1" ]]; then
         if [[ "$joined" != *"pitest:mutationCoverage"* ]]; then
             echo "✗ [$label] 带 -pl 却没有 -am：会从 ~/.m2 解析依赖模块，陈旧产物会让结论失真。" >&2
+            echo "  （若本步之前刚跑过 install -DskipTests，用一个独立的 install 步骤把它标成新鲜快照）" >&2
             FAILED+=("$label(no -am)")
+            reject_step "$label" "带 -pl 没有 -am，且没有前置 install 刷新 ~/.m2，本步未执行"
             return 1
         fi
         echo "  · [$label] PIT 例外路径：依赖从 ~/.m2 解析，已由 install 步骤刷新" >&2
@@ -167,6 +213,12 @@ step() {
 
     rc=0
     "${cmd[@]}" >"$log" 2>&1 || rc=$?
+    refresh_lock
+
+    # 整仓 install 成功后，后续 -pl 步骤可以从 ~/.m2 取当前 HEAD 的产物。
+    if [ "$rc" -eq 0 ] && [[ "$joined" == *" install "* ]]; then
+        FRESH_SNAPSHOT=1
+    fi
 
     local -a warns=()
     if grep -q 'Nothing to compile - all classes are up to date' "$log" 2>/dev/null; then
@@ -179,7 +231,7 @@ step() {
     vrc=0
     "$PY" "$RECEIPT" snapshot --root . --since "$since" --label "$label" \
         --require "$require" --out "$RUNDIR/step-$(printf '%02d' "$STEPN")-$label.json" \
-        ${warns[@]+"${warns[@]}"} || vrc=$?
+        ${skip_args[@]+"${skip_args[@]}"} ${warns[@]+"${warns[@]}"} || vrc=$?
 
     if [ "$rc" -ne 0 ]; then
         echo "  ✗ [$label] mvn 退出码 $rc；日志尾部：" >&2
@@ -197,6 +249,8 @@ step() {
 # ---------------------------------------------------------------------------
 
 tier_fast() {
+    EXPECT_STEPS=(fast-format fast)
+    step fast-format "" ./mvnw -B -q spotless:apply
     step fast \
         "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-arch" \
         ./mvnw -B -pl nextentity-core,nextentity-arch -am test
@@ -206,8 +260,10 @@ tier_ci() {
     # CI 权威通道。与本地 pr 档的唯一区别：容器通道**必须真跑**，Docker 缺失即红。
     # 这一档存在的理由：本地 pr 档用 -DskipITs 换取 30s，而 -DskipITs 不留任何标记——
     # 只有把「权威结论只在 ci 档产生」写死，才不会被本地那份省事的绿骗过去。
+    EXPECT_STEPS=(ci-fast ci-container ci-legacy)
     step ci-fast "surefire:nextentity-arch" \
         ./mvnw -B -pl nextentity-arch -am test
+    STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1 failsafe:nextentity-tests-jpa=1"
     step ci-container "surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa" \
         ./mvnw -B -pl nextentity-tests-jpa -am verify -Dnextentity.requireContainer=true
     step ci-legacy "surefire:nextentity-tests-legacy" \
@@ -215,6 +271,8 @@ tier_ci() {
 }
 
 tier_pr() {    # 容器通道在本档明确不跑（-DskipITs）。凭证会把 failsafe 记为「未声明」而不是「skip=0」。
+    EXPECT_STEPS=(pr-h2 pr-legacy)
+    STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1"
     step pr-h2 "surefire:nextentity-tests-jpa" \
         ./mvnw -B -pl nextentity-tests-jpa -am verify -DskipITs
     # 727 条遗留回归此前完全不在 CI 里：CI 两条命令的 -am 反应堆都不含该模块。
@@ -224,7 +282,10 @@ tier_pr() {    # 容器通道在本档明确不跑（-DskipITs）。凭证会把
 
 tier_night() {
     # PIT 不带 -am，依赖从 ~/.m2 解析；先整仓 install 把快照刷到当前 HEAD。
+    EXPECT_STEPS=(night-install night-container night-legacy night-pit-api night-pit-core night-pit-jpa night-pit-spring)
     step night-install "" ./mvnw -B -q install -DskipTests
+    # 本步刻意不带 -am：紧邻的 night-install 已把当前 HEAD 装进 ~/.m2，守卫据此放行。
+    STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1 failsafe:nextentity-tests-jpa=1"
     step night-container "surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa" \
         ./mvnw -B -pl nextentity-tests-jpa verify -Dnextentity.requireContainer=true
     step night-legacy "surefire:nextentity-tests-legacy" \
@@ -237,6 +298,7 @@ tier_night() {
 }
 
 tier_release() {
+    EXPECT_STEPS=(release-verify release-legacy release-install release-pit-api release-pit-core release-pit-jpa release-pit-spring release-compat)
     step release-verify \
         "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-arch,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa" \
         ./mvnw -B clean verify -Dnextentity.requireContainer=true
@@ -250,7 +312,7 @@ tier_release() {
     done
     if [ -n "${OLD_VERSION:-}" ]; then
         step release-compat "" \
-            ./mvnw -B -Papi-compat -Djapicmp.oldVersion="$OLD_VERSION" -pl nextentity-api verify
+            ./mvnw -B -Papi-compat -Djapicmp.oldVersion="$OLD_VERSION" -pl nextentity-api -am verify
     else
         echo "⚠ 未设 OLD_VERSION，跳过 api 兼容检查（发版前必须设成上一发布版）" >&2
         FAILED+=("release-compat(未执行：OLD_VERSION 未设)")
@@ -269,6 +331,8 @@ STAMP=$(date +%Y%m%d-%H%M%S)
 RUNDIR="tmp/gate/$SHORT_SHA-$STAMP"
 mkdir -p "$RUNDIR" || exit 2
 TREE_STATE="clean"
+TREE_DIRTY=""
+EXPECT_STEPS=()
 
 check_tree
 
@@ -295,7 +359,13 @@ if [ -n "$NO_RECEIPT" ]; then
     exit 1
 fi
 
+expect_args=()
+for label in ${EXPECT_STEPS[@]+"${EXPECT_STEPS[@]}"}; do
+    expect_args+=(--expect-step "$label")
+done
+
 "$PY" "$RECEIPT" merge --root . --dir "$RUNDIR" --head "$HEAD_SHA" --tier "$TIER" \
+    --tree "$TREE_DIRTY" ${expect_args[@]+"${expect_args[@]}"} \
     --out "$RUNDIR/receipt.json" || VERDICT_RC=1
 
 if [ "${#FAILED[@]}" -gt 0 ]; then
