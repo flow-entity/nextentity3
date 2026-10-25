@@ -9,10 +9,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 
 /// 自增主键写侧契约的真方言版。
 ///
-/// 真 MySQL 上多出的风险正是这条通道存在的理由：`AUTO_INCREMENT` 在 `delete from` 之后
-/// **不**重置（H2 会），所以「第二条号更大」这类断言只有在真库上跑过，才证明框架没有把
-/// 上一次取到的号复用；反过来，若哪天实现改成「先查 max(id)+1 再写」，MySQL 的并发与回滚语义
-/// 会让它在这里露出来。
+/// 真 MySQL 上多出的风险正是这条通道存在的理由：`AUTO_INCREMENT` 单调前进、`delete from` 之后
+/// **不**回收已发出的号，所以 `insertAfterDeleteDoesNotReuseTheDeletedId` 这条只有在真库上跑过，
+/// 才证明框架没有把上一次取到的号复用（H2 的行为随版本变，不能当基准）；反过来，若哪天实现改成
+/// 「先查 max(id)+1 再写」，MySQL 的并发与回滚语义会让它在这里露出来。
+/// 其余用例两边跑同一套断言——契约基类只写一遍，子类只换接线。
 @ExtendWith(MySqlL4Gate.class)
 @Tag("container")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)

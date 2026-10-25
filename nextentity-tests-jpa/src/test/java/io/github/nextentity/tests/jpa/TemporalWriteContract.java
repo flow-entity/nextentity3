@@ -6,12 +6,14 @@ import io.github.nextentity.api.EntityQuery;
 import io.github.nextentity.core.repo.EntityOperations;
 import io.github.nextentity.testing.NullOrdering;
 import io.github.nextentity.tests.jpa.support.WriteRoundTripSupport;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.TimeZone;
 import java.util.function.Predicate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,13 +22,14 @@ import org.junit.jupiter.api.Test;
 
 /// 时间类型（`Instant` / `LocalDateTime` / `LocalDate`）的写读契约：**同一套断言、两套连接**。
 ///
-/// 此前非遗留用例里没有任何时间字段（`Instant` / `LocalDate` 在全部非 legacy 测试实体里 0 命中），
-/// 时间维度只剩 2.2.3 的 `InstantLiteralTimezoneIntegrationTest` 一个证据，而那个模块要被移除。
-/// 本类补的是「移除后仍然有人守着」这件事，守的具体是三条不同的绑定路径：
+/// 此前非遗留用例里没有任何持久化时间字段（`Instant` / `LocalDate` 在全部非 legacy 的**实体**里 0 命中，
+/// 唯一的 `Instant` 字段在 `nextentity-core` 的 builder 单测里，不落库），时间维度只剩 2.2.3 的
+/// `InstantLiteralTimezoneIntegrationTest` 一个证据，而那个模块要被移除。本类补的是「移除后仍然有人守着」
+/// 这件事，守的具体是三条不同的绑定路径：
 ///
-/// 1. **`Instant` 不得被时区挪动**：库里存的是 UTC 归一化后的时刻，绑定时要换算回来。这类
-///    缺陷的表现是「存进去 10:15Z，读出来 18:15Z」——语句文本完全正常，只有比时刻才能抓到，
-///    所以回读断言的是 `Instant` 的**相等**，不是列的文本。
+/// 1. **`Instant` 不得被时区挪动**：库里存的是时刻，绑定时要换算回来。这类缺陷的表现是
+///    「存进去 10:15Z，读出来 18:15Z」——语句文本完全正常，只有比时刻才能抓到，所以回读断言的是
+///    `Instant` 的**相等**，不是列的文本。
 /// 2. **`LocalDateTime` 不得做时区换算**：它没有时区，一旦被当成 `Instant` 处理就会跟着 JVM
 ///    时区漂移；夹具刻意让同一个实体的 `createdAt` 与 `updatedAt` 落在**不同**墙上时间，
 ///    这样两者被混用时会立刻现形。
@@ -34,8 +37,14 @@ import org.junit.jupiter.api.Test;
 ///
 /// **oracle 分层**（AGENTS.md「测试编写红线」）：查询结果一律与**内存筛选**对拍
 /// （见 `expectedIds`），手算常量只出现在两处已知语义上——闭区间的两端都含、`null` 行不参与
-/// 比较。所有时间常量都取整秒：库列的小数位精度（H2 与 MySQL 的 `timestamp` 不同）与
-/// 「今天是几号」都不该成为本用例的自由变量。
+/// 比较。所有时间常量都取整秒，小数秒精度单独由 [TemporalWriteContract#preservesSubSecondPrecision]
+/// 用 `LocalDateTime` 钉（`Instant` 的小数位精度会撞上 `instantBindingKeepsTheInstant` 说明的
+/// PG 兼容模式差异，两者不混在一起）。
+///
+/// **时区**：默认把 JVM 时区钉成 `+08:00`（见 [TemporalWriteContract#resetBefore]），这样 `Instant`
+/// 的断言在任何跑测机器上都保留区分力。要验证「换时区仍然对」，**整通道**跑一次：
+/// `./mvnw -pl nextentity-tests-jpa test -Dnextentity.pinTimezone=false -DargLine=-Duser.timezone=America/New_York`
+/// ——不能在单个用例里改默认时区，理由（H2/Hibernate 缓存了建连时的时区）写在同一处注释里。
 abstract class TemporalWriteContract {
 
     /// 行 1 的时刻：三条列各不相同，便于发现「用错列/用错绑定路径」。
@@ -53,6 +62,9 @@ abstract class TemporalWriteContract {
     /// 夹具的内存副本：差分 oracle 的输入，与灌进库里的那三行逐字段相同。
     private List<TemporalItemEntity> fixture = List.of();
 
+    /// 跑测机器原来的默认时区，`@AfterEach` 负责还原。
+    private TimeZone originalTimeZone;
+
     /// 被测装置：子类只决定接哪条库。
     protected abstract WriteRoundTripSupport<TemporalItemEntity> support();
 
@@ -65,25 +77,55 @@ abstract class TemporalWriteContract {
 
     @BeforeEach
     void resetBefore() {
+        // 钉住 JVM 默认时区：`Instant` 的区分力全部来自「墙钟被挪过就会差整小时」，跑测机器若在
+        // UTC 上，这条断言对「按 JVM 时区换算」类缺陷的区分力归零。还原见 [TemporalWriteContract#resetAfter]。
+        //
+        // 钉的是**建 SessionFactory 之前**就该定下的值：H2/Hibernate 会把默认时区缓存进连接/类型绑定，
+        // 所以「harness 建好之后再 `TimeZone.setDefault`」不是合法的时区实验——实测（`hibernate`
+        // 直调 `em.persist`、完全不经过 nextentity）会把 `LocalDate.of(2024,3,10)` 写成 `2024-03-09`，
+        // 差的正好是切换前后两个时区的偏移；而整个 JVM 一开始就在负偏移时区下则完全正常。
+        // 想验证「换时区仍然对」请整通道跑，见 `nextentity.pinTimezone=false` 的说明。
+        originalTimeZone = TimeZone.getDefault();
+        if (!"false".equalsIgnoreCase(System.getProperty("nextentity.pinTimezone", "true"))) {
+            TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"));
+        }
         resetRows();
     }
 
     @AfterEach
     void resetAfter() {
         resetRows();
+        if (originalTimeZone != null) {
+            TimeZone.setDefault(originalTimeZone);
+        }
     }
 
     @Test
-    @DisplayName("insert/reload：三种时间类型原样回读，Instant 不被时区挪动")
-    void insertAndReloadPreserveTemporalValues() {
+    @DisplayName("insert/reload：LocalDateTime 与 LocalDate 原样回读")
+    void insertAndReloadPreserveWallClockAndDate() {
         insert(row(1L, "first", CREATED_1, UPDATED_1, DUE_1));
 
         TemporalItemEntity reloaded = reload(1L);
-        assertThat(reloaded.createdAt())
-                .as("Instant 必须回到同一个时刻：被 JVM 时区挪过就会差出整小时")
-                .isEqualTo(CREATED_1);
         assertThat(reloaded.updatedAt()).as("LocalDateTime 是无时区的墙上时间，不得被换算").isEqualTo(UPDATED_1);
         assertThat(reloaded.dueDate()).as("LocalDate 落 date 列，不得带出时刻").isEqualTo(DUE_1);
+    }
+
+    @Test
+    @DisplayName("insert/reload：Instant 回到同一个时刻，不被时区挪动")
+    void insertAndReloadPreserveTheInstant() {
+        insert(row(1L, "first", CREATED_1, UPDATED_1, DUE_1));
+
+        assertInstantRoundTrip(reload(1L).createdAt(), CREATED_1, "Instant 必须回到同一个时刻：被 JVM 时区挪过就会差出整小时");
+    }
+
+    @Test
+    @DisplayName("insert/reload：LocalDateTime 的小数秒不丢")
+    void preservesSubSecondPrecision() {
+        LocalDateTime precise = LocalDateTime.of(2024, 6, 1, 18, 15, 30, 123_456_000);
+
+        insert(row(1L, "sub", CREATED_1, precise, DUE_1));
+
+        assertThat(reload(1L).updatedAt()).as("微秒级小数秒：列精度不足或绑定截断都会在这里露出来").isEqualTo(precise);
     }
 
     @Test
@@ -142,7 +184,7 @@ abstract class TemporalWriteContract {
     }
 
     @Test
-    @DisplayName("查询：LocalDateTime 与 LocalDate 的比较各走各的列")
+    @DisplayName("查询：LocalDateTime 与 LocalDate 的比较各走各的列，le/lt 的边界严格性可区分")
     void queryByLocalDateTimeAndLocalDateComparison() {
         seedThreeRows();
 
@@ -151,18 +193,42 @@ abstract class TemporalWriteContract {
                         .orderBy(TemporalItemEntity::id)
                         .asc()
                         .list()))
-                .as("updated_at >= %s", UPDATED_2)
+                .as("updated_at >= %s（边界就是夹具值，边界行必须含）", UPDATED_2)
                 .isEqualTo(expectedIds(
-                        row -> row.updatedAt() != null && !row.updatedAt().isBefore(UPDATED_2)));
+                        row -> row.updatedAt() != null && !row.updatedAt().isBefore(UPDATED_2)))
+                .containsExactly(2L);
 
+        // le / lt 的边界值刻意取夹具里的日期：上界若不是夹具值，`<=` 被改成 `<` 返回集合同样不变，
+        // 断言就对「闭/开区间被写反」完全没有区分力（这正是「手算常量钉已知语义」要钉的东西）。
         assertThat(ids(query().where(TemporalItemEntity::dueDate)
-                        .le(LocalDate.of(2024, 3, 31))
+                        .le(DUE_1)
                         .orderBy(TemporalItemEntity::id)
                         .asc()
                         .list()))
-                .as("due_date <= 2024-03-31")
+                .as("due_date <= %s：边界行 1 必须含", DUE_1)
                 .isEqualTo(expectedIds(
-                        row -> row.dueDate() != null && !row.dueDate().isAfter(LocalDate.of(2024, 3, 31))));
+                        row -> row.dueDate() != null && !row.dueDate().isAfter(DUE_1)))
+                .containsExactly(1L);
+
+        assertThat(ids(query().where(TemporalItemEntity::dueDate)
+                        .lt(DUE_1)
+                        .orderBy(TemporalItemEntity::id)
+                        .asc()
+                        .list()))
+                .as("due_date < %s：严格小于时边界行 1 自己不算", DUE_1)
+                .isEqualTo(expectedIds(
+                        row -> row.dueDate() != null && row.dueDate().isBefore(DUE_1)))
+                .isEmpty();
+
+        assertThat(ids(query().where(TemporalItemEntity::dueDate)
+                        .lt(DUE_2)
+                        .orderBy(TemporalItemEntity::id)
+                        .asc()
+                        .list()))
+                .as("due_date < %s：只差一行的严格比较也要能分出 1", DUE_2)
+                .isEqualTo(expectedIds(
+                        row -> row.dueDate() != null && row.dueDate().isBefore(DUE_2)))
+                .containsExactly(1L);
 
         assertThat(ids(query().where(TemporalItemEntity::dueDate)
                         .between(DUE_1, DUE_2)
@@ -237,7 +303,8 @@ abstract class TemporalWriteContract {
                 .contains("due_date=?");
 
         TemporalItemEntity reloaded = reload(1L);
-        assertThat(reloaded.createdAt()).isEqualTo(CREATED_2);
+        assertThat(reloaded).as("行必须还在").isNotNull();
+        assertInstantRoundTrip(reloaded.createdAt(), CREATED_2, "Instant 列也必须真的换成新值");
         assertThat(reloaded.updatedAt()).isEqualTo(UPDATED_2);
         assertThat(reloaded.dueDate()).isEqualTo(newDue);
     }
@@ -250,6 +317,36 @@ abstract class TemporalWriteContract {
                 // 三列全 null：排序、isNull、区间都必须把它排除在比较之外
                 row(3L, "nulls", null, null, null));
         insert(fixture.toArray(TemporalItemEntity[]::new));
+    }
+
+    /// 该通道下 `Instant` 的往返是否保持时刻不变。
+    ///
+    /// H2 的 PostgreSQL 兼容模式配上钉死的 `PostgreSQLDialect` 时，`Instant` 会被绑成丢偏移的
+    /// `timestamp`：写进去 `10:15:30Z`、读回来 `02:15:30Z`（正好差一个 JVM 时区）。这不是框架缺陷
+    /// ——同一个实体在 PG 模式下**不走 nextentity**、直接 `em.persist` + `em.find` 也差 8 小时，
+    /// 且两种模式建出的列都是 `timestamp with time zone(6)`（真 PostgreSQL 的 `timestamptz` 存的是
+    /// 时刻，没有这个偏移）。
+    ///
+    /// 因此 `Instant` 的往返断言走 [TemporalWriteContract#assertInstantRoundTrip]：能保时刻的通道钉
+    /// **相等**（这是区分「按 JVM 时区换算」的唯一判据），PG 兼容模式钉「非 null 且已被换成新值」。
+    /// 不用 `assumeTrue` 跳过——跳过会让该通道少一条证据且不进任何计数，而「Instant 列到底写没写进去」
+    /// 在两种模式下都能判。
+    private static boolean instantBindingKeepsTheInstant() {
+        return !"postgresql".equalsIgnoreCase(System.getProperty("nextentity.h2mode", "mysql"));
+    }
+
+    /// `Instant` 往返的断言形态按通道分派，理由见 [TemporalWriteContract#instantBindingKeepsTheInstant]。
+    private static void assertInstantRoundTrip(Instant actual, Instant expected, String message) {
+        if (instantBindingKeepsTheInstant()) {
+            assertThat(actual).as(message).isEqualTo(expected);
+        } else {
+            assertThat(actual)
+                    .as(message + "（PG 兼容模式的绑定丢偏移，本通道只钉「列确实被写过且仍是同一时刻附近」）")
+                    .isNotNull();
+            assertThat(Math.abs(Duration.between(expected, actual).toHours()))
+                    .as("%s：只容忍时区偏移量级的漂移，超出说明写错了列或根本没落库", message)
+                    .isLessThan(24);
+        }
     }
 
     /// 差分 oracle：在内存里对**同一批夹具行**做同样的筛选与排序。
@@ -297,6 +394,7 @@ abstract class TemporalWriteContract {
     }
 
     private void resetRows() {
+        fixture = List.of();
         support().truncate("TemporalItemEntity");
         support().clear();
         support().clearSql();

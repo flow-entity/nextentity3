@@ -179,12 +179,35 @@ abstract class EmbeddedOverrideWriteContract {
                 ids(query().orderBy(EntityPath.of(ContactItemEntity::home).get(PostalAddress::city))
                         .asc()
                         .list());
-        // home.city：1 → Beijing，2 → Shanghai，按列值升序即 id 升序
+        // home.city：1 → Beijing，2 → Shanghai，按列值升序即 id 升序（列值与主键序在这里重合，
+        // 所以真正有区分力的排序证据是下面的 orderingUsesOverriddenColumnValue）
         assertThat(byHomeCity).containsExactly(1L, 2L);
         assertThat(statements("select").getFirst())
                 .as("ORDER BY 也要走覆盖列，否则排序结果与 WHERE 用的不是同一列")
                 .contains("order by")
                 .contains("home_city");
+    }
+
+    @Test
+    @DisplayName("排序：ORDER BY 按覆盖列的列值排，而不是退化成主键序")
+    void orderingUsesOverriddenColumnValue() {
+        // 第三行 home.city = "Aalborg" 的字典序在 Beijing / Shanghai 之前，于是「按列值升序」= [3,1,2]，
+        // 与主键序 [1,2,3] 分裂。上一格的两行夹具里列值序恰好等于主键序，ORDER BY 落到 id 上也照样绿，
+        // 只有把两者拆开，排序断言才有独立证据。
+        fixture = List.of(
+                new ContactItemEntity(1L, "beijing", address("Beijing", "north"), address("Xian", "x")),
+                new ContactItemEntity(2L, "shanghai", address("Shanghai", "east"), address("Yangzhou", "y")),
+                new ContactItemEntity(3L, "aalborg", address("Aalborg", "west"), address("Zibo", "z")));
+        insert(fixture.toArray(ContactItemEntity[]::new));
+        support().clear();
+        support().clearSql();
+
+        assertThat(ids(query().orderBy(EntityPath.of(ContactItemEntity::home).get(PostalAddress::city))
+                        .asc()
+                        .list()))
+                .as("按 home_city 的列值升序：与主键序不同，ORDER BY 被丢掉或错落到 id 时会红")
+                .containsExactly(3L, 1L, 2L);
+        assertThat(statements("select").getFirst()).contains("order by").contains("home_city");
     }
 
     @Test
@@ -318,6 +341,7 @@ abstract class EmbeddedOverrideWriteContract {
     }
 
     private void resetRows() {
+        fixture = List.of();
         support().truncate("ContactItemEntity");
         support().clear();
         support().clearSql();

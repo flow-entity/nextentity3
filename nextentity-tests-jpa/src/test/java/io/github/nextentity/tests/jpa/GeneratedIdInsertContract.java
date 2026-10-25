@@ -2,6 +2,7 @@ package io.github.nextentity.tests.jpa;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.nextentity.api.EntityQuery;
 import io.github.nextentity.core.repo.EntityOperations;
 import io.github.nextentity.tests.jpa.support.WriteRoundTripSupport;
 import java.util.List;
@@ -24,9 +25,9 @@ import org.junit.jupiter.api.Test;
 /// 立即执行 INSERT 并 `set` 回 id）。第 1 条用例钉的正是这一点——把 `insert` 换成
 /// 「显式写 id 或延迟取号」的实现时，这里会立刻红。
 ///
-/// 断言一律用「相对关系 + 读回值」，**不钉具体号段**：`delete from` 在 MySQL 上不重置
-/// `AUTO_INCREMENT`，在 H2 上会重置，钉死 `1,2,3` 只可能在其中一边成立。这不是宽容，
-/// 而是把「号段从几开始」这件与框架无关的方言事实排除在契约之外。
+/// 断言一律用「相对关系 + 读回值」，**不钉具体号段**：`delete from` / `truncate` 之后自增序列
+/// 是否重置属方言实现细节（H2 与 MySQL 不同，且随版本变），钉死 `1,2,3` 只可能在其中一边成立。
+/// 这不是宽容，而是把「号段从几开始」这件与框架无关的事实排除在契约之外。
 abstract class GeneratedIdInsertContract {
 
     /// 被测装置：子类只决定接哪条库。
@@ -51,11 +52,39 @@ abstract class GeneratedIdInsertContract {
 
         assertThat(row.id()).as("`insert` 返回 void，回填到入参对象是调用方拿到新主键的唯一通道").isNotNull();
 
-        assertThat(statements("insert into generated_item")).hasSize(1);
+        List<String> inserts = statements("insert into generated_item");
+        assertThat(inserts).hasSize(1);
+        String insert = inserts.getFirst();
+        // 「框架不碰主键」是这条契约的守护目标，但判据不能写成「列清单里没有 id」——那是方言形态，
+        // 两种库里不一样：真 MySQL 下发 `(name) values (?)`，H2 下发 `(name, id) values (?, default)`。
+        // 真正的判据是**绑定形态**：自增列不许被绑成一个参数值（`values (?, ?)`，哪怕绑的是 null，
+        // MySQL / H2 都会把 null 当「请发号」照样发号，光看「插入成功 + id 被回填」发现不了）。
+        assertThat(insertColumns(insert)).as("列清单里必须有业务列").contains("name");
+        assertThat(countPlaceholders(insert))
+                .as("只允许绑定业务列的值（1 个占位符），自增列不得被绑定。实际语句: %s", insert)
+                .isEqualTo(1);
+        if (insertColumns(insert).contains("id")) {
+            assertThat(insert)
+                    .as("列清单带 id 时，它必须以 `default` 由数据库发号。实际语句: %s", insert)
+                    .contains("default");
+        }
 
         GeneratedItemEntity reloaded = reload(row.id());
         assertThat(reloaded).as("回填的 id 必须真能在库里定位到同一行").isNotNull();
         assertThat(reloaded.name()).isEqualTo("alpha");
+    }
+
+    @Test
+    @DisplayName("insert：两次独立 insert 各自取号，递增且互不相同")
+    void sequentialInsertsAdvanceTheGeneratedId() {
+        GeneratedItemEntity first = new GeneratedItemEntity("first");
+        insert(first);
+        GeneratedItemEntity second = new GeneratedItemEntity("second");
+        insert(second);
+
+        // 逐条 insert 走的是各自的 persist + 取号路径，与 insertAll 的批量路径不是同一段代码
+        assertThat(second.id()).as("第二次取号必须前进（同号说明取号被缓存或复用）").isGreaterThan(first.id());
+        assertThat(reload(second.id()).name()).isEqualTo("second");
     }
 
     @Test
@@ -71,6 +100,32 @@ abstract class GeneratedIdInsertContract {
 
         assertThat(reload(first.id()).name()).isEqualTo("first");
         assertThat(reload(second.id()).name()).isEqualTo("second");
+    }
+
+    @Test
+    @DisplayName("insert：删掉一行后继续插入，不复用已删的号")
+    void insertAfterDeleteDoesNotReuseTheDeletedId() {
+        GeneratedItemEntity first = new GeneratedItemEntity("alpha");
+        insert(first);
+        GeneratedItemEntity second = new GeneratedItemEntity("beta");
+        insert(second);
+
+        support().inTransaction(entityManager -> entityManager
+                .createQuery("delete from GeneratedItemEntity where id = :id")
+                .setParameter("id", second.id())
+                .executeUpdate());
+        support().clear();
+
+        GeneratedItemEntity third = new GeneratedItemEntity("gamma");
+        insert(third);
+
+        // 复用已删的号会让任何「按 id 记下的引用」指向另一行：这是自增列最容易被误解的语义，
+        // 而它只在「删了再插」之后才暴露（真 MySQL 的 AUTO_INCREMENT 单调前进，H2 也只在显式
+        // `restart` 后才回退，所以这条断言两边都成立）
+        assertThat(third.id()).as("已删掉的号不得被复用").isNotEqualTo(first.id()).isNotEqualTo(second.id());
+        assertThat(third.id()).isGreaterThan(first.id());
+        assertThat(reload(second.id())).as("被删的行确实不在了").isNull();
+        assertThat(reload(third.id()).name()).isEqualTo("gamma");
     }
 
     @Test
@@ -100,35 +155,33 @@ abstract class GeneratedIdInsertContract {
     }
 
     @Test
-    @DisplayName("查询：按回填的主键能取回行，排序也按主键生效")
+    @DisplayName("查询：按回填的主键能取回行；按 name 排序时列序与主键序分裂")
     void queryFindsRowsByGeneratedId() {
-        GeneratedItemEntity third = new GeneratedItemEntity("third");
-        GeneratedItemEntity first = new GeneratedItemEntity("first");
-        GeneratedItemEntity second = new GeneratedItemEntity("second");
-        // 故意乱序插入：若排序没生效，返回顺序就是插入顺序，断言会红
-        insertAll(List.of(third, first, second));
+        // 名字的字典序（alpha < mike < zulu）刻意与插入顺序（zulu, alpha, mike）相反。
+        // 主键由插入顺序发号，所以「按 id 排」的期望值与库的自然返回顺序完全重合，只有按 name 排
+        // 才能让 ORDER BY 掉不掉在结果上分开（第一版正是按 id 排，断言恒真）。
+        GeneratedItemEntity zulu = new GeneratedItemEntity("zulu");
+        GeneratedItemEntity alpha = new GeneratedItemEntity("alpha");
+        GeneratedItemEntity mike = new GeneratedItemEntity("mike");
+        insertAll(List.of(zulu, alpha, mike));
         support().clear();
 
-        // 期望值按 id 现算而不是按插入顺序写死：号段由数据库决定，插入顺序与 id 顺序未必一致
-        // （本夹具就是故意乱序插的），写死顺序会把一条无关的方言事实变成断言
-        List<Long> ascendingIds = Stream.of(third, first, second)
+        assertThat(names(query().orderBy(GeneratedItemEntity::name).asc().list()))
+                .as("按 name 升序：与插入顺序（也是主键序）不同，ORDER BY 丢了就会红")
+                .containsExactly("alpha", "mike", "zulu");
+
+        assertThat(ids(query().where(GeneratedItemEntity::id).eq(alpha.id()).list()))
+                .as("按回填的主键等值查询")
+                .containsExactly(alpha.id());
+
+        // 主键排序也钉一条：用 desc，期望是 asc 的逆序，同样不与自然返回顺序重合
+        List<Long> ascendingIds = Stream.of(zulu, alpha, mike)
                 .map(GeneratedItemEntity::id)
                 .sorted()
                 .toList();
-        assertThat(ids(operations()
-                        .query()
-                        .orderBy(GeneratedItemEntity::id)
-                        .asc()
-                        .list()))
-                .as("按主键升序返回")
-                .containsExactlyElementsOf(ascendingIds);
-
-        assertThat(ids(operations()
-                        .query()
-                        .where(GeneratedItemEntity::id)
-                        .eq(second.id())
-                        .list()))
-                .containsExactly(second.id());
+        assertThat(ids(query().orderBy(GeneratedItemEntity::id).desc().list()))
+                .as("按主键降序返回")
+                .containsExactlyElementsOf(ascendingIds.reversed());
     }
 
     private void insert(GeneratedItemEntity row) {
@@ -154,6 +207,10 @@ abstract class GeneratedIdInsertContract {
         return support().operations();
     }
 
+    private EntityQuery<GeneratedItemEntity> query() {
+        return operations().query();
+    }
+
     private void resetRows() {
         support().truncate("GeneratedItemEntity");
         support().clear();
@@ -162,6 +219,24 @@ abstract class GeneratedIdInsertContract {
 
     private static List<Long> ids(List<GeneratedItemEntity> rows) {
         return rows.stream().map(GeneratedItemEntity::id).toList();
+    }
+
+    private static List<String> names(List<GeneratedItemEntity> rows) {
+        return rows.stream().map(GeneratedItemEntity::name).toList();
+    }
+
+    /// 取 `insert into <table> ( ... )` 括号里的列清单。
+    private static List<String> insertColumns(String statement) {
+        int open = statement.indexOf('(');
+        int close = statement.indexOf(')', open + 1);
+        return Stream.of(statement.substring(open + 1, close).split(","))
+                .map(String::trim)
+                .toList();
+    }
+
+    /// 数一条语句里绑定了多少个参数（`?` 的个数）。
+    private static long countPlaceholders(String statement) {
+        return statement.chars().filter(character -> character == '?').count();
     }
 
     /// 取归一化语句里 `set` 与 `where` 之间的片段。
