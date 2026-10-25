@@ -121,7 +121,8 @@ public abstract class AssociationDifferentialTest<T extends Asset> extends Assoc
     }
 
     /// 谓词格之间的**可区分性**自检：二值域夹具下 17 个格子只产出 6 种不同结果集
-    /// （七行夹具下是 13 种），把 `gt` 渲染成 `<>`、把 `between` 渲染成 `is not null`、
+    /// （七行夹具下 15 种：只剩 `ne ≡ notIn`、`contains() ≡ isNotNull()` 两组语义本等价的
+    /// 重复，其余 13 格两两不同），把 `gt` 渲染成 `<>`、把 `between` 渲染成 `is not null`、
     /// 把 `le` 渲染成 `=`、把 `contains` 渲染成 `>=` 都能全绿。
     ///
     /// 这条用例只检查"夹具够不够刁"，不检查生产代码：夹具一旦退化回 alpha/beta 两值，

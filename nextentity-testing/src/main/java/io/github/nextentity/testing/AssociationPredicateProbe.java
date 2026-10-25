@@ -214,8 +214,9 @@ final class AssociationPredicateProbe<T extends Asset> {
     /// 每个格子的"非空 / 非全表"自检挡不住这种退化，必须逐对比较期望集合。
     ///
     /// 七行夹具下 17 格**只剩两组**同义反复，且都是语义本等价：`ne(alpha)` ≡ `notIn([alpha])`、
-    /// `notIn([])` ≡ `contains()` ≡ `isNotNull()`。其余 12 格的期望集合两两不同（本方法末尾直接
-    /// 断言去重后的数量，任何人把夹具或模式串改回退化形态都会红）。
+    /// `contains()` ≡ `isNotNull()`。其余 13 格的期望集合两两不同（本方法末尾按名字断言这两组
+    /// 就是全部重复——不写"去重后应有 N 种"这类裸数字，那种断言每加一格都要手改，而且撞车时
+    /// 只报"数量不对"、不点名是哪两格撞了）。
     ///
     /// 配对覆盖两类退化：**同一族内**（`le`→`=`、`gt`→`<>`、`ge`→`gt`、`lt`→`le`、`between`→`is not null`）
     /// 与**跨族**（`contains`→`>=`、`_` 通配→前缀匹配）。
@@ -248,12 +249,18 @@ final class AssociationPredicateProbe<T extends Asset> {
                     .as("夹具退化：`%s` 与 `%s` 的期望集合相同，这一对算子互相区分不了", left, right)
                     .isNotEqualTo(expected.get(right));
         }
-        // 逐对断言只覆盖"配对表里点到的退化"。这一条从整体上兜住：去重后的结果集数量必须与
-        // 上面点名的两组同义反复之外的规模一致——夹具或模式串被改回退化形态，这里会先红。
-        long distinct = expected.values().stream().distinct().count();
-        assertThat(distinct)
-                .as("17 格的期望集合去重后应只剩 %s 种（两组语义本等价的同义反复），实际 %s 种", 15, distinct)
-                .isEqualTo(15);
+        // 逐对断言只覆盖"配对表里点到的退化"。这一条从整体上兜住：按名字断言"重复的格组"
+        // **就是**这两组语义本等价的同义反复——夹具退化或多加一格撞车都会在这里红，
+        // 而且失败消息直接点名是哪几格撞在一起。组内按名字排序，免得断言依赖格子声明顺序。
+        Map<Set<Long>, List<String>> byExpected = new LinkedHashMap<>();
+        expected.forEach((label, ids) ->
+                byExpected.computeIfAbsent(ids, key -> new ArrayList<>()).add(label));
+        assertThat(byExpected.values().stream()
+                        .filter(labels -> labels.size() > 1)
+                        .map(labels -> labels.stream().sorted().toList())
+                        .toList())
+                .as("17 格里允许重复的只有这两组语义本等价的同义反复；出现别的重复说明夹具退化或新加的格子撞车了")
+                .containsExactlyInAnyOrder(List.of(NE_ALPHA, NOT_IN_ALPHA), List.of(CONTAINS_EMPTY, IS_NOT_NULL));
     }
 
     /// 一格的自检：先用内存 oracle 算出期望集合，再与真库结果逐元素比对。
