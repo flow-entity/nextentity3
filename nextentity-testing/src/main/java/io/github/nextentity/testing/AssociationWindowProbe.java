@@ -24,13 +24,14 @@ import org.junit.jupiter.api.DynamicTest;
 /// @param <T> 后端实体类型
 final class AssociationWindowProbe<T extends Asset> {
 
-    /// `null` 关联行（bandage）在 asc 下排最前：H2(MODE=MySQL) 与真 MySQL 实测一致，
-    /// 所以这半是中立契约。**PostgreSQL 相反**（`NULLS LAST` 是 asc 默认），换后端要按方言覆盖，
-    /// 而不是把断言放宽成「非空部分有序」——放宽之后 `null` 行排错位置就再没人管了。
-    private static final String ORDER_ASC_NULLS_FIRST = "orderBy(owner.name) asc 把 null 关联排在首位";
+    /// `null` 关联行在 asc 下的位置**由后端方言决定**（默认 MySQL：排最前；PostgreSQL：排最后），
+    /// 期望序列由 {@link AssociationJoinOracle#orderedPairs} 按 {@link NullOrdering} 算出，
+    /// 所以用例名不再写死「null 在前」，否则换方言后名字会撒谎。断言仍是**完整序列**，
+    /// 不放宽成「非空部分有序」——放宽之后 `null` 行排错位置就再没人管了。
+    private static final String ORDER_ASC_FULL_SEQUENCE = "orderBy(owner.name) asc 的完整序列（含 null 关联行）";
 
-    /// desc 下 `null` 关联行排最后（同一口径的另一面）。
-    private static final String ORDER_DESC_NULLS_LAST = "orderBy(owner.name) desc 把 null 关联排在末位";
+    /// desc 下 `null` 关联行的位置（同一口径的另一面）。
+    private static final String ORDER_DESC_FULL_SEQUENCE = "orderBy(owner.name) desc 的完整序列（含 null 关联行）";
 
     /// join 列升序 + 主键**降序**：同一 owner 的两行必须跟着主键走。
     ///
@@ -63,26 +64,31 @@ final class AssociationWindowProbe<T extends Asset> {
 
     private final PathRef<T, Long> idRef;
 
+    /// 后端升序时 `null` 关联的相对位置（方言特性，由 {@link AssociationDifferentialTest} 的构造器传入）。
+    private final NullOrdering nullOrdering;
+
     AssociationWindowProbe(
             List<AssetFixture> rows,
             Supplier<EntityQuery<T>> query,
             StringPath<T> ownerNamePath,
-            PathRef<T, Long> idRef) {
+            PathRef<T, Long> idRef,
+            NullOrdering nullOrdering) {
         this.rows = rows;
         this.query = query;
         this.ownerNamePath = ownerNamePath;
         this.idRef = idRef;
+        this.nullOrdering = nullOrdering;
     }
 
     /// 三条排序用例：asc 完整序列、desc 完整序列、join 列升序 + 主键降序的双键完整序列。
     ///
     /// @return 每条排序形态一条动态用例
     Stream<DynamicTest> orderTests() {
-        List<Tuple2<Long, String>> ascending = AssociationJoinOracle.orderedPairs(rows, true, true);
-        List<Tuple2<Long, String>> descending = AssociationJoinOracle.orderedPairs(rows, false, true);
-        List<Tuple2<Long, String>> tieBroken = AssociationJoinOracle.orderedPairs(rows, true, false);
+        List<Tuple2<Long, String>> ascending = AssociationJoinOracle.orderedPairs(rows, nullOrdering, true, true);
+        List<Tuple2<Long, String>> descending = AssociationJoinOracle.orderedPairs(rows, nullOrdering, false, true);
+        List<Tuple2<Long, String>> tieBroken = AssociationJoinOracle.orderedPairs(rows, nullOrdering, true, false);
         return Stream.of(
-                DynamicTest.dynamicTest(ORDER_ASC_NULLS_FIRST, () -> assertThat(query.get()
+                DynamicTest.dynamicTest(ORDER_ASC_FULL_SEQUENCE, () -> assertThat(query.get()
                                 .select(idRef, ownerNamePath)
                                 .orderBy(ownerNamePath)
                                 .asc()
@@ -91,7 +97,7 @@ final class AssociationWindowProbe<T extends Asset> {
                                 .list())
                         .as("`orderBy(owner.name, id) asc` 的完整序列（含 null）")
                         .containsExactlyElementsOf(ascending)),
-                DynamicTest.dynamicTest(ORDER_DESC_NULLS_LAST, () -> assertThat(query.get()
+                DynamicTest.dynamicTest(ORDER_DESC_FULL_SEQUENCE, () -> assertThat(query.get()
                                 .select(idRef, ownerNamePath)
                                 .orderBy(ownerNamePath)
                                 .desc()

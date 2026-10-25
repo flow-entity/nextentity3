@@ -20,10 +20,11 @@ import org.junit.jupiter.api.TestFactory;
 ///
 /// 差分分工（两条路径不相交）：
 /// - 真库一侧：`select(idRef()).orderBy(...).asc()/desc()` 累积成 `ORDER BY`；
-/// - 内存一侧：{@link Key#ascending()} 直接读 {@link ConsistencyTestBase#fixtureRows()} 的原始值自己排，
+/// - 内存一侧：{@link Key#ascending(NullOrdering)} 直接读 {@link ConsistencyTestBase#fixtureRows()} 的原始值自己排，
 ///   不经过 nextentity 的任何生产代码，也不读后端返回顺序。
 ///
-/// **`null` 的排序位置（本基类钉的口径）**：`null` 视为最小值，即升序在前、降序在后。
+/// **`null` 的排序位置**：本基类不内建常量，读 {@link ConsistencyTestBase#nullOrdering()} 这个由后端适配器
+/// 声明的方言事实（默认 MySQL 家族：升序在前、降序在后）。
 /// 这条不是猜的，是两套装置逐格实测一致的结果（H2 `MODE=MySQL` 与 MySQL 8.0.18 上
 /// `score` / `score2` / `note` 三个可空列同结果）：
 /// ```text
@@ -33,9 +34,11 @@ import org.junit.jupiter.api.TestFactory;
 /// note   asc  → 1,4,2,3   （id=1、4 的 note 是 null，排最前；组内按 id）
 /// ```
 /// 注意这条口径**属于方言语义**，不是 SQL 标准：PostgreSQL 默认是「升序 null 在后」，
-/// 与这里相反。所以本基类钉的是「MySQL 家族（含 H2 的 MySQL 兼容模式）把 null 当最小值」，
-/// 换到 null 排序相反的后端时，正确做法是按方言覆盖该格（或把它移进后端特定用例），
-/// 而不是放宽断言。
+/// 与这里相反。所以它不是内建在本类里的常量，而是读 {@link ConsistencyTestBase#nullOrdering()}
+/// 这个**显式声明的后端特性**（默认 MySQL 家族：升序 null 当最小值）。换到 null 排序相反的后端时，
+/// 由后端适配器覆盖那一处；**不要**放宽断言（改成「非空部分有序」）——那样 null 行排错位置就再没人管了。
+/// 方言矩阵（DESIGN §5）实测过：把它覆盖成 {@link NullOrdering#NULLS_LAST} 后，同一套 16 格在
+/// PostgreSQL 方言下全绿；用默认值跑 PostgreSQL 方言则这 16 格里带可空键的格子全红。
 ///
 /// **枚举键按存储文本排序**：`status` 在 JPA 侧是 `@Enumerated(STRING)`（与 point-mall 的
 /// 50/51 处映射一致），因此库里的顺序是 `ACTIVE < DONE < NEW`（字典序），**不是**枚举的
@@ -121,17 +124,20 @@ public abstract class SortDifferentialTest<T extends Item> extends ConsistencyTe
 
     /// 内存一侧：按规格把键依次串成比较器。
     ///
-    /// 降序用 `reversed()` 而不是另写一份比较器：整序取反后，`nullsFirst` 自然变成
-    /// 「降序时 null 在后」，与实测的库行为一致，也不用维护两套 null 规则。
+    /// 降序用 `reversed()` 而不是另写一份比较器：整序取反后，「升序 null 在前」自然变成
+    /// 「降序 null 在后」，两族方言都成立，也不用维护两套 null 规则。
+    ///
+    /// `null` 的位置取自 {@link ConsistencyTestBase#nullOrdering()}（后端方言特性），
+    /// 不在本类里写死某一族的默认值。
     ///
     /// @param spec 排序规格
     /// @return 该规格在夹具上的比较器
-    private static Comparator<FixtureRow> comparator(SortSpec spec) {
+    private Comparator<FixtureRow> comparator(SortSpec spec) {
         Comparator<FixtureRow> combined = null;
         for (Order order : spec.orders()) {
             Comparator<FixtureRow> keyComparator = order.ascending()
-                    ? order.key().ascending()
-                    : order.key().ascending().reversed();
+                    ? order.key().ascending(nullOrdering())
+                    : order.key().ascending(nullOrdering()).reversed();
             combined = combined == null ? keyComparator : combined.thenComparing(keyComparator);
         }
         return combined;
@@ -185,17 +191,19 @@ public abstract class SortDifferentialTest<T extends Item> extends ConsistencyTe
         NOTE,
         STATUS;
 
-        /// 该列升序的比较器（可空列把 `null` 当最小值）。
+        /// 该列升序的比较器（可空列按后端方言决定 `null` 的位置）。
         ///
+        /// @param nullOrdering 后端升序时 `null` 的相对位置
         /// @return 升序比较器
-        Comparator<FixtureRow> ascending() {
+        Comparator<FixtureRow> ascending(NullOrdering nullOrdering) {
+            Comparator<Integer> byNumber = nullOrdering.ascending(Comparator.<Integer>naturalOrder());
+            Comparator<String> byText = nullOrdering.ascending(Comparator.<String>naturalOrder());
             return switch (this) {
                 case ID -> Comparator.comparing(FixtureRow::id);
                 case NAME -> Comparator.comparing(FixtureRow::name);
-                case SCORE -> Comparator.comparing(FixtureRow::score, Comparator.nullsFirst(Comparator.naturalOrder()));
-                case SCORE2 ->
-                    Comparator.comparing(FixtureRow::score2, Comparator.nullsFirst(Comparator.naturalOrder()));
-                case NOTE -> Comparator.comparing(FixtureRow::note, Comparator.nullsFirst(Comparator.naturalOrder()));
+                case SCORE -> Comparator.comparing(FixtureRow::score, byNumber);
+                case SCORE2 -> Comparator.comparing(FixtureRow::score2, byNumber);
+                case NOTE -> Comparator.comparing(FixtureRow::note, byText);
                 case STATUS -> Comparator.comparing(row -> row.status().name());
             };
         }

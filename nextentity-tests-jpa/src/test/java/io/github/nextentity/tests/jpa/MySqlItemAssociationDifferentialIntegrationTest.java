@@ -5,6 +5,8 @@ import io.github.nextentity.api.PathRef;
 import io.github.nextentity.api.StringPath;
 import io.github.nextentity.testing.AssetFixture;
 import io.github.nextentity.testing.AssociationDifferentialTest;
+import io.github.nextentity.tests.jpa.support.HibernateHarness;
+import io.github.nextentity.tests.jpa.support.HibernateHarness.H2Mode;
 import io.github.nextentity.tests.jpa.support.MySqlAssetSupport;
 import io.github.nextentity.tests.jpa.support.MySqlL4Gate;
 import java.util.List;
@@ -22,6 +24,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 @Tag("container")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class MySqlItemAssociationDifferentialIntegrationTest extends AssociationDifferentialTest<AssetEntity> {
+
+    /// 方言事实从 `HibernateHarness` 的一处声明传进来，基类不内建某一方言的 NULL 序。
+    MySqlItemAssociationDifferentialIntegrationTest() {
+        // 钉 MYSQL：容器通道连的是真 MySQL，与 `-Dnextentity.h2mode`（H2 兼容模式开关）无关。
+        super(HibernateHarness.nullOrdering(H2Mode.MYSQL));
+    }
 
     private final MySqlAssetSupport support = new MySqlAssetSupport();
 

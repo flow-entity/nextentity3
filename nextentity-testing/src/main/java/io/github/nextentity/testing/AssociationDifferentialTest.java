@@ -77,6 +77,19 @@ public abstract class AssociationDifferentialTest<T extends Asset> extends Assoc
             new AssetFixture(CLAMP_ID, "clamp", AMBER),
             new AssetFixture(CHAIN_ID, "chain", ALPS));
 
+    private final NullOrdering nullOrdering;
+
+    /// 后端在**升序**时把 `null` 关联放在哪一侧（方言特性）。
+    ///
+    /// 本族的排序/分页差分 oracle 全部读这一处：`ORDER BY owner.name` 里「没有关联的行」排最前还是
+    /// 最后，是后端事实而不是可推导的语义，写死在基类里等于把某一个方言的假设冒充成规格。
+    ///
+    /// @param nullOrdering 升序时 `null` 的相对位置（后端方言）
+    ///
+    protected AssociationDifferentialTest(NullOrdering nullOrdering) {
+        this.nullOrdering = nullOrdering;
+    }
+
     /// 夹具的唯一真身：内存侧直接用它求值，落库也是它。
     ///
     /// `final` 是刻意的：一旦子类能覆写它，内存侧与落库侧就有了两处定义，错的夹具配对的期望值会静默变绿。
@@ -156,7 +169,8 @@ public abstract class AssociationDifferentialTest<T extends Asset> extends Assoc
     /// @return 每条排序规格一条动态用例
     @TestFactory
     Stream<DynamicTest> nestedOrderByPinsCompleteSequence() {
-        return new AssociationWindowProbe<>(FIXTURE_ROWS, this::query, ownerNamePath(), idRef()).orderTests();
+        return new AssociationWindowProbe<>(FIXTURE_ROWS, this::query, ownerNamePath(), idRef(), nullOrdering)
+                .orderTests();
     }
 
     /// 嵌套条件 + 分页：5 格（首页 / `limit` 超剩余 / `offset` 等于 total / `offset + limit` 跨尾部 /
@@ -165,7 +179,8 @@ public abstract class AssociationDifferentialTest<T extends Asset> extends Assoc
     /// @return 每格分页一条动态用例
     @TestFactory
     Stream<DynamicTest> nestedSliceMatchesMemoryWindow() {
-        return new AssociationWindowProbe<>(FIXTURE_ROWS, this::query, ownerNamePath(), idRef()).sliceTests();
+        return new AssociationWindowProbe<>(FIXTURE_ROWS, this::query, ownerNamePath(), idRef(), nullOrdering)
+                .sliceTests();
     }
 
     /// 按 join 列聚合：分组计数两格、全表去重计数、极值两格、`null` 域两格，每格一条动态用例。

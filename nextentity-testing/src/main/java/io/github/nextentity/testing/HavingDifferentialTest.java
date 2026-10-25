@@ -108,7 +108,11 @@ public abstract class HavingDifferentialTest<T extends Item> extends Consistency
                                 .asc()
                                 .list(),
                         () -> Oracle.byNote(
-                                fixtureRows(), anyRow(), Oracle::countOf, members -> Oracle.countOf(members) > 1)),
+                                fixtureRows(),
+                                nullOrdering(),
+                                anyRow(),
+                                Oracle::countOf,
+                                members -> Oracle.countOf(members) > 1)),
                 cell(
                         "having count(id) >= 2",
                         () -> query().select(
@@ -119,7 +123,11 @@ public abstract class HavingDifferentialTest<T extends Item> extends Consistency
                                 .asc()
                                 .list(),
                         () -> Oracle.byNote(
-                                fixtureRows(), anyRow(), Oracle::countOf, members -> Oracle.countOf(members) >= 2)),
+                                fixtureRows(),
+                                nullOrdering(),
+                                anyRow(),
+                                Oracle::countOf,
+                                members -> Oracle.countOf(members) >= 2)),
                 cell(
                         "having count(id) >= 1（一个组都不排除）",
                         () -> query().select(
@@ -130,7 +138,11 @@ public abstract class HavingDifferentialTest<T extends Item> extends Consistency
                                 .asc()
                                 .list(),
                         () -> Oracle.byNote(
-                                fixtureRows(), anyRow(), Oracle::countOf, members -> Oracle.countOf(members) >= 1)),
+                                fixtureRows(),
+                                nullOrdering(),
+                                anyRow(),
+                                Oracle::countOf,
+                                members -> Oracle.countOf(members) >= 1)),
                 cell(
                         "两次 having 按 AND 累加（count>1 且 sum>20 → 空集）",
                         () -> query().select(
@@ -141,6 +153,7 @@ public abstract class HavingDifferentialTest<T extends Item> extends Consistency
                                 .list(),
                         () -> Oracle.byNote(
                                 fixtureRows(),
+                                nullOrdering(),
                                 anyRow(),
                                 Oracle::countOf,
                                 members -> Oracle.countOf(members) > 1
@@ -161,6 +174,7 @@ public abstract class HavingDifferentialTest<T extends Item> extends Consistency
                                 .list(),
                         () -> Oracle.byNote(
                                 fixtureRows(),
+                                nullOrdering(),
                                 anyRow(),
                                 members -> Oracle.sumOf(members, FixtureRow::score),
                                 members -> greaterThan(Oracle.sumOf(members, FixtureRow::score), 20))),
@@ -175,6 +189,7 @@ public abstract class HavingDifferentialTest<T extends Item> extends Consistency
                                 .list(),
                         () -> Oracle.byNote(
                                 fixtureRows(),
+                                nullOrdering(),
                                 anyRow(),
                                 members -> Oracle.avgOf(members, FixtureRow::score),
                                 members -> greaterThan(Oracle.avgOf(members, FixtureRow::score), 15))),
@@ -189,6 +204,7 @@ public abstract class HavingDifferentialTest<T extends Item> extends Consistency
                                 .list(),
                         () -> Oracle.byNote(
                                 fixtureRows(),
+                                nullOrdering(),
                                 anyRow(),
                                 members -> Oracle.minOf(members, FixtureRow::score),
                                 members -> atLeast(Oracle.minOf(members, FixtureRow::score), 20))),
@@ -203,6 +219,7 @@ public abstract class HavingDifferentialTest<T extends Item> extends Consistency
                                 .list(),
                         () -> Oracle.byNote(
                                 fixtureRows(),
+                                nullOrdering(),
                                 anyRow(),
                                 members -> Oracle.maxOf(members, FixtureRow::score),
                                 members -> lessThan(Oracle.maxOf(members, FixtureRow::score), 20))));
@@ -220,7 +237,7 @@ public abstract class HavingDifferentialTest<T extends Item> extends Consistency
                                 .orderBy(Path.of(noteRef()))
                                 .asc()
                                 .list(),
-                        () -> Oracle.byNote(fixtureRows(), anyRow(), Oracle::countOf, members -> true)),
+                        () -> Oracle.byNote(fixtureRows(), nullOrdering(), anyRow(), Oracle::countOf, members -> true)),
                 cell(
                         "having sum(score2) > 0（n2 组聚合为 NULL → UNKNOWN → 排除）",
                         () -> query().select(
@@ -232,6 +249,7 @@ public abstract class HavingDifferentialTest<T extends Item> extends Consistency
                                 .list(),
                         () -> Oracle.byNote(
                                 fixtureRows(),
+                                nullOrdering(),
                                 anyRow(),
                                 members -> Oracle.sumOf(members, FixtureRow::score2),
                                 members -> greaterThan(Oracle.sumOf(members, FixtureRow::score2), 0))),
@@ -244,6 +262,7 @@ public abstract class HavingDifferentialTest<T extends Item> extends Consistency
                                 .list(),
                         () -> Oracle.byNote(
                                 fixtureRows(),
+                                nullOrdering(),
                                 anyRow(),
                                 Oracle::countOf,
                                 members -> Oracle.countOf(members) > 1
@@ -267,6 +286,7 @@ public abstract class HavingDifferentialTest<T extends Item> extends Consistency
                                 .list(),
                         () -> Oracle.byNote(
                                 fixtureRows(),
+                                nullOrdering(),
                                 scoredAtLeast20(),
                                 Oracle::countOf,
                                 members -> Oracle.countOf(members) >= 1)),
@@ -281,6 +301,7 @@ public abstract class HavingDifferentialTest<T extends Item> extends Consistency
                                 .list(),
                         () -> Oracle.byNote(
                                 fixtureRows(),
+                                nullOrdering(),
                                 scoredAtLeast20(),
                                 Oracle::countOf,
                                 members -> Oracle.countOf(members) >= 2)),
@@ -297,7 +318,11 @@ public abstract class HavingDifferentialTest<T extends Item> extends Consistency
                                 .asc()
                                 .list(),
                         () -> Oracle.byNoteAndStatus(
-                                fixtureRows(), anyRow(), Oracle::countOf, members -> Oracle.countOf(members) >= 1)),
+                                fixtureRows(),
+                                nullOrdering(),
+                                anyRow(),
+                                Oracle::countOf,
+                                members -> Oracle.countOf(members) >= 1)),
                 cell(
                         "无 groupBy：having count(id) > 3（全表聚合留一行）",
                         () -> query().select(Path.of(idRef()).count())
@@ -365,8 +390,9 @@ public abstract class HavingDifferentialTest<T extends Item> extends Consistency
     /// 分组用 `LinkedHashMap` 手工做而不是 `Collectors.groupingBy`：后者对 `null` 键直接抛
     /// `NullPointerException`，而 `note` 的 `null` 组正是本矩阵的关键格。
     ///
-    /// 排序规则与真库侧的 `orderBy(note).asc()` 对齐：`note` 的 `null` 排在**最前**
-    /// （实测 H2 `MODE=MySQL` 与 MySQL 8.0.18 一致；`SortDifferentialTest` 里另有专门一格钉这条）。
+    /// 排序规则与真库侧的 `orderBy(note).asc()` 对齐，但**不内建**哪一族方言的 `null` 位置：
+    /// `null` 组落在最前还是最后，由调用方传进来的 {@link NullOrdering} 决定（默认 MySQL 家族：
+    /// `null` 在前；PostgreSQL 方言下为在后）。`SortDifferentialTest` 里另有专门一格钉这条口径。
     private static final class Oracle {
 
         private Oracle() {}
@@ -374,13 +400,15 @@ public abstract class HavingDifferentialTest<T extends Item> extends Consistency
         /// 按 `note` 分组：过滤 → 分组 → 聚合 → `having` → 排序。
         ///
         /// @param rows 夹具行（来自 {@link ConsistencyTestBase#fixtureRows()}，与灌进后端的是同一份）
+        /// @param nullOrdering 组键升序时 `null` 组的相对位置（后端方言）
         /// @param rowFilter 行级条件（等价于 `where`），在分组**之前**执行
         /// @param aggregate 聚合函数（等价于 `select` 里的聚合表达式）
         /// @param keep      组级条件（等价于 `having`），在分组**之后**执行，入参是该组全部行
         /// @param <V>       聚合结果类型
-        /// @return 期望行，按 `note` 升序、`null` 在前
+        /// @return 期望行，按 `note` 升序，`null` 组的位置由 `nullOrdering` 决定
         static <V> List<Tuple2<String, V>> byNote(
                 List<FixtureRow> rows,
+                NullOrdering nullOrdering,
                 Predicate<FixtureRow> rowFilter,
                 Function<List<FixtureRow>, V> aggregate,
                 Predicate<List<FixtureRow>> keep) {
@@ -390,20 +418,23 @@ public abstract class HavingDifferentialTest<T extends Item> extends Consistency
                     expected.add(new Tuple2<>(key, aggregate.apply(members)));
                 }
             });
-            expected.sort(Comparator.comparing(Tuple2::get0, Comparator.nullsFirst(Comparator.naturalOrder())));
+            expected.sort(
+                    Comparator.comparing(Tuple2::get0, nullOrdering.ascending(Comparator.<String>naturalOrder())));
             return expected;
         }
 
         /// 按 `note` + `status` 分组，其余同上。
         ///
         /// @param rows 夹具行（来自 {@link ConsistencyTestBase#fixtureRows()}）
+        /// @param nullOrdering 组键升序时 `null` 组的相对位置（后端方言）
         /// @param rowFilter 行级条件
         /// @param aggregate 聚合函数
         /// @param keep      组级条件
         /// @param <V>       聚合结果类型
-        /// @return 期望行，按 `note` 升序、`null` 在前
+        /// @return 期望行，按 `note` 升序，`null` 组的位置由 `nullOrdering` 决定
         static <V> List<Tuple3<String, ItemStatus, V>> byNoteAndStatus(
                 List<FixtureRow> rows,
+                NullOrdering nullOrdering,
                 Predicate<FixtureRow> rowFilter,
                 Function<List<FixtureRow>, V> aggregate,
                 Predicate<List<FixtureRow>> keep) {
@@ -420,7 +451,8 @@ public abstract class HavingDifferentialTest<T extends Item> extends Consistency
                     expected.add(new Tuple3<>((String) key.get(0), (ItemStatus) key.get(1), aggregate.apply(members)));
                 }
             });
-            expected.sort(Comparator.comparing(Tuple3::get0, Comparator.nullsFirst(Comparator.naturalOrder())));
+            expected.sort(
+                    Comparator.comparing(Tuple3::get0, nullOrdering.ascending(Comparator.<String>naturalOrder())));
             return expected;
         }
 

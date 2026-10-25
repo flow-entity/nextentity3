@@ -66,18 +66,20 @@ final class AssociationJoinOracle {
 
     /// 内存侧的排序结果：`(id, ownerName)` 序列，`ownerName` 可为 `null`。
     ///
-    /// 口径：`null` 当**最小值**（H2 `MODE=MySQL` 与 MySQL 8.0 实测一致），相等时按主键兜底成全序。
-    /// 这是要钉的方言口径，不是实现细节；**PostgreSQL 相反**，换后端要按方言覆盖而不是放宽断言。
+    /// `null` 关联排在哪一侧由传入的 {@link NullOrdering} 决定（默认 MySQL 家族：升序在前；
+    /// PostgreSQL 方言为升序在后）。这是要钉的**方言口径**，不是实现细节：换后端时按方言覆盖，
+    /// 而不是把断言放宽成「非空部分有序」——放宽之后 `null` 行排错位置就再没人管了。
     ///
     /// 投影两列而不是一列，是因为断言要同时看出「排的是哪一行」和「那行的 join 值是什么」。
     ///
     /// @param rows          夹具
+    /// @param nullOrdering  升序时 `null` 关联的相对位置（后端方言）
     /// @param ownerAscending join 列是否升序
     /// @param idAscending    主键是否升序
     /// @return 有序的 `(id, ownerName)` 序列
     static List<Tuple2<Long, String>> orderedPairs(
-            List<AssetFixture> rows, boolean ownerAscending, boolean idAscending) {
-        Comparator<String> byName = Comparator.nullsFirst(Comparator.<String>naturalOrder());
+            List<AssetFixture> rows, NullOrdering nullOrdering, boolean ownerAscending, boolean idAscending) {
+        Comparator<String> byName = nullOrdering.ascending(Comparator.<String>naturalOrder());
         Comparator<AssetFixture> byOwner = Comparator.comparing(AssetFixture::ownerName, byName);
         Comparator<AssetFixture> byId = Comparator.comparingLong(AssetFixture::id);
         // 降序用 Comparator#reversed 而不是对 compare 结果取负：取负会丢掉 int 的 MIN_VALUE 边界，

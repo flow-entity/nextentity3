@@ -74,6 +74,18 @@ public abstract class ConsistencyTestBase<T extends Item> {
     /// @return 一致性能力集：夹具与查询入口都由它提供
     protected abstract ConsistencySupport<T> support();
 
+    /// 后端在**升序**时把 `null` 放在哪一侧（方言特性）。
+    ///
+    /// 排序/分组差分的 oracle 全部读这一处，而不是各自内建一个方言假设。默认取
+    /// [NullOrdering#NULLS_FIRST]（MySQL 与 H2 `MODE=MySQL` 的默认行为，也是当前唯一的第一方后端）；
+    /// 接第二后端时由后端适配器覆盖，**不要**改用放宽断言（「非空部分有序」）绕过——
+    /// 放宽之后 `null` 行排错位置就再没人管了。
+    ///
+    /// @return 升序时 `null` 的相对位置
+    protected NullOrdering nullOrdering() {
+        return NullOrdering.NULLS_FIRST;
+    }
+
     /// 全新的查询入口。
     ///
     /// @return 全新的查询入口：条件不得跨用例累积

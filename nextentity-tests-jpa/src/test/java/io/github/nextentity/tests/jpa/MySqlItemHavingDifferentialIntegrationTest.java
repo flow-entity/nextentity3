@@ -2,6 +2,7 @@ package io.github.nextentity.tests.jpa;
 
 import io.github.nextentity.testing.ConsistencySupport;
 import io.github.nextentity.testing.HavingDifferentialTest;
+import io.github.nextentity.testing.NullOrdering;
 import io.github.nextentity.tests.jpa.support.MySqlItemSupport;
 import io.github.nextentity.tests.jpa.support.MySqlL4Gate;
 import org.junit.jupiter.api.AfterAll;
@@ -24,6 +25,14 @@ class MySqlItemHavingDifferentialIntegrationTest extends HavingDifferentialTest<
     @Override
     protected ConsistencySupport<ItemEntity> support() {
         return support;
+    }
+
+    /// 这一格连的是**真 MySQL**，NULL 序因此与 `-Dnextentity.h2mode` 无关：
+    /// 带 `-Dnextentity.h2mode=postgresql` 跑容器通道时，若沿用属性读出的值，
+    /// 排序 oracle 会用 `NULLS_LAST` 去比真 MySQL 的 `NULLS_FIRST`，整族假红。
+    @Override
+    protected NullOrdering nullOrdering() {
+        return NullOrdering.NULLS_FIRST;
     }
 
     @AfterAll
