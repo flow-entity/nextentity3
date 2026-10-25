@@ -56,7 +56,7 @@ final class AssociationPredicateProbe<T extends Asset> {
 
     private static final String LIKE_AL_PREFIX = "like(al%)";
 
-    private static final String LIKE_UNDERSCORE = "like(_lpha)";
+    private static final String LIKE_UNDERSCORE = "like(a___)";
 
     private static final String GT_ALPHA = "gt(alpha)";
 
@@ -72,7 +72,11 @@ final class AssociationPredicateProbe<T extends Asset> {
     /// 就地重复会被 PMD 的 `AvoidDuplicateLiterals`（阈值 2）拦，所以集中到一处。
     private static final String LIKE_AL = "al%";
 
-    private static final String LIKE_UNDERSCORE_CHARS = "_lpha";
+    /// 下划线通配格的模式串：四字符、以 `a` 开头，只命中 `alps`，集合 `{7}`。
+    ///
+    /// 早先用的是 `_lpha`：它只命中 `alpha`，集合 `{1,2}` 与 `eq(alpha)` **完全相同**——
+    /// 那样把 `like` 渲染成 `=` 全绿。换成 `a___` 后与任何比较格都不同集合。
+    private static final String LIKE_UNDERSCORE_CHARS = "a___";
 
     /// 子串格用的固定子串：只出现在 `amber` 里，命中集合 `{6}`。
     ///
@@ -206,9 +210,12 @@ final class AssociationPredicateProbe<T extends Asset> {
     /// 这不是在验证生产代码，而是在验证**夹具够不够刁**。夹具只有 alpha/beta 两个非空取值时：
     /// `gt(alpha)` 与 `ne(alpha)` 都只命中 beta 那行、`le(alpha)` 与 `eq(alpha)` 都是 alpha 那两行、
     /// `between(alpha,beta)` 等于 `isNotNull`、`like("al%")` 与 `like("_lpha")` 同集合——
-    /// 于是把 `gt` 渲染成 `<>`、把 `between` 渲染成 `is not null`、把 `_` 通配丢掉，17 个格子全绿
-    /// （四行夹具下 17 格只产出 6 种不同结果集，七行夹具下是 13 种）。
+    /// 于是把 `gt` 渲染成 `<>`、把 `between` 渲染成 `is not null`、把 `_` 通配丢掉，17 个格子全绿。
     /// 每个格子的"非空 / 非全表"自检挡不住这种退化，必须逐对比较期望集合。
+    ///
+    /// 七行夹具下 17 格**只剩两组**同义反复，且都是语义本等价：`ne(alpha)` ≡ `notIn([alpha])`、
+    /// `notIn([])` ≡ `contains()` ≡ `isNotNull()`。其余 12 格的期望集合两两不同（本方法末尾直接
+    /// 断言去重后的数量，任何人把夹具或模式串改回退化形态都会红）。
     ///
     /// 配对覆盖两类退化：**同一族内**（`le`→`=`、`gt`→`<>`、`ge`→`gt`、`lt`→`le`、`between`→`is not null`）
     /// 与**跨族**（`contains`→`>=`、`_` 通配→前缀匹配）。
@@ -230,6 +237,8 @@ final class AssociationPredicateProbe<T extends Asset> {
                 List.of(BETWEEN_ALPHA_BETA, IS_NOT_NULL),
                 // `_` 通配被当成前缀匹配：需要共享前缀但长度不同的取值（alps）
                 List.of(LIKE_AL_PREFIX, LIKE_UNDERSCORE),
+                // `like` 被渲染成 `=`：模式串必须不落在任何比较格的集合上（a___ vs alpha）
+                List.of(EQ_ALPHA, LIKE_UNDERSCORE),
                 // `contains` 被渲染成 `>=`：子串格与比较格必须命中不同集合（amber vs beta）
                 List.of(CONTAINS_AM, GE_BETA));
         for (List<String> pair : pairs) {
@@ -239,6 +248,12 @@ final class AssociationPredicateProbe<T extends Asset> {
                     .as("夹具退化：`%s` 与 `%s` 的期望集合相同，这一对算子互相区分不了", left, right)
                     .isNotEqualTo(expected.get(right));
         }
+        // 逐对断言只覆盖"配对表里点到的退化"。这一条从整体上兜住：去重后的结果集数量必须与
+        // 上面点名的两组同义反复之外的规模一致——夹具或模式串被改回退化形态，这里会先红。
+        long distinct = expected.values().stream().distinct().count();
+        assertThat(distinct)
+                .as("17 格的期望集合去重后应只剩 %s 种（两组语义本等价的同义反复），实际 %s 种", 15, distinct)
+                .isEqualTo(15);
     }
 
     /// 一格的自检：先用内存 oracle 算出期望集合，再与真库结果逐元素比对。
