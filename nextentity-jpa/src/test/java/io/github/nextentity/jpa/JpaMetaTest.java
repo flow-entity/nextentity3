@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.core.meta.EntityAttribute;
+import io.github.nextentity.jpa.entity.Article;
 import io.github.nextentity.jpa.entity.BaseRecord;
 import io.github.nextentity.jpa.entity.DerivedRecord;
 import io.github.nextentity.jpa.entity.ShopOrder;
@@ -14,12 +15,15 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/// `JpaMeta.association` 与 `JpaEntityAttribute.type` 的两侧。
+/// `JpaMeta.association` / `JpaMeta.pluralAssociation` 与 `JpaEntityAttribute.type` 的两侧。
 ///
 /// 守护的变异体：
-/// - `meta/JpaMeta.java:55`：集合关联分支的 `return true` 改成 `false`。现有实体只有
-///   `@ManyToOne`（走 `SingularAttribute#isAssociation()`），`PluralAttribute` 分支零覆盖，
+/// - `meta/JpaMeta.java` 的 `association` 里集合关联分支的 `return true` 改成 `false`。现有实体
+///   只有 `@ManyToOne`（走 `SingularAttribute#isAssociation()`），`PluralAttribute` 分支零覆盖，
 ///   所以这里加一个 `@OneToMany` 属性（`VersionedLedger#entries`）。
+/// - `meta/JpaMeta.java` 的 `pluralAssociation` 整个判定：它是 `JpaPaths` 拒绝集合关联路径的
+///   唯一依据，恒真/恒假都会造成「过度拒绝」或「静默 join 出错数」，见
+///   [JpaPluralAssociationRejectionTest]。
 /// - `meta/JpaEntityAttribute.java:41`：`type()` 返回 `null`。属性类型此前没有任何调用点。
 /// - `meta/JpaEntityAttribute.java:22`：`resolveField` 的循环只查实体自身、不向父类上溯。
 ///   现有实体的字段都声明在自己身上，继承映射这条路径零覆盖，所以这里用 `@MappedSuperclass`
@@ -38,6 +42,22 @@ class JpaMetaTest extends JpaTestSupport {
         assertThat(meta().association(ShopOrder.class, "customer")).isTrue();
         assertThat(meta().association(ShopOrder.class, "amount")).isFalse();
         assertThat(meta().association(ShopOrder.class, "version")).isFalse();
+    }
+
+    @Test
+    @DisplayName("pluralAssociation：只有集合关联为 true，单值关联与普通列都为 false")
+    void pluralAssociationDistinguishesCollectionFromSingularAssociation() {
+        assertThat(meta().pluralAssociation(VersionedLedger.class, "entries")).isTrue();
+        assertThat(meta().pluralAssociation(Article.class, "tags")).isTrue();
+
+        // 反向控制：判据若写成恒真（或把 association 换成 pluralAssociation），上面两条照样绿，
+        // 而 JpaPaths 会把每个 @ManyToOne 路径一并拒掉——所有嵌套路径查询集体失效。
+        assertThat(meta().pluralAssociation(VersionedEntry.class, "ledger")).isFalse();
+        assertThat(meta().pluralAssociation(ShopOrder.class, "customer")).isFalse();
+        assertThat(meta().pluralAssociation(ShopOrder.class, "amount")).isFalse();
+
+        // 两个判据必须分得开：同一属性 association=true、pluralAssociation=false
+        assertThat(meta().association(ShopOrder.class, "customer")).isTrue();
     }
 
     @Test
