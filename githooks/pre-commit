@@ -25,5 +25,5 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-echo "✅ 格式 + 门禁通过"
+echo "✅ 格式 + 门禁通过（L1–L3；容器通道未强制，Docker 不可用时 L4 计为 skip，发版前请手工加 -Dnextentity.requireContainer=true）"
 echo ""
