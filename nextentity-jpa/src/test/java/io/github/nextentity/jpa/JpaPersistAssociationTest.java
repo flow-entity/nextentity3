@@ -12,7 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /// `exec/JpaPersistExecutor.setValues` 跳过关联属性的**可观测后果**：`update(entity)` 不写
-/// `@ManyToOne` / 集合关联列（2.2.3 同样只更新基本属性），且**不报错**。
+/// `@ManyToOne` 关联列（2.2.3 同样只更新基本属性），且**不报错**。
 ///
 /// 这条契约此前没有任何用例钉住，而它是"静默不落库"的典型形状：改 `order.customer` 后调用
 /// `update`，SQL 里既没有 `customer_id` 也没有异常，调用方以为改成功了。要钉两层：
@@ -21,6 +21,9 @@ import org.junit.jupiter.api.Test;
 /// 2. 同一行的基本属性**照常**更新（跳过关联不能顺带把整条 `UPDATE` 也跳掉）。
 ///
 /// 第 2 层不可省：只断第 1 层时，把 `update` 整个改成空实现也能过。
+///
+/// 覆盖范围只到 `@ManyToOne`：夹具（`ShopOrder`）没有集合关联，`@OneToMany` / `@OneToOne`
+/// 的跳过行为没有用例——它们是同一条 `meta.association(...)` 分支，但属未验证项，别当成已覆盖。
 class JpaPersistAssociationTest extends JpaTestSupport {
 
     /// 夹具：`JpaTestSupport.resetOrders()` 的 100 号订单属于 10 号客户（Alice），
@@ -38,12 +41,16 @@ class JpaPersistAssociationTest extends JpaTestSupport {
 
             persister(entityManager).update(order);
 
-            // 执行器自己发的那条 UPDATE：有，且 SET 里没有关联列
+            // 执行器自己发的那条 UPDATE：有，且 SET 子句里只有基本属性
             List<String> updates = normalized(drainSql()).stream()
                     .filter(sql -> sql.startsWith("update shop_order"))
                     .toList();
             assertThat(updates).hasSize(1);
-            assertThat(updates.getFirst()).doesNotContain("customer_id");
+            assertThat(updates.getFirst())
+                    .as("SET 子句只含基本属性：关联列 customer_id 不在其中")
+                    .doesNotContain("customer_id")
+                    .contains("version=?", "amount=?", "note=?", "status=?")
+                    .containsPattern("where .*id=\\? and .*version=\\?");
             return null;
         });
         inTx(entityManager -> {

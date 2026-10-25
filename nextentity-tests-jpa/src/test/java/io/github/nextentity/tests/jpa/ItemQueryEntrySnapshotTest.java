@@ -105,20 +105,24 @@ class ItemQueryEntrySnapshotTest extends ConsistencyTestBase<ItemEntity> {
 
     /// 悲观锁单行查询的**结果**断言——补上面那条快照抓不到的一半。
     ///
-    /// `where ie1_0.id = ? ... fetch first ? rows only` 的两个占位符恰好都是 `Long`
-    /// （主键与取行数），把它们绑反，语句文本逐字节相同；只有取回的行会变（`id = 1` 的
-    /// fetch-size 绑成主键、主键绑成 1，一样可能拿到行，但拿到的不是 `APPLE_ID` 那行）。
-    /// `StatementInspector` 原理上拿不到绑定值，所以这一格只能由结果兜：
-    /// 断回取的行就是 where 里那个 id，且 `single()` 不会因为"0 行/2 行"抛异常。
+    /// 快照只证明语句文本对：`where ie1_0.id = ? ... fetch first ? rows only`。文本里的两个
+    /// `?` 一个是主键绑定（Long），一个是 `setMaxResults` 交给驱动的行数上限——**绑定值
+    /// `StatementInspector` 原理上拿不到**，所以"where 里的 id 被绑成了别的值"这种错，
+    /// 快照一个字都不会变（例如绑成 `BANANA_ID`，语句仍逐字节相同）。
+    ///
+    /// 这一格用结果兜：取回的行必须就是 `where` 里那个 id。主键特意取 `CHERRY_ID`（3）而不是
+    /// `APPLE_ID`（1）——`single()` 的取行上限是 2，若 id 绑错成上限值，`APPLE_ID=1` 的错绑
+    /// 恰好也可能拿不到行而让断言看起来在起作用；3 与 2 不同，绑错必然拿回 banana 行。
     @Test
     void pessimisticLockSingleReturnsTheFilteredRow() {
         ItemEntity row = support.inTransaction(() -> query().where(idRef())
-                .eq(APPLE_ID)
+                .eq(CHERRY_ID)
                 .lock(LockMode.PESSIMISTIC_WRITE)
                 .single());
 
         assertThat(row).as("`lock(...).single()` 取回的行").isNotNull();
-        assertThat(row.id()).as("取回的行必须就是 where 里那个 id").isEqualTo(APPLE_ID);
+        assertThat(row.id()).as("取回的行必须就是 where 里那个 id").isEqualTo(CHERRY_ID);
+        assertThat(row.name()).as("且整行都是那一行，不是别的行").isEqualTo(CHERRY_NAME);
     }
 
     /// 跑一条查询、取走它下发的语句，返回归一化后的单条 SQL。
