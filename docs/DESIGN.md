@@ -335,7 +335,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 **执行凭证（`tools/gate.sh` + `tools/gate-receipt.py`，L0）**：前面每一条门禁都有一类共同的失效方式——**构建绿了，但该跑的通道没跑**。`-DskipITs`、无 Docker、`@Disabled`、PIT 的零变异、`~/.m2` 里的陈旧产物，五种都能让 `BUILD SUCCESS` 与「证据为零」同时成立，而人读日志只看最后一行。所以门禁的产物不是日志而是**凭证**：`tools/gate.sh <fast|ci|pr|night|release>` 跑完把 surefire/failsafe XML 与 PIT 报告一起解析成 `tmp/gate/<commit>-<ts>/receipt.json`，判定只看这份 JSON。
 
-判据不是「报告存在」，而是四条：
+判据不是「报告存在」，而是五条：
 
 - **报告比本轮新**：`mtime >= 本轮开始 epoch`。上一次构建留下的报告不算——这是「`Nothing to compile` 复用前序产物」的直接防线。
 - **条数 > 0**：`tests == 0` 的通道报「报告存在但 tests=0」，不报通过。
@@ -345,7 +345,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 三件事只有凭证能给出、日志给不出：**skip 清单连理由**（`方言跳过必须可数` 从「PR 里手写」变成自动抽取）、**`~/.m2` 与源码的时间戳倒挂**（`-pl` 不带 `-am` 时会读到旧语义）、以及**跨模块合并口径的条数**（`-am` 反应堆会把 jpa/spring 一起带进来，比单看目标模块多）。
 
-档位与「该跑什么」一一对应：`fast` = 格式化 + 架构规则（无容器）；`pr` = H2 564 + 遗留 727；`ci` = 前者 + 真 MySQL 容器通道 + `-Dnextentity.requireContainer=true`；`night` = `install` 刷快照 + 全量含容器 + 遗留 h2/mysql 双跑 + PIT×4；`release` = `clean verify` + api-compat。`ci`/`pr` 刻意不跑 PIT（单模块分钟级，不该挡 push），PIT 的落点在 `night` 与 `release`。
+档位与「该跑什么」一一对应：`fast` = 格式化检查 + 架构规则 + `api`/`core` 快测试（无容器）；`pr` = H2 564 + 遗留 727；`ci` = 前者 + 真 MySQL 容器通道 + `-Dnextentity.requireContainer=true`；`night` = `install` 刷快照 + 全量含容器 + 遗留 h2/mysql 双跑 + PIT×4；`release` = `clean verify` + api-compat。`ci`/`pr` 刻意不跑 PIT（单模块分钟级，不该挡 push），PIT 的落点在 `night` 与 `release`。
 
 **尚未实施**（方向，不是已有能力——写进这里的东西不得当成现状引用）：
 

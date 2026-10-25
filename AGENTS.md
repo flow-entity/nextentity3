@@ -62,7 +62,7 @@
 # 各档的具体步骤见 DESIGN §5「执行凭证」；判定只认 tmp/gate/<commit>-<ts>/receipt.json，
 # 不以日志末行为准。
 
-./mvnw clean verify                      # 全量门禁：Spotless + Checkstyle + PMD + SpotBugs + 单测 + 覆盖率
+./mvnw clean verify                      # 子模块自查（非权威）：格式 + 静态检查 + 单测 + 覆盖率；不含容器通道
 ./mvnw -q spotless:apply                 # 一键格式化（提交前必跑）
 ./mvnw -pl nextentity-core,nextentity-arch -am test   # 快速回归 + 架构门禁，无需容器
 ./mvnw -pl nextentity-tests-jpa -am verify   # 落库测试：H2 走 surefire + MySQL 容器走 failsafe（-DskipITs 只跳容器通道）

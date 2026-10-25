@@ -46,27 +46,44 @@ jobs:
 
       # 判据不能由被判对象提供：`tools/gate-receipt.py` 若跟着 PR 一起改，
       # 改一行 `problems=[]` 就能把自己判绿，而 `--require-clean` 管不着（改动已提交）。
-      # 所以先用基线分支的版本覆盖回来——基线里没有这两个文件时（首次引入本机制）跳过。
-      - name: Restore gate scripts from base branch
+      # 关键：下到工作树**之外**的 $RUNNER_TEMP，再用 GATE_ROOT 指回工作树执行。
+      # 早先版本用 `git show > tools/…` 覆盖工作树，那会把树弄脏，紧跟的 --require-clean
+      # 必然 exit 1——等于让任何修改门禁脚本的 PR 永远红，机制从此无法演进。
+      - name: Stage gate scripts from base branch
         run: |
           BASE="${{ github.base_ref }}"
-          if [ -z "$BASE" ]; then echo "非 PR 触发，无基线分支，保持工作树版本"; exit 0; fi
+          DEST="$RUNNER_TEMP/base-gate"
+          mkdir -p "$DEST"
+          if [ -z "$BASE" ]; then
+            echo "非 PR 触发，无基线分支，使用工作树版本"
+            cp tools/gate.sh tools/gate-receipt.py "$DEST/"
+            exit 0
+          fi
           git fetch --depth=1 origin "$BASE"
-          for f in tools/gate.sh tools/gate-receipt.py; do
-            if git cat-file -e "origin/$BASE:$f" 2>/dev/null; then
-              git show "origin/$BASE:$f" > "$f"
-              echo "已回退 $f 到 origin/$BASE"
+          for f in gate.sh gate-receipt.py; do
+            if git cat-file -e "origin/$BASE:tools/$f" 2>/dev/null; then
+              git show "origin/$BASE:tools/$f" > "$DEST/$f"
+              echo "已取基线版本 tools/$f ← origin/$BASE"
+            elif [ "$f" = "gate-receipt.py" ]; then
+              # 基线有 gate.sh 却没有 receipt：说明基线处于半成品状态，不能猜。
+              echo "✗ origin/$BASE 有 tools/gate.sh 但缺 tools/gate-receipt.py，基线不自洽" >&2
+              exit 1
             else
-              echo "origin/$BASE 无 $f，保留本 PR 版本（首次引入）"
+              # 基线无 gate.sh = 本 PR 首次引入该机制，只能用 PR 版本（并在日志里说清）。
+              echo "origin/$BASE 无 tools/gate.sh，本次使用 PR 版本（首次引入机制）"
+              cp tools/gate.sh tools/gate-receipt.py "$DEST/"
             fi
           done
+          chmod +x "$DEST/gate.sh"
+          echo "GATE_SCRIPT=$DEST/gate.sh" >> "$GITHUB_ENV"
 
       # ci 档 = 架构规则 + H2 全量 + 容器通道（强制）+ 遗留 727 条回归。
       # `--require-clean`：CI 上凭证必须对得上一个 commit，脏树直接拒。
       - name: Gate (ci tier + receipt)
         run: |
-          chmod +x tools/gate.sh
-          tools/gate.sh ci --require-clean
+          GATE="${GATE_SCRIPT:-$PWD/tools/gate.sh}"
+          echo "使用门禁脚本：$GATE"
+          GATE_ROOT="$PWD" "$GATE" ci --require-clean
 
       # 凭证一直是构建产物，失败时也要拿到——否则「为什么红」只能靠翻几千行日志。
       - name: Upload gate receipt

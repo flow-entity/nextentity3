@@ -9,14 +9,15 @@
 # 本脚本的唯一职责：让「未执行」和「跑绿」长得不一样。
 #
 # 用法
-#   tools/gate.sh fast              保存/提交前：spotless + 架构规则 + 快测试（无容器）
+#   tools/gate.sh fast              保存/提交前：格式检查 + 架构规则 + api/core 快测试（无容器）
 #   tools/gate.sh pr                push 前自查：H2 全量 + 遗留 727 条（无容器，-DskipITs）
 #   tools/gate.sh ci                CI 权威档：容器通道必须真跑 + 遗留 727 条
 #   tools/gate.sh night             夜间：全量含容器 + 遗留 MySQL + PIT×4
 #   tools/gate.sh release           发版前：clean verify + 全矩阵 + PIT + api 兼容
 #
 # 选项
-#   --allow-dirty      工作树脏也放行；此时凭证记 `dirty`，**永远不会是 green**
+#   --allow-dirty      工作树脏也放行；此时凭证记 `dirty`，**永远不会是 green**。
+#                      night/release 不接受它：那两档的结论必须对得上一个 commit。
 #   --require-clean    任何档都要求工作树干净
 #   --no-receipt       不写凭证；此时凭证状态记 `unverified`，绝不记 green
 #
@@ -29,7 +30,11 @@
 # （ii）PR 说明里能粘贴一段可核对的证据。
 set -uo pipefail
 
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# GATE_ROOT 让脚本能跑在「工作树之外」：CI 要把基线分支的 gate.sh / gate-receipt.py 下到
+# $RUNNER_TEMP 再执行，判据才不是由被判对象提供的。若像以前那样 `git show > tools/…` 覆盖
+# 工作树，树立刻变脏，紧接着的 --require-clean 必然 exit 1——等于让任何修改门禁脚本的 PR 永远红。
+ROOT=${GATE_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}
 cd "$ROOT" || exit 2
 
 # ---------------------------------------------------------------------------
@@ -47,7 +52,9 @@ if [ -z "$PY" ]; then
     exit 2
 fi
 
-RECEIPT=tools/gate-receipt.py
+# 解析器与 wrapper 同目录，**不是**工作树里的那份：CI 用基线分支的副本执行时，判据也必须
+# 是基线那份，否则「改一行 problems=[] 把自己判绿」照样成立。--root . 仍指向工作树（读它的 target/）。
+RECEIPT=$SCRIPT_DIR/gate-receipt.py
 TIER=""
 ALLOW_DIRTY=""
 REQUIRE_CLEAN=""
@@ -75,8 +82,16 @@ done
 [ -n "$TIER" ] || usage
 
 # night / release 默认要求干净树：这两档的结论要能对上一个 commit。
+# 且这两档**不给逃生口**：--allow-dirty 只对 fast/pr/ci 有效，否则「夜间绿」可以是对不上
+# commit 的树跑出来的，凭证里的 dirty 只会让它非 0 退出，但会先跑掉几小时。
 case "$TIER" in
-    night|release) [ -n "$ALLOW_DIRTY" ] || REQUIRE_CLEAN=1 ;;
+    night|release)
+        if [ -n "$ALLOW_DIRTY" ]; then
+            echo "✗ $TIER 档不接受 --allow-dirty：该档结论必须对得上一个 commit。" >&2
+            exit 2
+        fi
+        REQUIRE_CLEAN=1
+        ;;
 esac
 
 # ---------------------------------------------------------------------------
@@ -107,7 +122,10 @@ write_owner() {
 }
 
 refresh_lock() {
-    [ -d "$LOCK" ] && date +%s > "$LOCK/heartbeat" 2>/dev/null
+    # 只刷自己的锁：被抢锁后心跳会写进新持有者的目录，污染它判僵尸的判据。
+    [ -d "$LOCK" ] || return 0
+    [ "$(sed -n 's/^pid=//p' "$LOCK/owner" 2>/dev/null)" = "$$" ] || return 0
+    date +%s > "$LOCK/heartbeat" 2>/dev/null
 }
 
 acquire_lock() {
@@ -140,13 +158,22 @@ acquire_lock() {
 # ---------------------------------------------------------------------------
 
 check_tree() {
-    local dirty
-    dirty=$(git status --porcelain --untracked-files=all -- . ':(exclude)tmp' 2>&1)
-    if [ $? -ne 0 ]; then
+    local dirty err
+    # stderr 单独收：并进 $dirty 会让 git 的 warning（如 could not open directory）被当成
+    # 「工作树脏」，从而在干净树上判红。退出码仍取 git status 的。
+    err=$(mktemp)
+    dirty=$(git status --porcelain --untracked-files=all -- . ':(exclude)tmp' 2>"$err")
+    local rc=$?
+    if [ $rc -ne 0 ]; then
         # 吞掉 git 报错的后果是 dirty 为空 → 当干净树放行。宁可红。
-        echo "✗ git status 失败，无法确认工作树状态：$dirty" >&2
+        echo "✗ git status 失败，无法确认工作树状态：$(cat "$err")" >&2
+        rm -f "$err"
         exit 2
     fi
+    if [ -s "$err" ]; then
+        echo "⚠ git status 有告警（不影响判定）：$(head -3 "$err" | tr '\n' ' ')" >&2
+    fi
+    rm -f "$err"
     TREE_DIRTY="$dirty"
     if [ -z "$dirty" ]; then
         TREE_STATE="clean"
@@ -228,9 +255,15 @@ step() {
         warns+=(--warn "$label：日志出现 COMPILATION ERROR")
     fi
 
+    local -a noreq=()
+    # 空 require 的快照会跳过所有通道检查、必然绿。只有格式化这类确实不产出报告的步骤
+    # 才许显式声明，其余一律让 gate-receipt.py 判红。
+    [ -n "$require" ] || noreq+=(--allow-no-require)
+
     vrc=0
     "$PY" "$RECEIPT" snapshot --root . --since "$since" --label "$label" \
         --require "$require" --out "$RUNDIR/step-$(printf '%02d' "$STEPN")-$label.json" \
+        ${noreq[@]+"${noreq[@]}"} \
         ${skip_args[@]+"${skip_args[@]}"} ${warns[@]+"${warns[@]}"} || vrc=$?
 
     if [ "$rc" -ne 0 ]; then
@@ -250,7 +283,9 @@ step() {
 
 tier_fast() {
     EXPECT_STEPS=(fast-format fast)
-    step fast-format "" ./mvnw -B -q spotless:apply
+    # 必须是 check 不是 apply：apply 会在 check_tree 之后改写工作树，而 merge 用的是开跑前的
+    # TREE_DIRTY——干净树开跑、跑到一半把自己弄脏，凭证仍记 clean/green，正是本机制要堵的假绿。
+    step fast-format "" ./mvnw -B -q spotless:check
     step fast \
         "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-arch" \
         ./mvnw -B -pl nextentity-core,nextentity-arch -am test
@@ -263,7 +298,8 @@ tier_ci() {
     EXPECT_STEPS=(ci-fast ci-container ci-legacy)
     step ci-fast "surefire:nextentity-arch" \
         ./mvnw -B -pl nextentity-arch -am test
-    STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1 failsafe:nextentity-tests-jpa=1"
+    # 预算带上用例名白名单：只限条数的话，未来任何一条与 PG 无关的无理由跳过都会被这 1 条预算吞掉。
+    STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* failsafe:nextentity-tests-jpa=1:*MySqlTemporalWriteIntegrationTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode*"
     step ci-container "surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa" \
         ./mvnw -B -pl nextentity-tests-jpa -am verify -Dnextentity.requireContainer=true
     step ci-legacy "surefire:nextentity-tests-legacy" \
@@ -272,7 +308,7 @@ tier_ci() {
 
 tier_pr() {    # 容器通道在本档明确不跑（-DskipITs）。凭证会把 failsafe 记为「未声明」而不是「skip=0」。
     EXPECT_STEPS=(pr-h2 pr-legacy)
-    STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1"
+    STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode*"
     step pr-h2 "surefire:nextentity-tests-jpa" \
         ./mvnw -B -pl nextentity-tests-jpa -am verify -DskipITs
     # 727 条遗留回归此前完全不在 CI 里：CI 两条命令的 -am 反应堆都不含该模块。
@@ -285,7 +321,7 @@ tier_night() {
     EXPECT_STEPS=(night-install night-container night-legacy night-pit-api night-pit-core night-pit-jpa night-pit-spring)
     step night-install "" ./mvnw -B -q install -DskipTests
     # 本步刻意不带 -am：紧邻的 night-install 已把当前 HEAD 装进 ~/.m2，守卫据此放行。
-    STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1 failsafe:nextentity-tests-jpa=1"
+    STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* failsafe:nextentity-tests-jpa=1:*MySqlTemporalWriteIntegrationTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode*"
     step night-container "surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa" \
         ./mvnw -B -pl nextentity-tests-jpa verify -Dnextentity.requireContainer=true
     step night-legacy "surefire:nextentity-tests-legacy" \

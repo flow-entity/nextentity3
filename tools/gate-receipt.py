@@ -21,6 +21,7 @@ mtime 是 16:41:14，读它就会报「530 passed」，而容器通道一条没�
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import glob
 import hashlib
 import json
@@ -163,6 +164,8 @@ def _scan_pit(root: str) -> dict[str, dict]:
                 )
         detected_n = sum(n for s, n in status_counts.items() if s in ("KILLED", "TIMED_OUT"))
         effective = sum(n for s, n in status_counts.items() if s in ("KILLED", "TIMED_OUT", "SURVIVED", "NO_COVERAGE"))
+        # 保留未取整值：先 round 再和阈值比，94.95% 会被抬成 95.0% 判绿。
+        coverage_raw = 100.0 * detected_n / effective if effective else None
         out["pit:%s" % module] = {
             "kind": "pit",
             "module": module,
@@ -171,7 +174,10 @@ def _scan_pit(root: str) -> dict[str, dict]:
             "effective": effective,
             "statuses": status_counts,
             "survived": survived,
-            "coverage": round(100.0 * detected_n / effective, 1) if effective else None,
+            "coverage": round(coverage_raw, 1) if coverage_raw is not None else None,
+            "coverage_raw": coverage_raw,
+            "run_errors": status_counts.get("RUN_ERROR", 0),
+            "non_viable": status_counts.get("NON_VIABLE", 0),
             "test_strength": round(100.0 * detected_n / (detected_n + status_counts.get("SURVIVED", 0)), 1)
             if detected_n + status_counts.get("SURVIVED", 0)
             else None,
@@ -279,15 +285,30 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
     absent = [r for r in required if r not in fresh]
     missing = absent
 
-    # 每通道的 skip 预算：`--max-skip name=N` 可重复。默认 0——**任何跳过都要显式申报**，
-    # 否则「容器通道 44 条全 skip」会以 tests=44/skipped=44 的姿态判绿（实测过）。
+    # 每通道的 skip 预算：`--max-skip name=N` 或 `name=N:TestPattern`（可重复）。默认 0——
+    # **任何跳过都要显式申报**，否则「容器通道 44 条全 skip」会以 tests=44/skipped=44 判绿（实测过）。
+    # 只比条数不够：那 1 条预算会把**未来任何**新增的无理由跳过静默吸收。带 `:Pattern` 时，
+    # 每条跳过的用例名都必须匹配白名单，否则红。
     budgets: dict[str, int] = {}
+    skip_allow: dict[str, list[str]] = {}
     for spec in args.max_skip or []:
         key, _, value = spec.partition("=")
-        budgets[key.strip()] = int(value) if value.strip() else 0
+        key = key.strip()
+        count, _, pattern = value.partition(":")
+        budgets[key] = int(count) if count.strip() else 0
+        if pattern.strip():
+            skip_allow.setdefault(key, []).append(pattern.strip())
     default_budget = args.max_skip_default
 
     problems: list[str] = []
+    warnings_extra: list[str] = []
+    # E1：`--require` 为空时，下面的检查一条都不跑，snapshot 必绿。除了显式声明
+    # 「本步不产出通道」（格式化类），空 require 就是漏写，必须报错。
+    if not required and not getattr(args, "allow_no_require", False):
+        problems.append(
+            "本步没有声明任何 --require 通道：这样所有通道检查都不执行，快照必然绿。"
+            "若本步确实不产出测试报告，请显式传 --allow-no-require"
+        )
     for name in missing:
         if name in stale:
             problems.append(
@@ -308,11 +329,18 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
                 )
                 continue
             threshold = info.get("threshold")
-            coverage = info.get("coverage")
+            # 用未取整值比阈值：先 round 会把 94.95 抬成 95.0 判绿。
+            coverage = info.get("coverage_raw")
             if threshold is not None and coverage is not None and coverage + 1e-9 < threshold:
                 problems.append(
-                    "%s：变异覆盖率 %.1f%% < pom 阈值 %.1f%%（detected %d / effective %d，状态 %s）"
+                    "%s：变异覆盖率 %.2f%% < pom 阈值 %.1f%%（detected %d / effective %d，状态 %s）"
                     % (name, coverage, threshold, info["detected"], info["effective"], info["statuses"])
+                )
+            # RUN_ERROR 既不进分子也不进分母：某个变异体让测试 JVM 崩掉时会被静默忽略。
+            if info.get("run_errors"):
+                problems.append(
+                    "%s：%d 个变异体 RUN_ERROR（测试 JVM 崩了），这部分既不计分母也不计分子，不能算过"
+                    % (name, info["run_errors"])
                 )
             continue
         if info["failures"] or info["errors"]:
@@ -334,6 +362,21 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
                 "%s：跳过 %d 条 > 预算 %d（%s）——跳过就是没跑，没跑不能记绿"
                 % (name, info["skipped"], budget, named or "未点名")
             )
+        # 预算只限条数：申报了 `:Pattern` 时，每条被跳过的用例名都必须落在白名单里，
+        # 否则「多出一条与申报无关的跳过」会被那条预算静默吸收。
+        allowed = skip_allow.get(name)
+        if allowed and info["skipped"]:
+            for item in info["skipped_tests"]:
+                if not any(fnmatch.fnmatch(item["test"], pat) for pat in allowed):
+                    problems.append(
+                        "%s：跳过用例 %s 不在申报白名单 %s 内——方言跳过必须点名，不能借预算夹带"
+                        % (name, item["test"], allowed)
+                    )
+
+    # 申报了预算却不在 --require 里的通道：预算被静默忽略，会让人误以为「已申报即可跳」。
+    for key in budgets:
+        if key not in required:
+            warnings_extra.append("%s：申报了 --max-skip 但不在 --require 里，预算未生效" % key)
 
     receipt = {
         "step": args.label,
@@ -343,7 +386,7 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
         "stale_channels": {
             k: {f: v.get(f) for f in ("tests", "mutations", "mtime")} for k, v in stale.items()
         },
-        "warnings": list(args.warn or []),
+        "warnings": list(args.warn or []) + warnings_extra,
         "problems": problems,
         "verdict": "green" if not problems else "red",
     }
@@ -486,6 +529,11 @@ def main(argv: list[str]) -> int:
     snap.add_argument("--since", type=float, required=True, help="本步开始 epoch 秒")
     snap.add_argument("--label", required=True)
     snap.add_argument("--require", default="", help="逗号分隔的必需通道，如 surefire:nextentity-core")
+    snap.add_argument(
+        "--allow-no-require",
+        action="store_true",
+        help="显式声明本步不产出测试报告（如格式化检查）；不传且 --require 为空则判红",
+    )
     snap.add_argument(
         "--max-skip",
         action="append",
