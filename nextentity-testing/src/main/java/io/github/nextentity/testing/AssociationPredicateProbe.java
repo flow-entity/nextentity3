@@ -50,7 +50,7 @@ final class AssociationPredicateProbe<T extends Asset> {
 
     private static final String IS_NOT_NULL = "isNotNull()";
 
-    private static final String CONTAINS_BET = "contains(bet)";
+    private static final String CONTAINS_AM = "contains(am)";
 
     private static final String CONTAINS_EMPTY = "contains()";
 
@@ -74,8 +74,11 @@ final class AssociationPredicateProbe<T extends Asset> {
 
     private static final String LIKE_UNDERSCORE_CHARS = "_lpha";
 
-    /// 子串格用的固定子串：`beta` 的中间三字符，只命中 bolt。
-    private static final String CONTAINS_INFIX = "bet";
+    /// 子串格用的固定子串：只出现在 `amber` 里，命中集合 `{6}`。
+    ///
+    /// 取值有讲究：早先用的是 `beta` 的中间三字符 `bet`，命中集合 `{3}` 与 `ge(beta)` **完全相同**——
+    /// 那样把 `contains` 渲染成 `>=` 全绿。换成 `am` 后命中 `{6}`，17 格里没有别格是这个集合。
+    private static final String CONTAINS_INFIX = "am";
 
     private final List<AssetFixture> rows;
 
@@ -151,7 +154,7 @@ final class AssociationPredicateProbe<T extends Asset> {
         runs.add(new CellRun<>(
                 IS_NOT_NULL, false, () -> query.get().where(path).isNotNull().list(), value -> value != null));
         runs.add(new CellRun<>(
-                CONTAINS_BET,
+                CONTAINS_AM,
                 false,
                 () -> query.get().where(path).contains(CONTAINS_INFIX).list(),
                 value -> value != null && value.contains(CONTAINS_INFIX)));
@@ -203,8 +206,12 @@ final class AssociationPredicateProbe<T extends Asset> {
     /// 这不是在验证生产代码，而是在验证**夹具够不够刁**。夹具只有 alpha/beta 两个非空取值时：
     /// `gt(alpha)` 与 `ne(alpha)` 都只命中 beta 那行、`le(alpha)` 与 `eq(alpha)` 都是 alpha 那两行、
     /// `between(alpha,beta)` 等于 `isNotNull`、`like("al%")` 与 `like("_lpha")` 同集合——
-    /// 于是把 `gt` 渲染成 `<>`、把 `between` 渲染成 `is not null`、把 `_` 通配丢掉，17 个格子全绿。
+    /// 于是把 `gt` 渲染成 `<>`、把 `between` 渲染成 `is not null`、把 `_` 通配丢掉，17 个格子全绿
+    /// （四行夹具下 17 格只产出 6 种不同结果集，七行夹具下是 13 种）。
     /// 每个格子的"非空 / 非全表"自检挡不住这种退化，必须逐对比较期望集合。
+    ///
+    /// 配对覆盖两类退化：**同一族内**（`le`→`=`、`gt`→`<>`、`ge`→`gt`、`lt`→`le`、`between`→`is not null`）
+    /// 与**跨族**（`contains`→`>=`、`_` 通配→前缀匹配）。
     void assertCellsAreDistinguishable() {
         Map<String, Set<Long>> expected = new LinkedHashMap<>();
         for (CellRun<T> run : runs()) {
@@ -222,7 +229,9 @@ final class AssociationPredicateProbe<T extends Asset> {
                 // `between` 退化成 `is not null`：需要 [alpha, beta] 之外的取值（aardvark）
                 List.of(BETWEEN_ALPHA_BETA, IS_NOT_NULL),
                 // `_` 通配被当成前缀匹配：需要共享前缀但长度不同的取值（alps）
-                List.of(LIKE_AL_PREFIX, LIKE_UNDERSCORE));
+                List.of(LIKE_AL_PREFIX, LIKE_UNDERSCORE),
+                // `contains` 被渲染成 `>=`：子串格与比较格必须命中不同集合（amber vs beta）
+                List.of(CONTAINS_AM, GE_BETA));
         for (List<String> pair : pairs) {
             String left = pair.get(0);
             String right = pair.get(1);

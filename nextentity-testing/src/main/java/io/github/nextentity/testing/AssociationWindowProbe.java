@@ -45,14 +45,14 @@ final class AssociationWindowProbe<T extends Asset> {
     private static final String SLICE_LIMIT_OVERFLOWS = "slice(0, 99) limit 超过剩余行数";
 
     /// `offset` 恰好等于总行数：空页，但 `total` 不变。
-    private static final String SLICE_OFFSET_AT_END = "slice(4, 2) offset 越界";
+    private static final String SLICE_OFFSET_AT_END = "slice(size, 2) offset 越界";
 
     /// `offset + limit` 跨过尾部：拿到的是尾巴，`total` 不变。
     private static final String SLICE_TAIL = "slice(2, 99) offset 与 limit 跨过尾部";
 
     /// 嵌套条件 + 分页：`total` 是**满足嵌套条件的实体行数**，不因 join 放大（关联是 1:1，
     /// 若渲染成 join 后再 `COUNT(*)` 会数成 join 后的行数；这里夹具恰好 1:1，所以用 `isNull`
-    /// 把 4 行收窄到 3 行，`total` 必须是 3 而不是 4）。
+    /// 把 7 行收窄到 6 行，`total` 必须是 6 而不是 7）。
     private static final String SLICE_WITH_NESTED_CONDITION = "where(owner.name isNotNull) 之后分页";
 
     private final List<AssetFixture> rows;

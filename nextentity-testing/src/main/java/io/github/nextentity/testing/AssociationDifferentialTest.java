@@ -81,7 +81,7 @@ public abstract class AssociationDifferentialTest<T extends Asset> extends Assoc
     ///
     /// `final` 是刻意的：一旦子类能覆写它，内存侧与落库侧就有了两处定义，错的夹具配对的期望值会静默变绿。
     ///
-    /// @return 四行夹具（`asset LEFT JOIN owner` 的结果集形态）
+    /// @return 七行夹具（`asset LEFT JOIN owner` 的结果集形态）
     protected final List<AssetFixture> fixtureRows() {
         return FIXTURE_ROWS;
     }
@@ -120,8 +120,9 @@ public abstract class AssociationDifferentialTest<T extends Asset> extends Assoc
         predicates().assertLeftJoinSemantics();
     }
 
-    /// 谓词格之间的**可区分性**自检：二值域夹具下 17 个格子只有 4 个不同结果集，
-    /// 把 `gt` 渲染成 `<>`、把 `between` 渲染成 `is not null`、把 `le` 渲染成 `=` 都能全绿。
+    /// 谓词格之间的**可区分性**自检：二值域夹具下 17 个格子只产出 6 种不同结果集
+    /// （七行夹具下是 13 种），把 `gt` 渲染成 `<>`、把 `between` 渲染成 `is not null`、
+    /// 把 `le` 渲染成 `=`、把 `contains` 渲染成 `>=` 都能全绿。
     ///
     /// 这条用例只检查"夹具够不够刁"，不检查生产代码：夹具一旦退化回 alpha/beta 两值，
     /// 这里先红，而不是让 17 条谓词格继续假装在验证算子。
