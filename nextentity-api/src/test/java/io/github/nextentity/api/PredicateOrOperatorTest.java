@@ -139,10 +139,21 @@ class PredicateOrOperatorTest {
 
     /// 数值侧的六个短路点逐处钉住：返回**同一个**恒真占位实例，且它实现 `SkippedCondition`。
     ///
-    /// `PathValues` 有 10 处 `value == null ? alwaysTrue() : ...`。此前只钉了 `eqIfNotNull`
-    /// 一处，另外 9 处若返回 `null`，只有"恰好被 core 的 `where(null)` 拒绝撞上"才会红——
-    /// 那是偶然覆盖。字符串侧（`containsIfNotEmpty` / `containsIfNotNull` / `likeIfNotNull`）
-    /// 由 `StringPathOperatorTest` 已经逐处钉住，这里补齐数值侧。
+    /// `PathValues` 有 10 处 `value == null ? alwaysTrue() : ...`，逐处映射如下（这 10 处若返回
+    /// `null`，只有"恰好被 core 的 `where(null)` 拒绝撞上"才会红，那是偶然覆盖，不能当证据）：
+    ///
+    /// | `PathValues` 行 | 短路点 | 钉住它的用例 |
+    /// |---|---|---|
+    /// | `:63` | `eqIfNotNull` | 本方法（`numberShortCircuit`） |
+    /// | `:118` | `geIfNotNull` | 本方法 |
+    /// | `:123` | `gtIfNotNull` | 本方法 |
+    /// | `:128` | `leIfNotNull` | 本方法 |
+    /// | `:133` | `ltIfNotNull` | 本方法 |
+    /// | `:168` | `inIfNotNull` | 本方法 |
+    /// | `:284` | `containsIfNotEmpty`（`null` 与空串两种） | `StringPathOperatorTest#shortCircuit` |
+    /// | `:289` | `containsIfNotNull` | `StringPathOperatorTest#shortCircuit` |
+    /// | `:299` | `likeIfNotNull` | `StringPathOperatorTest#shortCircuit` |
+    /// | `:304` | `eqIfNotEmpty`（`null` 与空串两种） | `StringPathOperatorTest#shortCircuit` |
     @ParameterizedTest(name = "{0}")
     @MethodSource("numberShortCircuitCalls")
     @DisplayName("数值短路：返回同一个恒真占位实例，不是 null")
