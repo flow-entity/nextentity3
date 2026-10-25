@@ -36,8 +36,13 @@ surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemSqlSnapsho
 # 所以在 H2 上执行会 SQLGrammarException——这是 H2 兼容层的限制，不是 nextentity 的缺陷，
 # 也不是真 PG 的行为。真 PG 通道（testcontainers）上这些用例应当全绿。
 #
-# 注意这四条是 type=error（H2 直接抛 SQLGrammarException），不是断言不符；
-# 若哪天它们变成 type=failure，说明渲染形态变了（可能真的改好了，也可能改成别的错）。
+# 注意这一组是「1 条 type=failure + 4 条 type=error」，不是统一一种：
+#   · `everyLockModeIsEitherHonouredOrRejected` 断言「五种锁模式各自放行或拒绝」的整体形态，
+#     形态变了它就先失败（type=failure）；
+#   · 其余四条真的把带 `for share` / `for no key update` 的 SQL 发下去，H2 直接抛
+#     SQLGrammarException（type=error）。
+# 两者的 type 都不能被互换：哪天 error 变成 failure，说明 SQL 已经被 H2 接受、只是断言不符
+# （可能真改好了，也可能改成了别的错），必须重新定性而不是沿用这一行。
 surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemLockConsistencyTest#everyLockModeIsEitherHonouredOrRejected | type=failure | issue=H2-PG-LOCK-CLAUSE | expires=2026-12-31 | 五种锁模式的放行/拒绝形态在 PG 方言下整体改变（for share / for no key update），断言先行失败
 surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemLockConsistencyTest#pessimisticWriteLockReadsRowAndEmitsForUpdate | type=error | issue=H2-PG-LOCK-CLAUSE | expires=2026-12-31 | H2 的 PG 兼容模式不支持 for no key update；真 PG 支持
 surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemLockConsistencyTest#pessimisticWriteLockOnMissingRowReturnsEmpty | type=error | issue=H2-PG-LOCK-CLAUSE | expires=2026-12-31 | 同上

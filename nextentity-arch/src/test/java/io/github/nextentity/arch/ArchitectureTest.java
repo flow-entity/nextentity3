@@ -21,7 +21,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
+import java.time.OffsetTime;
 import java.time.Year;
+import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.Random;
@@ -29,6 +31,7 @@ import java.util.SplittableRandom;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.random.RandomGenerator;
+import java.util.random.RandomGeneratorFactory;
 
 /// 架构门禁：依赖方向、包边界与可测试性约束由测试守住，而不是靠自觉。
 ///
@@ -96,21 +99,47 @@ class ArchitectureTest {
             .orShould()
             .callMethod(LocalDate.class, "now")
             .orShould()
+            .callMethod(LocalDate.class, "now", ZoneId.class)
+            .orShould()
             .callMethod(LocalDateTime.class, "now")
+            .orShould()
+            .callMethod(LocalDateTime.class, "now", ZoneId.class)
             .orShould()
             .callMethod(LocalTime.class, "now")
             .orShould()
+            .callMethod(LocalTime.class, "now", ZoneId.class)
+            .orShould()
             .callMethod(ZonedDateTime.class, "now")
+            .orShould()
+            .callMethod(ZonedDateTime.class, "now", ZoneId.class)
             .orShould()
             .callMethod(OffsetDateTime.class, "now")
             .orShould()
+            .callMethod(OffsetDateTime.class, "now", ZoneId.class)
+            .orShould()
+            .callMethod(OffsetTime.class, "now")
+            .orShould()
+            .callMethod(OffsetTime.class, "now", ZoneId.class)
+            .orShould()
             .callMethod(Year.class, "now")
+            .orShould()
+            .callMethod(Year.class, "now", ZoneId.class)
+            .orShould()
+            .callMethod(YearMonth.class, "now")
+            .orShould()
+            .callMethod(YearMonth.class, "now", ZoneId.class)
             .orShould()
             .callMethod(Clock.class, "systemUTC")
             .orShould()
             .callMethod(Clock.class, "systemDefaultZone")
             .orShould()
             .callMethod(Clock.class, "system", ZoneId.class)
+            .orShould()
+            .callMethod(Clock.class, "tickMillis", ZoneId.class)
+            .orShould()
+            .callMethod(Clock.class, "tickSeconds", ZoneId.class)
+            .orShould()
+            .callMethod(Clock.class, "tickMinutes", ZoneId.class)
             .orShould()
             .callMethod(UUID.class, "randomUUID")
             .orShould()
@@ -130,11 +159,15 @@ class ArchitectureTest {
             .orShould()
             .callMethod(SecureRandom.class, "getInstance", String.class)
             .orShould()
+            .callMethod(SecureRandom.class, "getInstance", String.class, String.class)
+            .orShould()
             .callMethod(SecureRandom.class, "getInstanceStrong")
             .orShould()
-            .callMethod(Random.class, "from", RandomGenerator.class)
+            .callMethod(RandomGenerator.class, "getDefault")
             .orShould()
             .callMethod(RandomGenerator.class, "of", String.class)
+            .orShould()
+            .callMethod(RandomGeneratorFactory.class, "of", String.class)
             .because("时间与随机必须经 Clock / IdGenerator 注入；带参的 now(clock) 与 Clock.fixed 不受限，"
                     + "否则测试只能靠 sleep 与模糊断言。`Clock.system*` 要单独禁：`Instant.now(Clock.systemUTC())` "
                     + "能一行绕过 `Instant.now()` 这条禁令。"
@@ -143,7 +176,17 @@ class ArchitectureTest {
                     // `Instant.now(Clock.systemUTC())` 由 `Clock.systemUTC` 那条单独兜住。反过来说，
                     // 想禁「带参的那个」也必须把参数类型写出来，否则一条都禁不到。
                     + "`SecureRandom.getInstance(String)` 与 `getInstanceStrong()` 是与 `new SecureRandom()` 同类的"
-                    + "环境熵源，`Random.from` / `RandomGenerator.of` 是同一族工厂方法，一并禁掉");
+                    + "环境熵源，`RandomGenerator.getDefault()` / `RandomGenerator.of(String)` /"
+                    + "`RandomGeneratorFactory.of(String)` 是同一族工厂方法，一并禁掉。"
+                    // 带 ZoneId 的 `now(zone)` 与 `Clock.tick*` 必须逐个点名：空 varargs 只等于「无参」，
+                    // 写一条 `now` 禁不到 `now(ZoneId)`——那正是把 `Instant.now()` 洗成
+                    // `Instant.now(Clock.systemDefaultZone())` 之外的另一条同款洗白路径（实测 11 条漏网）。
+                    //
+                    // **不**禁 `Random.from(RandomGenerator)`：它是把已注入的随机源适配成 `Random` 的
+                    // 合法写法（JDK 17 的桥），禁掉就把注入式夹具判红了，与本文件上文同一个理由。
+                    + "带 ZoneId 的 `now(zone)` 与 `Clock.tick*` 也要禁：它们读的是同一只系统钟，"
+                    + "不写进参数表就等于留了 11 条一行洗白路径。`Random.from(RandomGenerator)` 不在此列——"
+                    + "它是把**已注入**的随机源适配成 `Random` 的桥，禁掉就会把注入式夹具判红");
 
     /// 禁止静态可变状态。
     @ArchTest

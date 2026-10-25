@@ -412,11 +412,15 @@ tier_ci() {
     # （它们不进 required，`if info["failures"]` 那段就不会被执行），而 mvn 退出码又被
     # 基线降级分支当成「预期内」——真回归由此静默变绿。
     STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* failsafe:nextentity-tests-jpa=1:*MySqlTemporalWriteIntegrationTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* surefire-pg:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadPreserveTheInstant*"
-    STEP_MIN_TESTS="surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-jpa=82 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=577 failsafe:nextentity-tests-jpa=549 surefire-pg:nextentity-tests-jpa=577"
+    # `nextentity-arch` 同理必须显式写进 `-pl`：它不是 tests-jpa 的依赖，`-am` 带不上它。
+    # 不补会出一个口径差：`ci-fast` 跑的是 `test` 相位，而 checkstyle/PMD/SpotBugs 全绑在 `verify` 上，
+    # 于是 arch 的**静态**违规在 `pr`/`night`/`release` 红、在 `ci` 绿——`ci` 是权威档，
+    # 权威档比本地档松是最不能留的一种反序。
+    STEP_MIN_TESTS="surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-arch=24 surefire:nextentity-jpa=82 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=577 failsafe:nextentity-tests-jpa=549 surefire-pg:nextentity-tests-jpa=577"
     STEP_EXPECTED_FAILURES="tools/expected-failures/h2-postgresql.txt"
     step ci-container \
-        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa,static:nextentity-api,static:nextentity-core,static:nextentity-jpa,static:nextentity-spring,static:nextentity-testing,static:nextentity-tests-jpa" \
-        ./mvnw -B -pl nextentity-tests-jpa -am verify -Dnextentity.requireContainer=true -Pdialect-pg
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-arch,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa,static:nextentity-api,static:nextentity-core,static:nextentity-arch,static:nextentity-jpa,static:nextentity-spring,static:nextentity-testing,static:nextentity-tests-jpa" \
+        ./mvnw -B -pl nextentity-tests-jpa,nextentity-arch -am verify -Dnextentity.requireContainer=true -Pdialect-pg
     STEP_MIN_TESTS="surefire:nextentity-tests-legacy=727 surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-jpa=82"
     step ci-legacy \
         "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-tests-legacy" \
@@ -472,7 +476,7 @@ tier_night() {
     #
     # `nextentity-arch` 必须显式出现在 `-pl` 里：它不是 tests-jpa 的依赖，`-am` 带不上它，
     # 于是本档曾经**一条架构规则都不跑**，而凭证里「没有这个 key」和「跑过了没问题」长得一模一样
-    # （实测：tier=night 的 receipt 有 37 个通道，`surefire:nextentity-arch` 不在其中）。
+    # （实测：修之前 tier=night 的 receipt 通道清单里根本没有 `surefire:nextentity-arch` 这一项）。
     # night 是最强档，它比 ci 弱这件事必须由构成本身排除，不能靠人记得单独补跑一遍。
     step night-container \
         "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-arch,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa,static:nextentity-api,static:nextentity-core,static:nextentity-arch,static:nextentity-jpa,static:nextentity-spring,static:nextentity-testing,static:nextentity-tests-jpa" \

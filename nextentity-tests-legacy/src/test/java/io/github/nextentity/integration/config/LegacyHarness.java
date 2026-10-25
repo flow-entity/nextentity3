@@ -69,15 +69,28 @@ public final class LegacyHarness implements AutoCloseable {
         for (Class<?> entityClass : entityClasses) {
             configuration.addAnnotatedClass(entityClass);
         }
-        LegacyHarness harness = new LegacyHarness(configuration.buildSessionFactory(), environment);
+        LegacyHarness harness = null;
         try {
+            // `buildSessionFactory()` 也在 try 里：它自己抛的时候 SessionFactory 已经部分建好，
+            // 放在 try 外面就永远走不到下面的关闭分支。
+            harness = new LegacyHarness(configuration.buildSessionFactory(), environment);
             harness.createSchema();
             harness.reset();
             return harness;
         } catch (RuntimeException | Error failure) {
             // 建表/写夹具失败时，SessionFactory 与 EntityManager 已经建好了。调用方拿不到这个实例，
             // 也就关不掉它——容器由 Ryuk 兜底回收，Hibernate 侧没有兜底，只能在这里自己关。
-            harness.close();
+            //
+            // 关闭失败必须挂到原始异常上：`close()` 若自己抛，异常会直接冒出这个 catch，
+            // `throw failure` 永远执行不到——「建表失败」被换成「关闭失败」，红得看不出原因。
+            // Java 不会自动把 catch 里抛出的异常 addSuppressed 到 `failure` 上。
+            if (harness != null) {
+                try {
+                    harness.close();
+                } catch (RuntimeException | Error closeFailure) {
+                    failure.addSuppressed(closeFailure);
+                }
+            }
             throw failure;
         }
     }

@@ -10,8 +10,11 @@ import java.util.List;
 ///
 /// 两种取库方式，优先用外部实例：
 /// - `NEXTENTITY_LEGACY_MYSQL_URL`（配套 `_USER` / `_PASSWORD`）指向一个已在跑的 MySQL；
-/// - 否则用 Testcontainers 现起 MySQL 镜像（默认 `mysql:8.0.18`，可用
-///   `-Dnextentity.mysql.image=` 覆盖；受限网络下要换成可达的镜像源）。
+/// - 否则用 Testcontainers 现起 MySQL 镜像：镜像名取自 `-Dnextentity.mysql.image`，
+///   该属性由**根 pom** 统一注入（默认 `docker.xuanyuan.run/library/mysql:8.0.18`，
+///   受限网络下不可达就在那里换源），所以本类里那个 `mysql:8.0.18` 兜底只在
+///   「不走 Maven 直接跑 JVM」时生效——它是死代码，但不是无意义的死代码：
+///   它标的是「上游 2.2.3 的移植基准版本」。
 ///
 /// 曾经这里写着「本机 JVM 探不到 Docker，只能靠外部实例」——那个诊断是错的：真正的成因是
 /// Testcontainers 1.20.4 内置的 docker-java 按 API 1.32 说话，Docker 29 对 1.32 直接回
