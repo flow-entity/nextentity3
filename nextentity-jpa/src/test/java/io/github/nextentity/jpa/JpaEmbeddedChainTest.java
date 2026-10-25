@@ -91,6 +91,12 @@ class JpaEmbeddedChainTest extends JpaTestSupport {
     /// 同一张表的列，所以现在看不出差异；但一旦某个实现给嵌入 `join` 加上 `is not null` 谓词
     /// （INNER 的常见实现），嵌入列全 null 的行就会静默消失——那是结果差异，不是格式差异。
     /// 换 Hibernate 大版本或接第二后端时，这条会先红。
+    ///
+    /// **排序键必须走嵌入路径**：只按 `id` 排序时整条语句不碰 `location`，
+    /// `JpaPaths.navigate` 根本不会被调用，这条用例就成了空转（第一版就是这样，
+    /// 注入「一律 join」照样绿）。按 `location.coordinates.zone` 排序后，语句里必须出现
+    /// `w1_0.zone`，嵌入路径真的被走过；此时任何"给嵌入 join 加 is not null"的实现
+    /// 都会让 3 号行消失，断言当场红。null 的排序位置按方言可能不同，所以断言不依赖顺序。
     @Test
     @DisplayName("嵌入属性为 null 的行照样返回：嵌入 join 若加 is not null 就会漏行")
     void nullEmbeddedRowIsReturned() {
@@ -100,7 +106,8 @@ class JpaEmbeddedChainTest extends JpaTestSupport {
                 null,
                 List.of(),
                 null,
-                List.of(new Ordering(AttributePath.of(Warehouse.class, "id"), Ordering.Direction.ASC)),
+                List.of(new Ordering(
+                        AttributePath.of(Warehouse.class, "location", "coordinates", "zone"), Ordering.Direction.ASC)),
                 Window.NONE,
                 null);
 
@@ -109,7 +116,10 @@ class JpaEmbeddedChainTest extends JpaTestSupport {
                         .map(Warehouse::getId)
                         .toList());
 
-        assertThat(ids).as("嵌入为 null 的 3 号行不能被过滤掉").containsExactly(1L, 2L, 3L);
+        assertThat(normalized(drainSql()))
+                .as("排序键必须落在仓库自己的嵌入列上，否则这条用例不经过嵌入路径")
+                .containsExactly("select w1_0.id,w1_0.zone,w1_0.region from warehouse w1_0 order by w1_0.zone");
+        assertThat(ids).as("嵌入为 null 的 3 号行不能被过滤掉").containsExactlyInAnyOrder(1L, 2L, 3L);
     }
 
     private JpaCompiler compiler(EntityManager entityManager) {
