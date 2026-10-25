@@ -28,6 +28,7 @@ import java.util.Random;
 import java.util.SplittableRandom;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.random.RandomGenerator;
 
 /// 架构门禁：依赖方向、包边界与可测试性约束由测试守住，而不是靠自觉。
 ///
@@ -126,9 +127,23 @@ class ArchitectureTest {
             .callConstructor(SplittableRandom.class, long.class)
             .orShould()
             .callConstructor(SecureRandom.class)
+            .orShould()
+            .callMethod(SecureRandom.class, "getInstance", String.class)
+            .orShould()
+            .callMethod(SecureRandom.class, "getInstanceStrong")
+            .orShould()
+            .callMethod(Random.class, "from", RandomGenerator.class)
+            .orShould()
+            .callMethod(RandomGenerator.class, "of", String.class)
             .because("时间与随机必须经 Clock / IdGenerator 注入；带参的 now(clock) 与 Clock.fixed 不受限，"
                     + "否则测试只能靠 sleep 与模糊断言。`Clock.system*` 要单独禁：`Instant.now(Clock.systemUTC())` "
-                    + "能一行绕过 `Instant.now()` 这条禁令");
+                    + "能一行绕过 `Instant.now()` 这条禁令。"
+                    // 单参 callMethod / callConstructor 是**按参数表精确相等**匹配（空 varargs 只等于无参），
+                    // 不是按方法名匹配：实测 `callMethod(Instant.class, "now")` 只报无参调用，
+                    // `Instant.now(Clock.systemUTC())` 由 `Clock.systemUTC` 那条单独兜住。反过来说，
+                    // 想禁「带参的那个」也必须把参数类型写出来，否则一条都禁不到。
+                    + "`SecureRandom.getInstance(String)` 与 `getInstanceStrong()` 是与 `new SecureRandom()` 同类的"
+                    + "环境熵源，`Random.from` / `RandomGenerator.of` 是同一族工厂方法，一并禁掉");
 
     /// 禁止静态可变状态。
     @ArchTest
