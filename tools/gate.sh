@@ -427,6 +427,9 @@ tier_ci() {
     # 只挑 core：变异体最多（863）、台账最长，且单模块 PIT 分钟级；jpa/api/spring 仍留给 night/release。
     # install 不能省：PIT 不带 -am，它从 ~/.m2 解析 nextentity-api，陈旧快照会让依赖新语义的用例集体报错。
     STEP_MIN_TESTS=""
+    # `ci-install` 只刷 `nextentity-api`：core 的 PIT 当前只依赖它。核心模块一旦新增对其它
+    # 模块的依赖，这里必须同步加模块名——否则 `pitest:mutationCoverage` 会因为缺 -am 而读到
+    # `~/.m2` 里的陈旧快照，症状是「用例集体未变异就不通过」，看着像测试坏了（审查指出）。
     step ci-install "" ./mvnw -B -q install -DskipTests -pl nextentity-api
     step ci-pit-core "pit:nextentity-core" ./mvnw -B -pl nextentity-core test-compile pitest:mutationCoverage
 }

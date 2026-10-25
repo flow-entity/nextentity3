@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.nextentity.api.BaseWhereStep;
 import io.github.nextentity.api.model.Slice;
+import io.github.nextentity.api.model.Tuple3;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -55,6 +56,31 @@ public abstract class MetamorphicPagingTest<T extends Item> extends MetamorphicT
             assertThat(descending)
                     .as("%s：倒序必须是正序的逆序（`ORDER BY` 被整段丢弃或 `ASC`/`DESC` 写反时这条会红）", base.name())
                     .containsExactlyElementsOf(ascending.reversed());
+        }
+    }
+
+    @Test
+    @DisplayName("变形：投影列随分页走时，逐页串联的元组必须等于整序列表自己算出的元组")
+    void projectedColumnsSurvivePagingAndStayAligned() {
+        // 分页重组只比 id 时，`select` 漏列、多列、列序错位全都看不见——id 照样能拼回去。
+        // 这一格把三列投影的结果与「从整条实体上直接读字段」算出的元组逐行对齐比较，
+        // 期望值不来自任何手算常量，而是来自同一个夹具的另一条读路径。
+        for (Named<T> base : basePredicates()) {
+            List<T> whole =
+                    query().where(base.predicate()).orderBy(idRef()).asc().list();
+            List<Tuple3<Long, String, Integer>> expected = new ArrayList<>();
+            for (T item : whole) {
+                expected.add(new Tuple3<>(item.id(), item.name(), item.score()));
+            }
+            BaseWhereStep<T, Tuple3<Long, String, Integer>> projected = query().select(idRef(), nameRef(), scoreRef())
+                    .where(base.predicate())
+                    .orderBy(idRef())
+                    .asc();
+            List<Tuple3<Long, String, Integer>> actual = new ArrayList<>();
+            for (int offset = 0; offset < expected.size() + PAGE_SIZE; offset += PAGE_SIZE) {
+                actual.addAll(projected.slice(offset, PAGE_SIZE).data());
+            }
+            assertThat(actual).as("%s：投影列必须随分页一起走，且列序与实体字段一致", base.name()).containsExactlyElementsOf(expected);
         }
     }
 

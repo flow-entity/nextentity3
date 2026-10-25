@@ -163,12 +163,13 @@ L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（
 
 **变形关系（metamorphic / TLP）**：差分 oracle 有一个它自己答不出的问题——**内存 oracle 写错时，真库与内存会一起错**，套件照样全绿。变形关系绕开这个闭环：它不比对「期望值 vs 实际值」，只断言两条查询之间**全称成立的关系**，因此不依赖任何人算对答案。
 
-- 落点：`nextentity-testing/src/main` 的 `MetamorphicTestBase`（夹具参数与断言工具）→ `MetamorphicPagingTest`（分页重组 2 格 + 倒序互逆 1 格）→ `MetamorphicQueryTest`（TLP 等式 3 格 + 分区自我检查 1 格 + 幂等/中性元 3 格 + 夹具质量门 2 格），共 **12 格**。后端子类是 `ItemMetamorphicQueryTest`（H2）与 `MySqlItemMetamorphicQueryIntegrationTest`（真 MySQL），只换接线，断言只有一套。
+- 落点：`nextentity-testing/src/main` 的 `MetamorphicTestBase`（夹具参数与断言工具）→ `MetamorphicPagingTest`（分页重组 2 格 + 投影对齐 1 格 + 倒序互逆 1 格）→ `MetamorphicQueryTest`（TLP 等式 3 格 + 分区自我检查 1 格 + 幂等/中性元 3 格 + 夹具质量门 2 格），共 **13 格**。后端子类是 `ItemMetamorphicQueryTest`（H2）与 `MySqlItemMetamorphicQueryIntegrationTest`（真 MySQL），只换接线，断言只有一套。
 - 夹具自检是必需的，不是装饰：`offByOnePartitionIsNotIgnored()` 故意把分区写成「`>` 代替 `>=`」，断言等式**必须破**、且漏掉的必须**恰好**是边界行（边界值取自夹具实际出现的中位数，所以它必然存在，且用例没有假设「边界只有一行」）。没有这一条，关系在夹具退化时恒成立，三条 TLP 用例就成了摆设。
 - 夹具质量门有两道，缺第二道会留下一个看不见的洞：`fixtureSupportsEveryPartitionBucket()` 只校验**逐列**边缘分布（每列都有大于/小于/等于边界与 `null` 的行）；`degenerateCellsAreExactlyTheKnownOnes()` 才校验**逐格**——遍历 6 个基谓词 × 3 个分区的 18 格，把「至少一桶为空」的格钉成常量清单。18 格里当前有 4 格退化，且都是**逻辑必然**（`p` 蕴含 `c`、或 `p` 与分区空值判断作用在同一列），换夹具也消不掉；但「逻辑必然的空桶」和「夹具悄悄退化的空桶」在运行结果里长得一模一样，所以退化集合一旦变化就判红，逼人重新论证每一格。只有第一道门时，空桶会被静默放过——`and()` 原样返回左操作数也能过。
 - 倒序互逆那格（`descendingOrderIsTheReverseOfAscending`）专门补 TLP 的盲区：TLP 两侧都用同一条 `ORDER BY`，渲染错会**同时**出现在两侧，等式照样成立。实测把 `JpaPaths.descending` 改成 `builder.asc(...)`，这条当场红。
 - 页大小取 7 与夹具默认行数 64 互质，末页必然不是整页——整页时「多取一行/少取一行」在拼接结果里看不出来。
-- **它看得见什么、看不见什么**（写清楚比宣称更强有用）：看得见 `AND`/`OR`/`NOT` 的优先级与分组错、`NOT` 与 `NULL` 的交互错、条件被静默丢弃、分页切片错位、排序方向写反；**看不见**三类——① 谓词整体平移（`GE`→`GT` 三桶一起移，等式仍成立，靠差分抓）；② 投影漏列/多列（分页重组只比 id，不比整行）；③ 排序键被丢弃且结果恰好仍是 id 序（夹具的主键序与插入序一致时无解，只能靠倒序互逆那条兜住方向错误）。
+- **它看得见什么、看不见什么**（写清楚比宣称更强有用）：看得见 `AND`/`OR`/`NOT` 的优先级与分组错、`NOT` 与 `NULL` 的交互错、条件被静默丢弃、分页切片错位、排序方向写反、投影列漏列/多列/列序错位。**看不见**两类——① 谓词整体平移（`GE`→`GT` 三桶一起移，等式仍成立，靠差分抓）；② 排序键被整段丢弃且结果恰好仍是 id 序（夹具的主键序与插入序一致时无从分辨，只能靠倒序互逆那条兜住方向错误）。
+- 投影那一格（`projectedColumnsSurvivePagingAndStayAligned`）值得单说：分页重组若只比 id，`select` 漏列、多列、列序错位全都看不见——id 照样拼得回去。它把三列投影的结果与「从整条实体上直读同样三个字段」算出的元组逐行对齐比较，期望值不来自任何手算常量，而是同一夹具的另一条读路径；列序写反、某列被换成常量、`SELECT` 里少一列，三种都会红。
 - **它不替代差分**，实测分工是互补的：把 `JpaPredicates` 的 `AND`/`OR` 互换，TLP 当场红 4 条（分区等式与两两不相交全破）；把 `GE` 改成 `GT`，TLP **全绿**（三桶照样覆盖全集，因为 `>` 与 `NOT (> )` 仍是合法分区），红的是差分。所以判据是「哪一族关系能看见这个错」，不是「哪一层更高级」。
 
 **写侧维度覆盖（嵌入 / 列名覆盖 / 时间 / 自增主键）**：这四类只能走「声明式期望 + SQL 快照 + 变异证据」的组合 oracle（理由见上一条「写侧往返」），落点是 `nextentity-tests-jpa` 的**三份契约基类**（四个维度里 `@Embedded` 写侧与 `@AttributeOverride` 共用一份——后者串不串列只有前者那套镜像断言才看得出来）。每份基类只有**一套断言**，H2 子类与真 MySQL 子类只换接线——两份断言会漂移，漂移出来的绿是假绿：
