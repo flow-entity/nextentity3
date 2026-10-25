@@ -45,6 +45,20 @@ public abstract class MetamorphicPagingTest<T extends Item> extends MetamorphicT
     }
 
     @Test
+    @DisplayName("变形：倒序结果必须恰好是正序结果的逆序")
+    void descendingOrderIsTheReverseOfAscending() {
+        for (Named<T> base : basePredicates()) {
+            List<Long> ascending = ids(query().where(base.predicate()));
+            List<Long> descending = query().where(base.predicate()).orderBy(idRef()).desc().list().stream()
+                    .map(Item::id)
+                    .toList();
+            assertThat(descending)
+                    .as("%s：倒序必须是正序的逆序（`ORDER BY` 被整段丢弃或 `ASC`/`DESC` 写反时这条会红）", base.name())
+                    .containsExactlyElementsOf(ascending.reversed());
+        }
+    }
+
+    @Test
     @DisplayName("变形：count() 与 list().size() 同口径")
     void countAgreesWithListSize() {
         for (Named<T> base : basePredicates()) {

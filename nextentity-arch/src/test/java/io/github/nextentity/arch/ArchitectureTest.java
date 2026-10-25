@@ -17,9 +17,9 @@ import com.tngtech.archunit.lang.SimpleConditionEvent;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.random.RandomGenerator;
 
 /// 架构门禁：依赖方向、包边界与可测试性约束由测试守住，而不是靠自觉。
 ///
@@ -67,6 +67,11 @@ class ArchitectureTest {
             .because("可变节点会让快照断言与跨后端复用同时失真");
 
     /// 禁止直接读系统时钟或创建随机源。
+    ///
+    /// 随机源这条**不用** `callConstructor(Random.class)`：ArchUnit 的单参重载只匹配
+    /// **无参**构造器，`new Random(seed)` 会静默漏过（1.4.1 实测）。改成「依赖了
+    /// `RandomGenerator` 及其任何实现」——`Random` / `SecureRandom` / `SplittableRandom`
+    /// 一次全盖，也不再依赖构造器签名。
     @ArchTest
     static final ArchRule NO_AMBIENT_CLOCK_OR_RANDOM = noClasses()
             .should()
@@ -86,7 +91,8 @@ class ArchitectureTest {
             .orShould()
             .callMethod(ThreadLocalRandom.class, "current")
             .orShould()
-            .callConstructor(Random.class)
+            .dependOnClassesThat()
+            .areAssignableTo(RandomGenerator.class)
             .because("时间与随机必须经 Clock / IdGenerator 注入；带参的 now(clock) 不受限，否则测试只能靠 sleep 与模糊断言");
 
     /// 禁止静态可变状态。

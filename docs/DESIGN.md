@@ -163,9 +163,12 @@ L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（
 
 **变形关系（metamorphic / TLP）**：差分 oracle 有一个它自己答不出的问题——**内存 oracle 写错时，真库与内存会一起错**，套件照样全绿。变形关系绕开这个闭环：它不比对「期望值 vs 实际值」，只断言两条查询之间**全称成立的关系**，因此不依赖任何人算对答案。
 
-- 落点：`nextentity-testing/src/main` 的 `MetamorphicTestBase`（夹具参数与断言工具）→ `MetamorphicPagingTest`（分页重组 2 格）→ `MetamorphicQueryTest`（TLP 4 格 + 幂等/中性元 3 格 + 夹具自检 1 格）。后端子类是 `ItemMetamorphicQueryTest`（H2）与 `MySqlItemMetamorphicQueryIntegrationTest`（真 MySQL），只换接线，断言只有一套。
-- 夹具自检是必需的，不是装饰：`offByOnePartitionIsNotIgnored()` 故意把分区写成「`>` 代替 `>=`」，断言等式**必须破**、且漏掉的必须**恰好**是边界行。没有这一条，关系在夹具退化（某桶恒空、边界值不存在）时恒成立，三条 TLP 用例就成了摆设。夹具质量另由 `fixtureSupportsEveryPartitionBucket()` 前置校验。
+- 落点：`nextentity-testing/src/main` 的 `MetamorphicTestBase`（夹具参数与断言工具）→ `MetamorphicPagingTest`（分页重组 2 格 + 倒序互逆 1 格）→ `MetamorphicQueryTest`（TLP 等式 3 格 + 分区自我检查 1 格 + 幂等/中性元 3 格 + 夹具质量门 2 格），共 **12 格**。后端子类是 `ItemMetamorphicQueryTest`（H2）与 `MySqlItemMetamorphicQueryIntegrationTest`（真 MySQL），只换接线，断言只有一套。
+- 夹具自检是必需的，不是装饰：`offByOnePartitionIsNotIgnored()` 故意把分区写成「`>` 代替 `>=`」，断言等式**必须破**、且漏掉的必须**恰好**是边界行（边界值取自夹具实际出现的中位数，所以它必然存在，且用例没有假设「边界只有一行」）。没有这一条，关系在夹具退化时恒成立，三条 TLP 用例就成了摆设。
+- 夹具质量门有两道，缺第二道会留下一个看不见的洞：`fixtureSupportsEveryPartitionBucket()` 只校验**逐列**边缘分布（每列都有大于/小于/等于边界与 `null` 的行）；`degenerateCellsAreExactlyTheKnownOnes()` 才校验**逐格**——遍历 6 个基谓词 × 3 个分区的 18 格，把「至少一桶为空」的格钉成常量清单。18 格里当前有 4 格退化，且都是**逻辑必然**（`p` 蕴含 `c`、或 `p` 与分区空值判断作用在同一列），换夹具也消不掉；但「逻辑必然的空桶」和「夹具悄悄退化的空桶」在运行结果里长得一模一样，所以退化集合一旦变化就判红，逼人重新论证每一格。只有第一道门时，空桶会被静默放过——`and()` 原样返回左操作数也能过。
+- 倒序互逆那格（`descendingOrderIsTheReverseOfAscending`）专门补 TLP 的盲区：TLP 两侧都用同一条 `ORDER BY`，渲染错会**同时**出现在两侧，等式照样成立。实测把 `JpaPaths.descending` 改成 `builder.asc(...)`，这条当场红。
 - 页大小取 7 与夹具默认行数 64 互质，末页必然不是整页——整页时「多取一行/少取一行」在拼接结果里看不出来。
+- **它看得见什么、看不见什么**（写清楚比宣称更强有用）：看得见 `AND`/`OR`/`NOT` 的优先级与分组错、`NOT` 与 `NULL` 的交互错、条件被静默丢弃、分页切片错位、排序方向写反；**看不见**三类——① 谓词整体平移（`GE`→`GT` 三桶一起移，等式仍成立，靠差分抓）；② 投影漏列/多列（分页重组只比 id，不比整行）；③ 排序键被丢弃且结果恰好仍是 id 序（夹具的主键序与插入序一致时无解，只能靠倒序互逆那条兜住方向错误）。
 - **它不替代差分**，实测分工是互补的：把 `JpaPredicates` 的 `AND`/`OR` 互换，TLP 当场红 4 条（分区等式与两两不相交全破）；把 `GE` 改成 `GT`，TLP **全绿**（三桶照样覆盖全集，因为 `>` 与 `NOT (> )` 仍是合法分区），红的是差分。所以判据是「哪一族关系能看见这个错」，不是「哪一层更高级」。
 
 **写侧维度覆盖（嵌入 / 列名覆盖 / 时间 / 自增主键）**：这四类只能走「声明式期望 + SQL 快照 + 变异证据」的组合 oracle（理由见上一条「写侧往返」），落点是 `nextentity-tests-jpa` 的**三份契约基类**（四个维度里 `@Embedded` 写侧与 `@AttributeOverride` 共用一份——后者串不串列只有前者那套镜像断言才看得出来）。每份基类只有**一套断言**，H2 子类与真 MySQL 子类只换接线——两份断言会漂移，漂移出来的绿是假绿：
@@ -375,11 +378,16 @@ java -jar <同上> report tmp/cov/merged.exec \
 三件事只有凭证能给出、日志给不出：**skip 清单连理由**（`方言跳过必须可数` 从「PR 里手写」变成自动抽取）、**`~/.m2` 与源码的时间戳倒挂**（`-pl` 不带 `-am` 时会读到旧语义）、以及**跨模块合并口径的条数**（`-am` 反应堆会把 jpa/spring 一起带进来，比单看目标模块多）。
 
 档位与「该跑什么」一一对应：`fast` = 格式化检查 + 架构规则 + `api`/`core` 快测试（无容器；跑 `test` 阶段，故不含静态检查——静态检查只在 `verify` 上，落点在 `pr` 及以后各档）；`pr` = H2 564 + PG 兼容模式 564（基线 8 条）+ 遗留 727；`ci` = 前者 + 真 MySQL 容器通道 + `-Dnextentity.requireContainer=true`；`night` = `install` 刷快照 + 全量含容器 + 遗留 h2/mysql 双跑 + PIT×4；`release` = `clean verify` + api-compat。`ci`/`pr` 刻意不跑全量 PIT（单模块分钟级，不该挡 push），PIT 的落点在 `night` 与 `release`。
-**唯一例外是 `ci` 档多跑一个 `nextentity-core` 的 PIT**（`: ci-pit-core`）：等价变异台账是工作树里的数据文件，
-与被它豁免的用例、生产代码同源，没有独立锚点——只把台账校验放在 `night`/`release` 意味着「PR 里删一条断言、
-同时给对应变异体加一行台账」可以一路绿到合并，次日 nightly 才在 base 上红，责任已经转移给夜间。
-`ci` 档因此对 `core`（变异体最多、台账最长的模块）当场校验台账；`jpa`/`api`/`spring` 仍只在 `night`/`release` 校验，
-这条残余风险是已知且明写的，不是漏掉。
+**唯一例外是 `ci` 档多跑一个 `nextentity-core` 的 PIT**（`: ci-pit-core`）。它买到的是**反馈时延**，不是
+「堵住一个漏洞」——这一点初稿写错过，这里改正：等价变异台账是工作树里的数据文件，与被它豁免的用例、生产代码
+同源，**没有独立锚点**。因此「PR 里删一条断言、同时给对应变异体加一行台账」这条路径**在哪一档校验都同样绿**，
+包括夜间档——`_check_equivalents` 读的是工作树台账、只比集合，把校验提前到 `ci` 并不会让它变红。真正的堵法只有
+「台账需要独立锚点」（例如变异体指纹由 PIT 报告与台账外的第三方清单双向约束），当前**没有**实现，属已知缺口。
+
+`ci-pit-core` 的实际收益只有两条，都值这个成本，但都不是安全边界：① core 台账与当次 PIT 报告在同一档里校验，
+台账腐化（新增未杀死变异体却没登记）在 PR 阶段就红，而不是等到夜里；② `core` 是变异体最多、台账最长的模块，
+它同时把「PIT 例外路径必须先刷 `~/.m2`」这条守卫放进每一条 PR 的执行路径里。`jpa`/`api`/`spring` 仍只在
+`night`/`release` 校验，加上上面的自指缺口，这两条残余风险都是已知且明写的，不是漏掉。
 
 **尚未实施**（方向，不是已有能力——写进这里的东西不得当成现状引用）：
 

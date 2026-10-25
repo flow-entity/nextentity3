@@ -3,7 +3,6 @@ package io.github.nextentity.testing;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.Random;
 import java.util.function.Function;
 
 /// 变形用例（TLP / 变形关系）的**确定性**行生成器：固定种子 → 每次运行数据完全相同，失败可复现。
@@ -14,9 +13,11 @@ import java.util.function.Function;
 /// 固定种子生成既确定、又可调，还能顺带把「边界值恰好不存在」这种退化情形挡在门外
 /// （边界一律从夹具里取**实际存在的值**，见 {@link #boundary}）。
 ///
-/// 刻意不接 `Clock` / 全局随机源：种子是本文件的常量，不读任何环境状态
-/// （项目红线 `NO_AMBIENT_CLOCK_OR_RANDOM` 管的是「直调 `Instant.now()` / `new Random()`」，
-/// 定种子不是环境随机）。
+/// 随机源用同包的 {@link Rng}（SplitMix64），不用 `new Random(seed)`：项目红线
+/// `NO_AMBIENT_CLOCK_OR_RANDOM` 连**带种子**的 `Random` 构造器一起禁——定种子虽然可复现，
+/// 但它是「随手造一个随机源」这个习惯的入口，一旦开了口子，下一个需要随机的地方就会照抄，
+/// 而 `Random` 的序列又会被 JDK 版本改动（`Random` 有明确的多版本兼容承诺，其它实现未必）。
+/// `Rng` 只承诺「同 seed 同序列」，统计质量不承担任何责任，正好够用。
 public final class MetamorphicRows {
 
     /// 固定种子：改它等于换一套夹具，所有从夹具取边界的用例会跟着变（不需要改用例本身）。
@@ -47,7 +48,7 @@ public final class MetamorphicRows {
             throw new IllegalArgumentException("行数必须为正: " + count);
         }
         ItemStatus[] statuses = ItemStatus.values();
-        Random random = new Random(SEED);
+        Rng random = new Rng(SEED);
         List<FixtureRow> rows = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
             String name = NAMES[random.nextInt(NAMES.length)];

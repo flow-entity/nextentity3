@@ -212,9 +212,6 @@ step() {
     refresh_lock
     local -a cmd=("$@")
     local joined=" ${cmd[*]} "
-    if [[ "$joined" == *" install "* ]]; then
-        SAW_INSTALL=1
-    fi
     local -a skip_args=()
     # STEP_MAX_SKIP 支持空格分隔多条申报（如 "surefire:nextentity-tests-jpa=1"）：
     # 未点名的通道一律用 gate-receipt.py 的默认预算 0，任何跳过都要显式申报。
@@ -304,6 +301,13 @@ step() {
     rc=0
     "${cmd[@]}" >"$log" 2>&1 || rc=$?
     refresh_lock
+
+    # `SAW_INSTALL` 只在 install 步骤**真的成功**之后置位：原来在拼命令时就置 1，
+    # 于是 install 失败时后面的 PIT 步骤仍被放行，日志还会说「前置 install 已刷新」——
+    # 整体确实红，但红的原因被这句话盖住了（审查抓到）。
+    if [[ "$joined" == *" install "* && "$rc" -eq 0 ]]; then
+        SAW_INSTALL=1
+    fi
 
     if grep -q 'Nothing to compile - all classes are up to date' "$log" 2>/dev/null; then
         warns+=(--warn "$label：日志出现 Nothing to compile，本次复用了前序产物")

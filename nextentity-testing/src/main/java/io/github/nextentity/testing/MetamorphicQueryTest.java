@@ -79,6 +79,57 @@ public abstract class MetamorphicQueryTest<T extends Item> extends MetamorphicPa
         }
     }
 
+    /// 退化格清单：`基谓词 | 分区`，这些格里至少有一桶为空，因此那一格的 TLP 等式**部分空转**。
+    ///
+    /// 为什么允许退化格存在、但要求逐格登记：有些退化是**逻辑必然**，换夹具也消不掉——
+    /// 例如 `p` 本身蕴含 `c`（`score >= 50` 在 `c = score >= 39` 下成立），
+    /// 或 `p` 本身拒绝 `NULL`（`p ∧ c IS NULL` 恒空）。这类格测的是「`whole` 与 `pos` 相等」，
+    /// 只要 `and()` 原样返回左操作数就能过，杀伤力为零。
+    ///
+    /// 但「杀伤力为零的格」和「夹具悄悄退化的格」在运行结果里长得一模一样。所以把**当前**
+    /// 退化格钉成常量：夹具一改、边界一漂，退化集合就会变，这条用例立刻红，逼人重新论证
+    /// 每一格是「逻辑必然」还是「夹具没覆盖到」。没有这条，`fixtureSupportsEveryPartitionBucket`
+    /// 只校验了逐列边缘分布，会给出「夹具已校验」的错觉。
+    /// 逐格论证（括号内是当前夹具上的边界值；边界一变这些字符串就变，用例会红，这正是目的）：
+    ///
+    /// - `score >= 50 | score >= 48`：`p` 蕴含 `c`（50 ≥ 48），`neg` 必空；
+    ///   且 `p` 本身拒绝 `NULL`，`p ∧ score IS NULL` 必空。
+    /// - `score2 < 30 | score2 < 61`：同上（`p` 蕴含 `c`，且 `p` 拒绝 `NULL`）。
+    /// - `note is not null | note = 'n2'`：`p ∧ note IS NULL` 必空——`p` 与分区空值判断
+    ///   作用在同一列上，两者互斥。这是**结构性**退化，任何夹具都消不掉。
+    /// - `score >= 20 AND score < 80 | score >= 48`：只有 `null` 桶空（`p` 拒绝 `NULL`）；
+    ///   `neg` 桶（20 ≤ score < 48）非空，所以这一格仍然测得到「`NOT` 是否写对」。
+    ///
+    /// 判据：凡是 `neg` 与 `null` **同时**为空的格，TLP 等式退化成 `whole == pos`，
+    /// 只要 `and()` 原样返回左操作数就能过——那两格（前两条）在 `c` 取值逼近 `p` 时就是这种形态。
+    private static final List<String> KNOWN_DEGENERATE_CELLS = List.of(
+            "score >= 50 | score >= 48",
+            "score2 < 30 | score2 < 61",
+            "note is not null | note = 'n2'",
+            "score >= 20 AND score < 80 | score >= 48");
+
+    @Test
+    @DisplayName("变形夹具：退化为空桶的格必须恰好是已论证过的那几格")
+    void degenerateCellsAreExactlyTheKnownOnes() {
+        List<String> degenerate = new ArrayList<>();
+        for (Named<T> base : basePredicates()) {
+            for (Partition<T> partition : partitions()) {
+                long positive =
+                        query().where(base.predicate().and(partition.holds())).count();
+                long negative =
+                        query().where(base.predicate().and(partition.fails())).count();
+                long nulls =
+                        query().where(base.predicate().and(partition.isNull())).count();
+                if (positive == 0 || negative == 0 || nulls == 0) {
+                    degenerate.add(base.name() + " | " + partition.name());
+                }
+            }
+        }
+        assertThat(degenerate)
+                .as("退化格集合变了：要么夹具漂移，要么新增了逻辑必然的退化格——逐格重新论证后改这个常量")
+                .containsExactlyElementsOf(KNOWN_DEGENERATE_CELLS);
+    }
+
     // ---------------------------------------------------------------- TLP
 
     @Test
