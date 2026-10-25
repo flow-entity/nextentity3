@@ -3,6 +3,7 @@ package io.github.nextentity.jpa;
 import io.github.nextentity.jpa.entity.Article;
 import io.github.nextentity.jpa.entity.Customer;
 import io.github.nextentity.jpa.entity.DerivedRecord;
+import io.github.nextentity.jpa.entity.ElementCollectionHolder;
 import io.github.nextentity.jpa.entity.Note;
 import io.github.nextentity.jpa.entity.OrderStatus;
 import io.github.nextentity.jpa.entity.Organization;
@@ -74,6 +75,7 @@ abstract class JpaTestSupport {
         configuration.addAnnotatedClass(Tag.class);
         configuration.addAnnotatedClass(Seal.class);
         configuration.addAnnotatedClass(SealHolder.class);
+        configuration.addAnnotatedClass(ElementCollectionHolder.class);
         this.sessionFactory = configuration.buildSessionFactory();
         this.meta = new JpaMeta(sessionFactory);
     }

@@ -7,6 +7,7 @@ import io.github.nextentity.core.meta.EntityAttribute;
 import io.github.nextentity.jpa.entity.Article;
 import io.github.nextentity.jpa.entity.BaseRecord;
 import io.github.nextentity.jpa.entity.DerivedRecord;
+import io.github.nextentity.jpa.entity.ElementCollectionHolder;
 import io.github.nextentity.jpa.entity.ShopOrder;
 import io.github.nextentity.jpa.entity.VersionedEntry;
 import io.github.nextentity.jpa.entity.VersionedLedger;
@@ -37,6 +38,16 @@ class JpaMetaTest extends JpaTestSupport {
         assertThat(meta().association(VersionedEntry.class, "ledger")).isTrue();
         assertThat(meta().association(VersionedLedger.class, "name")).isFalse();
         assertThat(meta().association(VersionedEntry.class, "label")).isFalse();
+
+        // @ElementCollection 是 PluralAttribute 但 isAssociation() 为假：删掉 association 里
+        // 「PluralAttribute 提前返回 true」那一行后，这里会变成 false——JpaPaths 随即把它当普通列
+        // get()（渲染出错）、JpaPersistExecutor 把它当标量列 update.set(...)（写路径出错）。
+        assertThat(meta().association(ElementCollectionHolder.class, "labels"))
+                .as("@ElementCollection 必须按「可 join 的关联」处理，不能落回 isAssociation()")
+                .isTrue();
+        assertThat(meta().pluralAssociation(ElementCollectionHolder.class, "labels"))
+                .as("@ElementCollection 同时是集合属性，两条判据必须分得开")
+                .isTrue();
 
         // 与既有实体保持一致：普通外键列不 join，关联要 join
         assertThat(meta().association(ShopOrder.class, "customer")).isTrue();

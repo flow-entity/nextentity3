@@ -395,7 +395,7 @@ tier_ci() {
     # CI 权威通道。与本地 pr 档的唯一区别：容器通道**必须真跑**，Docker 缺失即红。
     # 这一档存在的理由：本地 pr 档用 -DskipITs 换取 30s，而 -DskipITs 不留任何标记——
     # 只有把「权威结论只在 ci 档产生」写死，才不会被本地那份省事的绿骗过去。
-    EXPECT_STEPS=(ci-fast ci-container ci-legacy)
+    EXPECT_STEPS=(ci-fast ci-container ci-legacy ci-install ci-pit-core)
     STEP_MIN_TESTS="surefire:nextentity-api=147 surefire:nextentity-core=267 surefire:nextentity-jpa=73 surefire:nextentity-spring=14 surefire:nextentity-arch=24"
     step ci-fast \
         "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-arch" \
@@ -417,6 +417,14 @@ tier_ci() {
     step ci-legacy \
         "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-tests-legacy" \
         ./mvnw -B -pl nextentity-tests-legacy -am test
+    # 等价变异台账是工作树里的数据文件，与被它豁免的用例同源，没有独立锚点。
+    # 台账校验只放在 night/release 的话，「PR 里删一条断言 + 给对应变异体加一行台账」能一路绿到合并，
+    # 次日 nightly 才在 base 上红，责任已经转给夜间。所以 ci 档对 core 当场校验。
+    # 只挑 core：变异体最多（863）、台账最长，且单模块 PIT 分钟级；jpa/api/spring 仍留给 night/release。
+    # install 不能省：PIT 不带 -am，它从 ~/.m2 解析 nextentity-api，陈旧快照会让依赖新语义的用例集体报错。
+    STEP_MIN_TESTS=""
+    step ci-install "" ./mvnw -B -q install -DskipTests -pl nextentity-api
+    step ci-pit-core "pit:nextentity-core" ./mvnw -B -pl nextentity-core test-compile pitest:mutationCoverage
 }
 
 tier_pr() {    # 容器通道在本档明确不跑（-DskipITs）。凭证会把 failsafe 记为「未声明」而不是「skip=0」。

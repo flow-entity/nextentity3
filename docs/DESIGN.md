@@ -133,6 +133,7 @@ L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（
 | 手算常量（固定夹具 + `containsExactlyInAnyOrder(APPLE_ID, CHERRY_ID)`） | 只钉**已知语义**：`between` 是闭区间、`notBetween` 与 `between` 互补且两侧都不含 NULL 行、`a = b` 与 `a <> b` 都不命中 NULL 行 | 语义细节、边界、容易被「优化」掉的坑 |
 | 差分（真库执行 vs 内存独立计算） | 组合正确性：同一份 Spec 在两条独立实现路径上算出的行集必须一致 | 条件/排序/分页/聚合的组合面积 |
 | 跨方言对拍 | 方言无关性：同一用例在 H2 与真实 MySQL 上结果集逐行相同 | L4（`*IntegrationTest`，同一批一致性基类接两套装置） |
+| 变形关系（metamorphic / TLP） | **关系**成立性：`Q(p)` 必须等于 `Q(p∧c)`、`Q(p∧¬c)`、`Q(p∧c IS NULL)` 三桶之并，不需要任何人知道期望值 | 条件组合语义（`AND`/`OR`/`NOT` 的分组与 `NULL` 相互作用）、分页重组 |
 
 为什么手算不能当主力：4 行固定夹具下手算可行，组合面积一扩大就不可维护——每个新能力只能挑一个最顺的例子手算一条，边界组合没人算，最终结果是测试只覆盖 happy path，而 oracle 本身成了又一份需要维护的「实现」。所以手算常量只用来钉已知语义，正确性证据必须来自差分或跨方言对拍。
 
@@ -160,6 +161,13 @@ L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（
 
 手算常量的用例并没有被删——它们钉的是「闭区间」「NULL 行归属」「算子互补」这类**已知语义**，与差分互补，两者都要留。判据很简单：**这条用例红了，我能说出是期望值错还是生产错吗？** 说不出就说明 oracle 没分层。
 
+**变形关系（metamorphic / TLP）**：差分 oracle 有一个它自己答不出的问题——**内存 oracle 写错时，真库与内存会一起错**，套件照样全绿。变形关系绕开这个闭环：它不比对「期望值 vs 实际值」，只断言两条查询之间**全称成立的关系**，因此不依赖任何人算对答案。
+
+- 落点：`nextentity-testing/src/main` 的 `MetamorphicTestBase`（夹具参数与断言工具）→ `MetamorphicPagingTest`（分页重组 2 格）→ `MetamorphicQueryTest`（TLP 4 格 + 幂等/中性元 3 格 + 夹具自检 1 格）。后端子类是 `ItemMetamorphicQueryTest`（H2）与 `MySqlItemMetamorphicQueryIntegrationTest`（真 MySQL），只换接线，断言只有一套。
+- 夹具自检是必需的，不是装饰：`offByOnePartitionIsNotIgnored()` 故意把分区写成「`>` 代替 `>=`」，断言等式**必须破**、且漏掉的必须**恰好**是边界行。没有这一条，关系在夹具退化（某桶恒空、边界值不存在）时恒成立，三条 TLP 用例就成了摆设。夹具质量另由 `fixtureSupportsEveryPartitionBucket()` 前置校验。
+- 页大小取 7 与夹具默认行数 64 互质，末页必然不是整页——整页时「多取一行/少取一行」在拼接结果里看不出来。
+- **它不替代差分**，实测分工是互补的：把 `JpaPredicates` 的 `AND`/`OR` 互换，TLP 当场红 4 条（分区等式与两两不相交全破）；把 `GE` 改成 `GT`，TLP **全绿**（三桶照样覆盖全集，因为 `>` 与 `NOT (> )` 仍是合法分区），红的是差分。所以判据是「哪一族关系能看见这个错」，不是「哪一层更高级」。
+
 **写侧维度覆盖（嵌入 / 列名覆盖 / 时间 / 自增主键）**：这四类只能走「声明式期望 + SQL 快照 + 变异证据」的组合 oracle（理由见上一条「写侧往返」），落点是 `nextentity-tests-jpa` 的**三份契约基类**（四个维度里 `@Embedded` 写侧与 `@AttributeOverride` 共用一份——后者串不串列只有前者那套镜像断言才看得出来）。每份基类只有**一套断言**，H2 子类与真 MySQL 子类只换接线——两份断言会漂移，漂移出来的绿是假绿：
 
 | 维度 | 契约基类（`nextentity-tests-jpa/src/test`） | 钉住什么 |
@@ -185,7 +193,7 @@ L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（
 
 | 指标 | 角色 | 目标 |
 |---|---|---|
-| 变异分数（PIT） | 主指标 | `api` / `core` / `jpa` / `spring` 均 ≥ 95%；当前实测 99% / 100% / 98% / 100%（见下「变异测试」，阈值写在各模块 pom） |
+| 变异分数（PIT） | 主指标 | `api` / `core` / `jpa` / `spring` 均 ≥ 95%；当前实测 98.50% / 99.07% / 95.65% / 100%（见下「变异测试」，阈值写在各模块 pom） |
 | 语义等价律条数 | 辅助 | 每条律至少 1 条差分用例，条数只增不减 |
 | 方言矩阵通过率 | 辅助 | 默认通道 100% 通过；skip 数单独报表，只许降不许升。矩阵列为 H2\MODE=MySQL\ + MySQL 8.0.18（默认、强制）+ H2\MODE=PostgreSQL\（`-Pdialect-pg`，报告落独立目录成独立通道 `surefire-pg:`，`pr`/`ci`/`night`/`release` 四档都跑；8 条已知方言差异按 `tools/expected-failures/h2-postgresql.txt` **逐条**判定，多一条或少一条都红；`Instant` 绑定偏移不再计入（写侧断言按方言分派，既不红也不跳过，见下「方言矩阵通道」））；skip 报表**已建成**：每次门禁都从 surefire/failsafe XML 里抽 `<skipped>` 并连理由一起落进 `tmp/gate/<commit>-<ts>/receipt.json`，见下「执行凭证」 |
 | 缺陷逃逸率 | 辅助 | 发版后发现的语义缺陷数 / 版本，趋势必须向下 |
@@ -366,7 +374,12 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 三件事只有凭证能给出、日志给不出：**skip 清单连理由**（`方言跳过必须可数` 从「PR 里手写」变成自动抽取）、**`~/.m2` 与源码的时间戳倒挂**（`-pl` 不带 `-am` 时会读到旧语义）、以及**跨模块合并口径的条数**（`-am` 反应堆会把 jpa/spring 一起带进来，比单看目标模块多）。
 
-档位与「该跑什么」一一对应：`fast` = 格式化检查 + 架构规则 + `api`/`core` 快测试（无容器；跑 `test` 阶段，故不含静态检查——静态检查只在 `verify` 上，落点在 `pr` 及以后各档）；`pr` = H2 564 + PG 兼容模式 564（基线 8 条）+ 遗留 727；`ci` = 前者 + 真 MySQL 容器通道 + `-Dnextentity.requireContainer=true`；`night` = `install` 刷快照 + 全量含容器 + 遗留 h2/mysql 双跑 + PIT×4；`release` = `clean verify` + api-compat。`ci`/`pr` 刻意不跑 PIT（单模块分钟级，不该挡 push），PIT 的落点在 `night` 与 `release`。
+档位与「该跑什么」一一对应：`fast` = 格式化检查 + 架构规则 + `api`/`core` 快测试（无容器；跑 `test` 阶段，故不含静态检查——静态检查只在 `verify` 上，落点在 `pr` 及以后各档）；`pr` = H2 564 + PG 兼容模式 564（基线 8 条）+ 遗留 727；`ci` = 前者 + 真 MySQL 容器通道 + `-Dnextentity.requireContainer=true`；`night` = `install` 刷快照 + 全量含容器 + 遗留 h2/mysql 双跑 + PIT×4；`release` = `clean verify` + api-compat。`ci`/`pr` 刻意不跑全量 PIT（单模块分钟级，不该挡 push），PIT 的落点在 `night` 与 `release`。
+**唯一例外是 `ci` 档多跑一个 `nextentity-core` 的 PIT**（`: ci-pit-core`）：等价变异台账是工作树里的数据文件，
+与被它豁免的用例、生产代码同源，没有独立锚点——只把台账校验放在 `night`/`release` 意味着「PR 里删一条断言、
+同时给对应变异体加一行台账」可以一路绿到合并，次日 nightly 才在 base 上红，责任已经转移给夜间。
+`ci` 档因此对 `core`（变异体最多、台账最长的模块）当场校验台账；`jpa`/`api`/`spring` 仍只在 `night`/`release` 校验，
+这条残余风险是已知且明写的，不是漏掉。
 
 **尚未实施**（方向，不是已有能力——写进这里的东西不得当成现状引用）：
 

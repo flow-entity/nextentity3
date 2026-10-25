@@ -9,6 +9,6 @@ io.github.nextentity.api.Conditions$AbstractOperators | 104 | skip | NonVoidMeth
 io.github.nextentity.api.Conditions$AbstractOperators | 101 | skip | RemoveConditionalMutator_EQUAL_ELSE | 1 | reason=suppressed 为真的唯一构造点同时把 parent 传成 null，删掉 if (suppressed) 后仍落进 parent 为空的那条分支，返回同一个恒真单例 | expires=2027-04-20
 io.github.nextentity.api.Conditions$AbstractOperators | 104 | skip | RemoveConditionalMutator_EQUAL_ELSE | 1 | reason=可达路径上 parent 恒非 null，把判空条件改成假后仍返回 parent，与正确分支返回同一个对象引用 | expires=2027-04-20
 io.github.nextentity.api.Conditions | 218 | checked | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-20
-io.github.nextentity.api.Conditions | 206 | operands | MathMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-20
+io.github.nextentity.api.Conditions | 206 | operands | MathMutator | 1 | reason=该行是 new ArrayList<>(others.size() + 1)，加号换成减号只在 others 为空时才会 new ArrayList<>(-1) 抛异常；而两个调用点 Conditions:140 与 :146 都是 others.isEmpty() ? this : operands(this, others)，others 至少 1 个元素，因此只改变初始容量 | expires=2027-04-20
 io.github.nextentity.api.Conditions | 206 | operands | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-20
 io.github.nextentity.api.ProjectionMapper$1 | 56 | <init> | NonVoidMethodCallMutator | 1 | reason=javac 为匿名类捕获外部实例自动生成的非空校验，源码里根本没有这一行，删掉不改变任何可观察行为 | expires=2027-04-20
