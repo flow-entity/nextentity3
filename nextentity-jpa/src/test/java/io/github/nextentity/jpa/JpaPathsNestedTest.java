@@ -3,6 +3,7 @@ package io.github.nextentity.jpa;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.nextentity.api.EntityPath;
+import io.github.nextentity.core.repo.EntityOperations;
 import io.github.nextentity.core.spec.AttributePath;
 import io.github.nextentity.core.spec.Comparison;
 import io.github.nextentity.core.spec.ComparisonOperator;
@@ -104,6 +105,59 @@ class JpaPathsNestedTest extends JpaTestSupport {
         // 整句：嵌入路径直接渲染成 shipment 自己的列 `s1_0.city`，语句里没有任何 join
         assertThat(normalized(drainSql()))
                 .containsExactly("select s1_0.id,s1_0.city from shipment s1_0 where s1_0.city=?");
+    }
+
+    @Test
+    @DisplayName("count 走关联路径：join 和 where 都要活到 count 语句里")
+    void countThroughJoinedPath() {
+        drainSql();
+
+        long count = inTx(entityManager -> operations(entityManager, ShopOrder.class)
+                .query()
+                .where(EntityPath.of(ShopOrder::getCustomer).get(Customer::getName))
+                .eq("Alice")
+                .count());
+
+        // 100 号订单的客户是 Alice，101 号客户为空：丢掉 where 会数出 2，丢掉 join 会直接报错
+        assertThat(count).isEqualTo(1L);
+        assertThat(normalized(drainSql()))
+                .as("count 丢了 join 或 where 都会让这条变成「数全表」")
+                .anySatisfy(sql -> assertThat(sql)
+                        .contains("count(")
+                        .contains("left join customer c1_0 on c1_0.id=so1_0.customer_id")
+                        .contains("where c1_0.name=?"));
+    }
+
+    @Test
+    @DisplayName("exists 走嵌入路径：命中 true、不命中 false，条件落在仓库自己的列上")
+    void existsThroughEmbeddedPath() {
+        drainSql();
+
+        boolean hit = inTx(entityManager -> operations(entityManager, Shipment.class)
+                .query()
+                .where(EntityPath.of(Shipment::getAddress).get(ShipmentAddress::getCity))
+                .eq("Shanghai")
+                .exists());
+
+        assertThat(hit).isTrue();
+        assertThat(normalized(drainSql())).as("嵌入路径的 exists 必须把条件渲染成仓库自己的列").anySatisfy(sql -> assertThat(sql)
+                .contains("from shipment s1_0")
+                .contains("where s1_0.city=?"));
+
+        drainSql();
+
+        boolean miss = inTx(entityManager -> operations(entityManager, Shipment.class)
+                .query()
+                .where(EntityPath.of(Shipment::getAddress).get(ShipmentAddress::getCity))
+                .eq("Nowhere")
+                .exists());
+
+        // 取不到行时必须是 false：若 exists 退化成「查全表再判非空」就会是 true
+        assertThat(miss).isFalse();
+    }
+
+    private <T> EntityOperations<T> operations(EntityManager entityManager, Class<T> type) {
+        return new JpaEntityOperationsFactory(entityManager, entityManager.getEntityManagerFactory()).operations(type);
     }
 
     private JpaCompiler compiler(EntityManager entityManager) {
