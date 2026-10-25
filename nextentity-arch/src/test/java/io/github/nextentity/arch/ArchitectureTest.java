@@ -14,12 +14,20 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
+import java.security.SecureRandom;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.Year;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.Random;
+import java.util.SplittableRandom;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.random.RandomGenerator;
 
 /// 架构门禁：依赖方向、包边界与可测试性约束由测试守住，而不是靠自觉。
 ///
@@ -68,10 +76,14 @@ class ArchitectureTest {
 
     /// 禁止直接读系统时钟或创建随机源。
     ///
-    /// 随机源这条**不用** `callConstructor(Random.class)`：ArchUnit 的单参重载只匹配
-    /// **无参**构造器，`new Random(seed)` 会静默漏过（1.4.1 实测）。改成「依赖了
-    /// `RandomGenerator` 及其任何实现」——`Random` / `SecureRandom` / `SplittableRandom`
-    /// 一次全盖，也不再依赖构造器签名。
+    /// **构造器禁令必须写全参数表**：ArchUnit 1.4.1 的单参 `callConstructor(Random.class)`
+    /// 只匹配**无参**构造器（它把 `parameterTypes` 拼进 `rawParameterTypes` 精确相等谓词，
+    /// 空 varargs 只等于空列表），`new Random(seed)` 会静默漏过。所以无参与带 seed 两条都写。
+    ///
+    /// **不用** `dependOnClassesThat().areAssignableTo(RandomGenerator.class)` 一刀切：
+    /// 它按类型依赖判（字段/参数/返回值都算），而本规则作用的范围包含
+    /// `nextentity-testing/src/main`——那正是「把随机源注入进来」的合法写法所在地，
+    /// 一刀切会把 AGENTS.md 要求的注入式夹具判红。注入 `RandomGenerator` 不是环境依赖。
     @ArchTest
     static final ArchRule NO_AMBIENT_CLOCK_OR_RANDOM = noClasses()
             .should()
@@ -85,15 +97,38 @@ class ArchitectureTest {
             .orShould()
             .callMethod(LocalDateTime.class, "now")
             .orShould()
+            .callMethod(LocalTime.class, "now")
+            .orShould()
+            .callMethod(ZonedDateTime.class, "now")
+            .orShould()
+            .callMethod(OffsetDateTime.class, "now")
+            .orShould()
+            .callMethod(Year.class, "now")
+            .orShould()
+            .callMethod(Clock.class, "systemUTC")
+            .orShould()
+            .callMethod(Clock.class, "systemDefaultZone")
+            .orShould()
+            .callMethod(Clock.class, "system", ZoneId.class)
+            .orShould()
             .callMethod(UUID.class, "randomUUID")
             .orShould()
             .callMethod(Math.class, "random")
             .orShould()
             .callMethod(ThreadLocalRandom.class, "current")
             .orShould()
-            .dependOnClassesThat()
-            .areAssignableTo(RandomGenerator.class)
-            .because("时间与随机必须经 Clock / IdGenerator 注入；带参的 now(clock) 不受限，否则测试只能靠 sleep 与模糊断言");
+            .callConstructor(Random.class)
+            .orShould()
+            .callConstructor(Random.class, long.class)
+            .orShould()
+            .callConstructor(SplittableRandom.class)
+            .orShould()
+            .callConstructor(SplittableRandom.class, long.class)
+            .orShould()
+            .callConstructor(SecureRandom.class)
+            .because("时间与随机必须经 Clock / IdGenerator 注入；带参的 now(clock) 与 Clock.fixed 不受限，"
+                    + "否则测试只能靠 sleep 与模糊断言。`Clock.system*` 要单独禁：`Instant.now(Clock.systemUTC())` "
+                    + "能一行绕过 `Instant.now()` 这条禁令");
 
     /// 禁止静态可变状态。
     @ArchTest

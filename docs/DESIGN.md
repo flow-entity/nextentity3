@@ -165,10 +165,10 @@ L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（
 
 - 落点：`nextentity-testing/src/main` 的 `MetamorphicTestBase`（夹具参数与断言工具）→ `MetamorphicPagingTest`（分页重组 2 格 + 投影对齐 1 格 + 倒序互逆 1 格）→ `MetamorphicQueryTest`（TLP 等式 3 格 + 分区自我检查 1 格 + 幂等/中性元 3 格 + 夹具质量门 2 格），共 **13 格**。后端子类是 `ItemMetamorphicQueryTest`（H2）与 `MySqlItemMetamorphicQueryIntegrationTest`（真 MySQL），只换接线，断言只有一套。
 - 夹具自检是必需的，不是装饰：`offByOnePartitionIsNotIgnored()` 故意把分区写成「`>` 代替 `>=`」，断言等式**必须破**、且漏掉的必须**恰好**是边界行（边界值取自夹具实际出现的中位数，所以它必然存在，且用例没有假设「边界只有一行」）。没有这一条，关系在夹具退化时恒成立，三条 TLP 用例就成了摆设。
-- 夹具质量门有两道，缺第二道会留下一个看不见的洞：`fixtureSupportsEveryPartitionBucket()` 只校验**逐列**边缘分布（每列都有大于/小于/等于边界与 `null` 的行）；`degenerateCellsAreExactlyTheKnownOnes()` 才校验**逐格**——遍历 6 个基谓词 × 3 个分区的 18 格，把「至少一桶为空」的格钉成常量清单。18 格里当前有 4 格退化，且都是**逻辑必然**（`p` 蕴含 `c`、或 `p` 与分区空值判断作用在同一列），换夹具也消不掉；但「逻辑必然的空桶」和「夹具悄悄退化的空桶」在运行结果里长得一模一样，所以退化集合一旦变化就判红，逼人重新论证每一格。只有第一道门时，空桶会被静默放过——`and()` 原样返回左操作数也能过。
+- 夹具质量门有两道，缺第二道会留下一个看不见的洞：`fixtureSupportsEveryPartitionBucket()` 只校验**逐列**边缘分布（每列都有大于/小于/等于边界与 `null` 的行）；`degenerateCellsAreExactlyTheKnownOnes()` 才校验**逐格**——遍历 6 个基谓词 × 3 个分区的 18 格，把「至少一桶为空」的格钉成常量清单。18 格里当前有 4 格退化，成因要分开说，笼统写成「逻辑必然」是错的：这 4 格的**共同**成因是结构性的——四个基谓词都不接受 `NULL`，所以 `p ∧ (列 IS NULL)` 桶恒空，换任何夹具都消不掉；其中前两格**另外**还因为**当前阈值**恰好让 `p` 蕴含 `c`（`score >= 50` 对 `c = score >= 48`）而连 `neg` 桶也空，等式退化成 `whole == pos`、杀伤力归零，把分区阈值调大就不再退化。真正的判据是「`neg` 与 `null` 同时为空」，那才是零杀伤力格。而「结构必然的空桶」和「夹具悄悄退化的空桶」在运行结果里长得一模一样，所以退化集合一旦变化就判红，逼人重新论证每一格。只有第一道门时，空桶会被静默放过——`and()` 原样返回左操作数也能过。
 - 倒序互逆那格（`descendingOrderIsTheReverseOfAscending`）专门补 TLP 的盲区：TLP 两侧都用同一条 `ORDER BY`，渲染错会**同时**出现在两侧，等式照样成立。实测把 `JpaPaths.descending` 改成 `builder.asc(...)`，这条当场红。
 - 页大小取 7 与夹具默认行数 64 互质，末页必然不是整页——整页时「多取一行/少取一行」在拼接结果里看不出来。
-- **它看得见什么、看不见什么**（写清楚比宣称更强有用）：看得见 `AND`/`OR`/`NOT` 的优先级与分组错、`NOT` 与 `NULL` 的交互错、条件被静默丢弃、分页切片错位、排序方向写反、投影列漏列/多列/列序错位。**看不见**两类——① 谓词整体平移（`GE`→`GT` 三桶一起移，等式仍成立，靠差分抓）；② 排序键被整段丢弃且结果恰好仍是 id 序（夹具的主键序与插入序一致时无从分辨，只能靠倒序互逆那条兜住方向错误）。
+- **它看得见什么、看不见什么**（写清楚比宣称更强有用）：看得见 `AND`/`OR`/`NOT` 的优先级与分组错、`NOT` 与 `NULL` 的交互错、条件被静默丢弃、分页切片错位、排序方向写反、排序键被整段丢弃（两侧返回同一顺序，互逆关系当场破——这一条是倒序互逆那格抓的，不是它的盲区）、投影列漏列与列序错位、某列被换成常量。**看不见**三类——① 谓词整体平移（`GE`→`GT` 三桶一起移，等式仍成立，靠差分抓）；② 排序键被换成「在夹具上与 id 同序的另一列」（两侧照样互逆，看不出，只能靠差分的期望行序）；③ 投影**多出来的列**：装配按 `Selection.items().size()` 取前 N 个 cell（`RowAssembler.java:48-53`），多渲染的第 4 列被静默丢弃，`Tuple3` 照样装得出来——要抓这类得靠 SQL 快照，变形关系抓不到。
 - 投影那一格（`projectedColumnsSurvivePagingAndStayAligned`）值得单说：分页重组若只比 id，`select` 漏列、多列、列序错位全都看不见——id 照样拼得回去。它把三列投影的结果与「从整条实体上直读同样三个字段」算出的元组逐行对齐比较，期望值不来自任何手算常量，而是同一夹具的另一条读路径；列序写反、某列被换成常量、`SELECT` 里少一列，三种都会红。
 - **它不替代差分**，实测分工是互补的：把 `JpaPredicates` 的 `AND`/`OR` 互换，TLP 当场红 4 条（分区等式与两两不相交全破）；把 `GE` 改成 `GT`，TLP **全绿**（三桶照样覆盖全集，因为 `>` 与 `NOT (> )` 仍是合法分区），红的是差分。所以判据是「哪一族关系能看见这个错」，不是「哪一层更高级」。
 
@@ -207,7 +207,7 @@ L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（
 
 用合并口径实测（`564` H2 + `536` 容器用例全跑，两个通道各 skip 1 条，见下「方言矩阵」），生产代码里没被执行的行**只剩清单里那些**，但四个模块要分开看口径：
 
-- **聚合报告只含 `nextentity-jpa` 与 `nextentity-testing` 两个 group**（`report-aggregate` 只收直接编译依赖，`api`/`core` 是传递依赖、`spring` 是 test 作用域，都不进聚合文件）。`nextentity-jpa` 组里只剩四行：`jpa/meta/JpaEntityAttribute.java:48-49`、`:58-59`；`jpa/exec/JpaExecutor.java:122`、`:124` 的**行已被模块单测执行**，只剩分支没走全（见下表对应条目）。
+- **聚合报告只含 `nextentity-jpa` 与 `nextentity-testing` 两个 group**（`report-aggregate` 只收直接编译依赖，`api`/`core` 是传递依赖、`spring` 是 test 作用域，都不进聚合文件）。`nextentity-jpa` 组里只剩四行：`jpa/meta/JpaEntityAttribute.java:48-49`、`:58-59`（`catch` 行与 `throw` 行都从未执行，所以台账登记的 `:49`/`:59` 字符串拼接变异体是 NO_COVERAGE——两处说的是同一件事，不是行号打架）；`jpa/exec/JpaExecutor.java:122`、`:124` 的**行已被模块单测执行**，只剩分支没走全（见下表对应条目）。
 - `api`/`core`/`spring` 看各自模块的 `jacoco.xml`：`api` 剩 **0 行 1 分支**（`api/Conditions.java:104` 的 `parent == null` 子分支）、`core` 剩 3 行（`core/builder/PathRefs.java:90-92`）、`spring` 零行零分支。
 - 两处口径合起来 = **清单外没有一条未覆盖的生产代码行**。剩余未覆盖行都在 `nextentity-testing/src/main` 的 oracle 自身（各差分基类的内存求值/生成器分支、`Shape` 自检的抛错分支），属于测试基础设施的自检路径，不是产品能力。
 
