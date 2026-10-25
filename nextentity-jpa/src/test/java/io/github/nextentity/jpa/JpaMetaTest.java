@@ -41,13 +41,19 @@ class JpaMetaTest extends JpaTestSupport {
     }
 
     @Test
-    @DisplayName("entityType：同一实体多次调用返回同一实例（缓存契约）")
+    @DisplayName("entityType：同一实体多次调用返回同一实例，不同实体不共用实例")
     void entityTypeIsCachedPerEntity() {
         // JpaMeta 的 javadoc 承诺"同一实体多次调用返回同一实例"；不钉住它，缓存退化成
         // 每次重建也全绿——重建会连带丢掉 attributes() 里缓存的字段句柄，
         // 只是性能与身份语义的变化，任何结果断言都看不出来。
-        assertThat(meta().entityType(ShopOrder.class)).isSameAs(meta().entityType(ShopOrder.class));
-        assertThat(meta().entityType(ShopOrder.class)).isSameAs(meta().entityType(ShopOrder.class));
+        JpaEntityType<ShopOrder> first = meta().entityType(ShopOrder.class);
+        assertThat(meta().entityType(ShopOrder.class)).as("同一实体两次调用必须是同一实例").isSameAs(first);
+        assertThat(meta().entityType(ShopOrder.class)).as("第三次调用仍是同一实例").isSameAs(first);
+        // 反方向：缓存键写错（任意类型都命中同一个实例）时上面两条照样绿，
+        // 所以必须同时钉住"不同实体拿到不同实例"。
+        assertThat(meta().entityType(VersionedLedger.class))
+                .as("不同实体不能共用元数据实例")
+                .isNotSameAs(meta().entityType(ShopOrder.class));
     }
 
     @Test

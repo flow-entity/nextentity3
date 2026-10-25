@@ -25,17 +25,16 @@ public final class JpaMeta {
 
     /// 取实体元数据（首次解析后缓存）。
     ///
+    /// 缓存用 `computeIfAbsent`，不用 `get` / `put` 两步：两步写法下两个线程同时首访同一实体
+    /// 会各造一个实例、各自返回自己那份，"同一实体多次调用返回同一实例"在并发首访时就不成立
+    /// （字段句柄也跟着分裂）。`computeIfAbsent` 把"判定 + 构造 + 落缓存"合成一次原子操作。
+    ///
     /// @param type 实体类型；必须在元模型里注册，否则抛 `IllegalArgumentException`
     /// @param <T>  实体类型
     /// @return 缓存的元数据：同一实体多次调用返回同一实例
     @SuppressWarnings("unchecked")
     public <T> JpaEntityType<T> entityType(Class<T> type) {
-        JpaEntityType<?> cached = cache.get(type);
-        if (cached == null) {
-            cached = JpaEntityType.of(metamodel, type);
-            cache.put(type, cached);
-        }
-        return (JpaEntityType<T>) cached;
+        return (JpaEntityType<T>) cache.computeIfAbsent(type, t -> JpaEntityType.of(metamodel, t));
     }
 
     /// 判断「某 managed type 的某段属性是不是关联」，决定嵌套路径要 `join` 还是 `get`。

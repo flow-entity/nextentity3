@@ -35,12 +35,14 @@ import org.junit.jupiter.api.Test;
 class JpaEmbeddedChainTest extends JpaTestSupport {
 
     /// 两行只有 `zone` 不同：命中一行才说明第三段真的渲染成仓库自己的列。
+    /// 第三行 `location = null`：给下面那条「嵌入为 null 的行也得返回」的用例留素材。
     @BeforeEach
     void seedWarehouses() {
         inTx(entityManager -> {
             entityManager.createQuery("delete from Warehouse").executeUpdate();
             entityManager.persist(new Warehouse(1L, new WarehouseLocation("east", new GeoCoordinates("north"))));
             entityManager.persist(new Warehouse(2L, new WarehouseLocation("east", new GeoCoordinates("south"))));
+            entityManager.persist(new Warehouse(3L, null));
             return null;
         });
         drainSql();
@@ -81,6 +83,33 @@ class JpaEmbeddedChainTest extends JpaTestSupport {
         assertThat(normalized(drainSql()))
                 .containsExactly("select w1_0.id,w1_0.zone,w1_0.region from warehouse w1_0 where w1_0.zone=?"
                         + " order by w1_0.id");
+    }
+
+    /// 嵌入属性为 `null` 的行必须照样被查出来。
+    ///
+    /// 这条钉的是「嵌套路径一律 join」那条等价判定的**边界**：Hibernate 7 把嵌入的 `join` 摊平成
+    /// 同一张表的列，所以现在看不出差异；但一旦某个实现给嵌入 `join` 加上 `is not null` 谓词
+    /// （INNER 的常见实现），嵌入列全 null 的行就会静默消失——那是结果差异，不是格式差异。
+    /// 换 Hibernate 大版本或接第二后端时，这条会先红。
+    @Test
+    @DisplayName("嵌入属性为 null 的行照样返回：嵌入 join 若加 is not null 就会漏行")
+    void nullEmbeddedRowIsReturned() {
+        QuerySpec spec = new QuerySpec(
+                Warehouse.class,
+                new EntitySelection(),
+                null,
+                List.of(),
+                null,
+                List.of(new Ordering(AttributePath.of(Warehouse.class, "id"), Ordering.Direction.ASC)),
+                Window.NONE,
+                null);
+
+        List<Long> ids = inTx(entityManager ->
+                executor(entityManager).<Warehouse>list(compiler(entityManager).compile(spec)).stream()
+                        .map(Warehouse::getId)
+                        .toList());
+
+        assertThat(ids).as("嵌入为 null 的 3 号行不能被过滤掉").containsExactly(1L, 2L, 3L);
     }
 
     private JpaCompiler compiler(EntityManager entityManager) {

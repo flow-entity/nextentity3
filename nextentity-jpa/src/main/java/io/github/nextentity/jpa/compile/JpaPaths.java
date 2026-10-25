@@ -48,6 +48,14 @@ final class JpaPaths {
         return builder.desc(expression);
     }
 
+    /// 逐段解析路径，前缀结果按 `List<String>` 缓存（同一前缀只解析一次，也复用同一个 `join`）。
+    ///
+    /// 关联走 `join(LEFT)`、非关联（含 `@Embedded`）走 `get`。判定的**可观测性**有一处依赖：
+    /// Hibernate 7 把嵌入属性的 `join` 摊平成同一张表的列，所以现在把这里换成恒 `join`
+    /// 语句与结果都不变（`JpaEmbeddedChainTest` 实测）。但那是实现细节：若某个实现给嵌入
+    /// `join` 加上 `is not null` 谓词，嵌入列全 null 的行会静默消失；
+    /// `JpaEmbeddedChainTest#nullEmbeddedRowIsReturned` 钉住"该行必须返回"，换大版本或接
+    /// 第二后端时由它先报。
     private Path<?> navigate(List<String> prefix) {
         if (prefix.isEmpty()) {
             return root;
