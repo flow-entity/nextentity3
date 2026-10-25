@@ -42,6 +42,24 @@
         <h2.version>2.3.232</h2.version>
         <testcontainers.version>1.20.4</testcontainers.version>
 
+        <!-- 容器通道的公共开关。放在根 pom 而不是各测试模块里：这套值漏在任何一个模块外，
+             那个模块的容器通道就会以「Could not find a valid Docker environment」静默降级
+             （`nextentity-tests-legacy` 就这么漏了一整轮，见 CHANGELOG 3.0.0 条目）。 -->
+        <!-- 容器通道要跟 Docker 守护进程说同一个 API 版本：Testcontainers 1.20.4 内置的 docker-java
+             把请求钉在 1.32，而 Docker 25 起逐步淘汰旧版本（29.x 直接对 1.32 回 400 Bad Request，
+             表现为「Could not find a valid Docker environment」，且**所有**策略都被判无效）。
+             docker-java 从系统属性 `api.version` 读这个值，所以必须由 surefire/failsafe
+             在 fork 出的 JVM 里注入。换 Docker 版本时用 -Ddocker.api.version=<版本> 覆盖。 -->
+        <docker.api.version>1.44</docker.api.version>
+        <!-- 容器通道的开关：默认宽进（没有 Docker 就跳过），CI 应当传 true 让容器层不可静默降级。
+             语义与理由见 nextentity-tests-jpa 的 support/MySqlL4Gate.java。 -->
+        <nextentity.requireContainer>false</nextentity.requireContainer>
+        <!-- 镜像源：直连 registry-1.docker.io 在受限网络下会 EOF，而容器用例是 L4 的唯一载体，
+             拉不到镜像等于这层没跑。默认走 docker.xuanyuan.run，换源/换版本用 -D 覆盖。
+             ryuk 也要走同一个源：Testcontainers 会另起一个 Ryuk 容器负责回收，它默认从 Docker Hub 拉。 -->
+        <nextentity.mysql.image>docker.xuanyuan.run/library/mysql:8.0.18</nextentity.mysql.image>
+        <nextentity.ryuk.image>docker.xuanyuan.run/testcontainers/ryuk:0.11.0</nextentity.ryuk.image>
+
         <!-- 构建插件版本 -->
         <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>3.5.6</maven-surefire-plugin.version>

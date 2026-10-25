@@ -57,11 +57,44 @@ public class IntegrationTestProvider implements ArgumentsProvider {
 
     private static final ThreadLocal<IntegrationTestContext> CURRENT = new ThreadLocal<>();
 
+    /// 容器通道的开关属性名（与 `nextentity-tests-jpa` 的 `MySqlL4Gate` 同名同义）。
+    public static final String REQUIRE_PROPERTY = "nextentity.requireContainer";
+
+    private static final boolean REQUIRE_CONTAINER = Boolean.getBoolean(REQUIRE_PROPERTY);
+
     /// 启动全部启用的环境（整个 JVM 一次）。
+    ///
+    /// **发布是原子的**：先在局部表里把每个环境都开完，全部成功才写进 `CONTEXTS`。
+    /// 早先的写法是边开边往静态表里放，于是「H2 开好了、MySQL 起容器抛异常」会留下一个
+    /// 只有 H2 的半成品表，而守卫条件是 `CONTEXTS.isEmpty()`——后续每个用例都拿到这份缺方言的
+    /// 表，727 条里只有抛异常的那一条红，其余全部静默跑在 H2 上。一次容器探不到 Docker，
+    /// 就足以把整条方言通道变成纸面证据（3.0.0 实测：1 条红 + 726 条假绿）。
     private static synchronized Map<String, IntegrationTestContext> contexts() {
         if (CONTEXTS.isEmpty()) {
-            for (DatabaseEnvironmentVariables environment : Env.dbs()) {
-                CONTEXTS.put(environment.name(), open(environment));
+            Map<String, IntegrationTestContext> opened = new LinkedHashMap<>();
+            boolean published = false;
+            try {
+                for (DatabaseEnvironmentVariables environment : Env.dbs()) {
+                    if (!environment.isAvailable()) {
+                        if (REQUIRE_CONTAINER) {
+                            throw new IllegalStateException("环境 " + environment.name() + " 不可用，而 -D"
+                                    + REQUIRE_PROPERTY + "=true：不允许静默跳过");
+                        }
+                        System.err.println("[legacy] 跳过环境 " + environment.name() + "：不可用（要强制失败请加 -D"
+                                + REQUIRE_PROPERTY + "=true）");
+                        continue;
+                    }
+                    opened.put(environment.name(), open(environment));
+                }
+                if (opened.isEmpty()) {
+                    throw new IllegalStateException("没有任何可用的数据库环境：-Ddbc=" + Env.getSelectedDbTypes());
+                }
+                CONTEXTS.putAll(opened);
+                published = true;
+            } finally {
+                if (!published) {
+                    opened.values().forEach(context -> ((HarnessIntegrationTestContext) context).close());
+                }
             }
         }
         return CONTEXTS;

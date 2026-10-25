@@ -69,6 +69,29 @@
 
     <build>
         <plugins>
+            <!--
+              MySQL 通道要的三项容器配置，本模块原先一项都没有：`-Ddbc=mysql` 起容器时，
+              Testcontainers 1.20.4 内置的 docker-java 仍按 1.32 说话，Docker 29 直接回
+              400 Bad Request，于是所有策略都被判无效，报「Could not find a valid Docker
+              environment」——看着像「本机没有 Docker」，实际是没注入 `api.version`。
+              更糟的是它当时**只红一条用例**：`IntegrationTestProvider` 把半成品环境表留在了
+              静态字段里，后续用例静默退回 H2，727 条里有 726 条「绿」得毫无方言证据。
+              三项值集中在根 pom，这里只负责注入（同 nextentity-tests-jpa 的做法）。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <api.version>${docker.api.version}</api.version>
+                        <nextentity.requireContainer>${nextentity.requireContainer}</nextentity.requireContainer>
+                        <ryuk.container.image>${nextentity.ryuk.image}</ryuk.container.image>
+                    </systemPropertyVariables>
+                    <environmentVariables>
+                        <TESTCONTAINERS_RYUK_CONTAINER_IMAGE>${nextentity.ryuk.image}</TESTCONTAINERS_RYUK_CONTAINER_IMAGE>
+                    </environmentVariables>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>

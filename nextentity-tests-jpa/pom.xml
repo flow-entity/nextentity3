@@ -152,15 +152,8 @@
         <hibernate.version>7.1.8.Final</hibernate.version>
         <!-- 没有 main 字节码，不跑二进制扫描 -->
         <spotbugs.skip>true</spotbugs.skip>
-        <!-- 容器通道要跟 Docker 守护进程说同一个 API 版本：Testcontainers 1.20.4 内置的 docker-java
-             把请求钉在 1.32，而 Docker 25 起逐步淘汰旧版本（29.x 直接对 1.32 回 400 Bad Request，
-             表现为「Could not find a valid Docker environment」）。docker-java 从系统属性
-             `api.version` 读这个值，所以由 failsafe 在 fork 出的 JVM 里注入。
-             换 Docker 版本时用 -Ddocker.api.version=<版本> 覆盖，不必改 pom。 -->
-        <docker.api.version>1.44</docker.api.version>
-        <!-- 容器通道的开关：默认宽进（没有 Docker 就跳过），CI 应当传 true 让 L4 不可静默降级。
-             语义与理由见 support/MySqlL4Gate.java。 -->
-        <nextentity.requireContainer>false</nextentity.requireContainer>
+        <!-- `docker.api.version` / `nextentity.requireContainer` / 镜像源这几项在根 pom：
+             容器通道的公共开关集中一处，任何模块漏注入都会静默降级（legacy 漏了整轮）。 -->
         <!-- JVM 默认时区：时间列的往返断言（`Instant` 不得被时区挪动）只有「墙钟被挪过就会差整小时」
              这个区分力，跑测机器若在 UTC 上，该断言对「按 JVM 时区换算」这类缺陷的区分力归零。
              所以由 surefire/failsafe 在 fork 出的 JVM 上钉死，而不是在用例的 `@BeforeEach` 里设——
@@ -176,12 +169,6 @@
              `argLine` 属性的 agent 参数。属性不存在时 late-replacement 会报错（`-Djacoco.skip=true`
              的跑法就是这种情况），所以先在这里给一个空值。 -->
         <argLine></argLine>
-        <!-- 镜像源：直连 registry-1.docker.io 在受限网络下会 EOF，而容器用例是 L4 的唯一载体，
-             拉不到镜像等于这层没跑。默认走 docker.xuanyuan.run，换源/换版本用
-             -Dnextentity.mysql.image= / -Dnextentity.ryuk.image= 覆盖，不必改 pom。
-             ryuk 也要走同一个源：Testcontainers 会另起一个 Ryuk 容器负责回收，它默认从 Docker Hub 拉。 -->
-        <nextentity.mysql.image>docker.xuanyuan.run/library/mysql:8.0.18</nextentity.mysql.image>
-        <nextentity.ryuk.image>docker.xuanyuan.run/testcontainers/ryuk:0.11.0</nextentity.ryuk.image>
     </properties>
 
     <build>

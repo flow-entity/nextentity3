@@ -1,6 +1,8 @@
 package io.github.nextentity.integration.config.env;
 
+import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.utility.DockerImageName;
 
 import java.util.List;
 
@@ -8,11 +10,14 @@ import java.util.List;
 ///
 /// 两种取库方式，优先用外部实例：
 /// - `NEXTENTITY_LEGACY_MYSQL_URL`（配套 `_USER` / `_PASSWORD`）指向一个已在跑的 MySQL；
-/// - 否则用 Testcontainers 现起 `mysql:8.0.18`。
+/// - 否则用 Testcontainers 现起 MySQL 镜像（默认 `mysql:8.0.18`，可用
+///   `-Dnextentity.mysql.image=` 覆盖；受限网络下要换成可达的镜像源）。
 ///
-/// 外部实例这条路不是图省事：本机 JVM 里 Testcontainers 探不到 Docker
-/// （管道与 CLI 都正常，报 `Could not find a valid Docker environment`），
-/// 真方言验证只能先靠外部实例做，接线本身保留给 Docker 可用的环境。
+/// 曾经这里写着「本机 JVM 探不到 Docker，只能靠外部实例」——那个诊断是错的：真正的成因是
+/// Testcontainers 1.20.4 内置的 docker-java 按 API 1.32 说话，Docker 29 对 1.32 直接回
+/// 400 Bad Request，于是**所有**策略都被判无效，报的却是「Could not find a valid Docker
+/// environment」。注入 `-Dapi.version=<守护进程版本>` 后同一台机器立刻可用（注入点在模块 pom）。
+/// 教训：把「环境不可用」当成结论写进注释之前，先问「它到底在拒绝什么」。
 public class MysqlEnvironmentVariables extends DbContainerEnvironmentVariables {
 
     private static final String EXTERNAL_URL = System.getenv("NEXTENTITY_LEGACY_MYSQL_URL");
@@ -22,13 +27,21 @@ public class MysqlEnvironmentVariables extends DbContainerEnvironmentVariables {
     private static final String EXTERNAL_PASSWORD =
             System.getenv().getOrDefault("NEXTENTITY_LEGACY_MYSQL_PASSWORD", "test");
 
+    private static final String IMAGE =
+            System.getProperty("nextentity.mysql.image", "mysql:8.0.18");
+
     private static boolean external() {
         return EXTERNAL_URL != null && !EXTERNAL_URL.isBlank();
     }
 
     @Override
+    public boolean isAvailable() {
+        return external() || DockerClientFactory.instance().isDockerAvailable();
+    }
+
+    @Override
     protected MySQLContainer<?> createContainer() {
-        return new MySQLContainer<>("mysql:8.0.18")
+        return new MySQLContainer<>(DockerImageName.parse(IMAGE))
                 .withDatabaseName("testdb")
                 .withUsername("test")
                 .withPassword("test");

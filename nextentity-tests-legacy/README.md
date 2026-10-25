@@ -12,8 +12,8 @@
 # 默认只有 H2（内存库，无容器），随全量构建一起跑
 ./mvnw -pl nextentity-tests-legacy test
 
-# 加上真 MySQL：需要 Docker 可达
-./mvnw -pl nextentity-tests-legacy test -Ddbc=h2,mysql
+# 加上真 MySQL：需要 Docker 可达；requireContainer 让「容器起不来」直接失败而不是静默只跑 H2
+./mvnw -pl nextentity-tests-legacy test -Ddbc=h2,mysql -Dnextentity.requireContainer=true
 
 # Docker 不可达时，指向一个已在跑的 MySQL（库名任意，用例自己建表）
 NEXTENTITY_LEGACY_MYSQL_URL='jdbc:mysql://127.0.0.1:3306/testdb?useSSL=false&allowPublicKeyRetrieval=true' \
@@ -33,6 +33,8 @@ docker run -d --name nextentity-legacy-mysql \
 ```
 
 用例数是**按环境数乘出来的**：`-Ddbc=h2,mysql` 会跑两遍，1,454 条 = 727 条 × 2。
+
+**别省 `-Dnextentity.requireContainer=true`**：不带它时，某个环境不可用只会打一行 `[legacy] 跳过环境 …`，其余用例照旧全绿——方言证据变成纸面。门禁的 `night`/`release` 档都带这个参数，`-Ddbc=h2,mysql` 下的用例数下限也相应抬到 1,454（只跑 H2 是 727，条数差就是证据）。
 
 ## 装置
 

@@ -24,7 +24,7 @@
 | `api` / `core` / `spec` / `compile` / `exec` | `mvn -q spotless:apply` → `mvn -pl nextentity-core,nextentity-arch -am test` |
 | `jpa` / `spring` | `mvn -q spotless:apply` → `mvn -pl nextentity-arch -am test` → `mvn -pl nextentity-tests-jpa -am verify`（含 MySQL 容器通道；无 Docker 时自动跳过，见 DESIGN §5「通道拆分」） |
 | `nextentity-testing`（一致性基类、夹具、`ConsistencySupport`） | `mvn -q spotless:apply` → `mvn -pl nextentity-tests-jpa -am verify`（含 MySQL 容器通道；无 Docker 时自动跳过，见 DESIGN §5「通道拆分」） |
-| `nextentity-tests-legacy` | `mvn -pl nextentity-tests-legacy -am test`（默认 H2，无容器）；动到方言相关再跑 `-Ddbc=h2,mysql` |
+| `nextentity-tests-legacy` | `mvn -pl nextentity-tests-legacy -am test`（默认 H2，无容器）；动到方言相关再跑 `-Ddbc=h2,mysql -Dnextentity.requireContainer=true`（**不带 require 时容器起不来会静默降级成只跑 H2**，见 DESIGN §5「通道拆分」） |
 | `core` / `jpa` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-<模块> pitest:mutationCoverage`，变异分数不得低于模块 pom 的阈值（**PIT 不带 `-am`**，跑前先 `mvn install -DskipTests` 刷 `~/.m2`，理由见下表 api 行） |
 | `spring` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-spring pitest:mutationCoverage`（阈值 95，同样先 install）。注意 PIT 不变异注解，`@ConditionalOnProperty` 的开关语义由 `NextEntityAutoConfigurationTest` 的用例兜，不看分数 |
 | `api` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-api pitest:mutationCoverage`（api 有自己的线格式用例，门禁自足，阈值 95）。api 的语义同时被 `core` 的用例执行，所以 `core` 的 PIT 也要跑；**跑任何 PIT 之前必须先 `mvn install -DskipTests`**——`pitest:mutationCoverage` 不带 `-am`，它从 `~/.m2` 解析依赖模块，陈旧快照会让依赖新语义的用例集体报「未变异就不通过」，看着像测试坏了，其实是产物旧了 |
@@ -71,7 +71,7 @@
 ./mvnw -pl nextentity-tests-jpa -am verify   # 落库测试：H2 走 surefire + MySQL 容器走 failsafe（-DskipITs 只跳容器通道）
 ./mvnw -pl nextentity-tests-jpa -am verify -Dnextentity.requireContainer=true   # CI 用：Docker 不可用时失败而不是静默跳过
 ./mvnw -pl nextentity-tests-legacy -am test  # 2.2.3 遗留语义回归：H2，无容器
-./mvnw -pl nextentity-tests-legacy -am test -Ddbc=h2,mysql   # 同上，加真 MySQL（需 Docker 或外部实例，见模块 README）
+./mvnw -pl nextentity-tests-legacy -am test -Ddbc=h2,mysql -Dnextentity.requireContainer=true   # 同上，加真 MySQL（需 Docker 或外部实例，见模块 README）；不带 require 时容器不可用会静默只跑 H2
 ./mvnw -Papi-compat -Djapicmp.oldVersion=3.0.0 -pl nextentity-api -am verify   # API 兼容检查
 ./mvnw -pl nextentity-api test-compile pitest:mutationCoverage    # 变异测试：api，阈值 95%（门禁自足，用例在本模块）
 ./mvnw -pl nextentity-core test-compile pitest:mutationCoverage   # 变异测试：core，阈值 95%
