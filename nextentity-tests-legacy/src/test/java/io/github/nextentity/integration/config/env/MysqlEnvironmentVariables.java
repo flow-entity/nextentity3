@@ -41,7 +41,12 @@ public class MysqlEnvironmentVariables extends DbContainerEnvironmentVariables {
 
     @Override
     protected MySQLContainer<?> createContainer() {
-        return new MySQLContainer<>(DockerImageName.parse(IMAGE))
+        // `asCompatibleSubstituteFor("mysql")` 不能省：`MySQLContainer` 会校验镜像仓库名，
+        // 换过镜像源（如 `docker.xuanyuan.run/library/mysql:8.0.18`）之后不声明就抛
+        // "Failed to verify that image ... is a compatible substitute for 'mysql'"。
+        // 这条只在**换了源**之后才暴露：用 Docker Hub 原名时校验通过，于是「本机能跑」
+        // 掩盖了「换源就跑不起来」——与 nextentity-tests-jpa 的 MySqlL4Container 写法对齐。
+        return new MySQLContainer<>(DockerImageName.parse(IMAGE).asCompatibleSubstituteFor("mysql"))
                 .withDatabaseName("testdb")
                 .withUsername("test")
                 .withPassword("test");
