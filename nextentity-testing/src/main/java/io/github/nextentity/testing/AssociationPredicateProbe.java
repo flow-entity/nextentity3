@@ -221,6 +221,10 @@ final class AssociationPredicateProbe<T extends Asset> {
     /// 配对覆盖两类退化：**同一族内**（`le`→`=`、`gt`→`<>`、`ge`→`gt`、`lt`→`le`、`between`→`is not null`）
     /// 与**跨族**（`contains`→`>=`、`_` 通配→前缀匹配）。
     void assertCellsAreDistinguishable() {
+        // 重名的格子会互相覆盖（`expected` 以 label 为键），那一格会同时从下面的配对断言与分组断言里
+        // 消失，而 `expected.get(left)` 拿到 null 后 `isNotEqualTo(null)` 照样通过——静默变成空断言。
+        // 加格子时复制粘贴最可能踩这个坑，所以先钉住 label 唯一。
+        assertThat(runs()).extracting(CellRun::label).doesNotHaveDuplicates();
         Map<String, Set<Long>> expected = new LinkedHashMap<>();
         for (CellRun<T> run : runs()) {
             expected.put(run.label(), AssociationJoinOracle.matchingIds(rows, run.matches()));
