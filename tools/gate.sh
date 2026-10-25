@@ -324,7 +324,7 @@ step() {
     if [ -z "$require" ]; then
         case "$label" in
             # 纯准备/纯静态检查：不产出 surefire/failsafe/pit 报告，没有通道可要求。
-            fast-format | night-install | release-install | release-compat)
+            fast-format | ci-install | night-install | release-install | release-compat)
                 noreq+=(--allow-no-require)
                 ;;
             *)
@@ -434,7 +434,11 @@ tier_ci() {
     # `ci-install` 只刷 `nextentity-api`：core 的 PIT 当前只依赖它。核心模块一旦新增对其它
     # 模块的依赖，这里必须同步加模块名——否则 `pitest:mutationCoverage` 会因为缺 -am 而读到
     # `~/.m2` 里的陈旧快照，症状是「用例集体未变异就不通过」，看着像测试坏了（审查指出）。
-    step ci-install "" ./mvnw -B -q install -DskipTests -pl nextentity-api
+    # `-am` 也得带：门禁自己有一条「带 -pl 必须带 -am」的判据（不带就从 ~/.m2 解析依赖模块），
+    # 而 `-pl nextentity-api -am` 的反应堆只是「父 pom + api」——api 零内部依赖，`-am` 不多跑任何模块。
+    # 这条判据上一版把 `ci` 档整档判红了：`ci-install` 无 `-am` → `SAW_INSTALL` 没置位 →
+    # 随后的 `ci-pit-core` 又被判「PIT 前没有 install 步骤」。两道红连着出，`ci` 档一直是红的。
+    step ci-install "" ./mvnw -B -q install -DskipTests -pl nextentity-api -am
     step ci-pit-core "pit:nextentity-core" ./mvnw -B -pl nextentity-core test-compile pitest:mutationCoverage
 }
 
