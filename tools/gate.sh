@@ -461,14 +461,19 @@ tier_night() {
     EXPECT_STEPS=(night-install night-container night-legacy night-pit-api night-pit-core night-pit-jpa night-pit-spring)
     step night-install "" ./mvnw -B -q install -DskipTests
     STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* failsafe:nextentity-tests-jpa=1:*MySqlTemporalWriteIntegrationTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* surefire-pg:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadPreserveTheInstant*"
-    STEP_MIN_TESTS="surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-jpa=82 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=577 failsafe:nextentity-tests-jpa=549 surefire-pg:nextentity-tests-jpa=577"
+    STEP_MIN_TESTS="surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-arch=24 surefire:nextentity-jpa=82 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=577 failsafe:nextentity-tests-jpa=549 surefire-pg:nextentity-tests-jpa=577"
     STEP_EXPECTED_FAILURES="tools/expected-failures/h2-postgresql.txt"
     # 带 -am：`-pl` 不带 `-am` 时反应堆里只有 tests-jpa，api/core/jpa/spring 的单测与静态检查
     # 本档就一条都不跑（night 是最强档，不能比 pr 弱）。night-install 仍然保留——PIT 步骤
     # 不带 -am，要从 ~/.m2 解析当前 HEAD 的产物。
+    #
+    # `nextentity-arch` 必须显式出现在 `-pl` 里：它不是 tests-jpa 的依赖，`-am` 带不上它，
+    # 于是本档曾经**一条架构规则都不跑**，而凭证里「没有这个 key」和「跑过了没问题」长得一模一样
+    # （实测：tier=night 的 receipt 有 37 个通道，`surefire:nextentity-arch` 不在其中）。
+    # night 是最强档，它比 ci 弱这件事必须由构成本身排除，不能靠人记得单独补跑一遍。
     step night-container \
-        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa,static:nextentity-api,static:nextentity-core,static:nextentity-jpa,static:nextentity-spring,static:nextentity-testing,static:nextentity-tests-jpa" \
-        ./mvnw -B -pl nextentity-tests-jpa -am verify -Dnextentity.requireContainer=true -Pdialect-pg
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-arch,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa,static:nextentity-api,static:nextentity-core,static:nextentity-arch,static:nextentity-jpa,static:nextentity-spring,static:nextentity-testing,static:nextentity-tests-jpa" \
+        ./mvnw -B -pl nextentity-tests-jpa,nextentity-arch -am verify -Dnextentity.requireContainer=true -Pdialect-pg
     # 遗留语料的 MySQL 通道必须带 `-Dnextentity.requireContainer=true`：不带的话，容器起不来时
     # `IntegrationTestProvider` 会（按设计）跳过该环境，727 条用例照旧全绿——方言证据变成纸面。
     # night 是最强档，不接受这种降级；本地要跑「只要 H2」用 `-Ddbc=h2`（pr/ci 档就是这么跑的）。
