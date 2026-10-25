@@ -338,6 +338,22 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
             skip_allow.setdefault(key, []).append(pattern.strip())
     default_budget = args.max_skip_default
 
+    # 每通道的用例数**下限**：`--min-tests name=N`（可重复）。
+    # 只钉「方言通道 == 基础通道」不够：两条通道一起被缩到只剩那 8 条基线用例时，
+    # 相等关系照样成立，凭证仍绿（等于允许把矩阵悄悄削成空壳）。
+    # 下限是**单调**的：加用例不用改它，只有删用例才会撞红——正好是我们要人停下来解释的动作。
+    min_tests: dict[str, int] = {}
+    for spec in args.min_tests or []:
+        key, _, value = spec.partition("=")
+        key = key.strip()
+        if not key or ":" not in key:
+            bad_specs.append("%s（缺少 `类型:模块` 通道名）" % spec)
+            continue
+        try:
+            min_tests[key] = int(value.strip())
+        except ValueError:
+            bad_specs.append("%s（用例数 `%s` 不是整数）" % (spec, value.strip()))
+
     problems: list[str] = []
     warnings_extra: list[str] = []
     notes: list[str] = []
@@ -409,6 +425,13 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
             )
         if info["tests"] == 0:
             problems.append("%s：报告存在但 tests=0（没有任何用例被执行）" % name)
+        floor = min_tests.get(name)
+        if floor is not None and info["tests"] < floor:
+            problems.append(
+                "%s：只有 %d 条用例，低于申报下限 %d 条——用例被删/被 <excludes> 掉/基类被改哑，"
+                "「跑得少」不能记绿；确属有意删减请同时下调 --min-tests 申报"
+                % (name, info["tests"], floor)
+            )
         # 同名失败用例被折叠：`@ParameterizedTest` 的多次 invocation 若 display name 撞车，
         # `set()` 会把 N 条失败折成 1 个元素，一条基线条目就能盖住 N 条。折叠必须暴露。
         folded = [
@@ -448,6 +471,9 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
     for key in budgets:
         if key not in required:
             warnings_extra.append("%s：申报了 --max-skip 但不在 --require 里，预算未生效" % key)
+    for key in min_tests:
+        if key not in required:
+            warnings_extra.append("%s：申报了 --min-tests 但不在 --require 里，下限未生效" % key)
 
     # 方言矩阵通道必须与基础通道跑**同一批**用例：`surefire-pg` 少跑几条（profile 被改哑、
     # 或基类被 `<excludes>` 掉）时，8 条预期红照样逐条命中基线，凭证仍绿——「只钉失败集、
@@ -553,6 +579,20 @@ def _load_expected_failures(path: str) -> tuple[dict[str, dict[str, dict]], list
                 % (path, lineno, unknown, test)
             )
             continue
+        # 字段落在「原因区」也要报错：条目 `ch | t | type=failure | issue=x | expires=y | error=`
+        # 这种顺序错位早先把多余字段并进原因、静默丢弃。只查前 5 段是不够的——那等于
+        # 「第 6 段以后写什么都不报错」。原因里允许出现 `=`，但**不允许**出现已知字段名的前缀。
+        misplaced = [
+            p for p in parts[5:]
+            if p.partition("=")[0].strip().lower() in ALLOWED_BASELINE_FIELDS
+        ]
+        if misplaced:
+            errors.append(
+                "%s:%d 字段 %s 落在原因区（字段顺序错，应为 `通道 | 用例 | type= | issue= | expires= | 原因`）：%s"
+                % (path, lineno, misplaced, test)
+            )
+            continue
+
         issue = fields.get("issue", "")
         expires = fields.get("expires", "")
         kind = fields.get("type", "").lower()
@@ -749,6 +789,28 @@ def cmd_merge(args: argparse.Namespace) -> int:
         "steps": [
             {"step": s["step"], "verdict": s["verdict"], "problems": s["problems"]} for s in steps
         ],
+        # 逐通道计数必须汇进最终凭证：CI 只上传 receipt.json，step-*.json 是中间产物。
+        # 少了这一段，「564 条里 8 条按基线红」与「压根没跑」在凭证上无法区分——
+        # 只能看到 GREEN。这也让事后复核不必去翻 tmp/ 下的临时日志。
+        #
+        # 键必须带步骤名：同名通道会在多个步骤里各出现一次（`surefire:nextentity-api` 在
+        # pr-h2 与 pr-legacy 各跑一遍）。只用通道名做键的话，后一个步骤的计数会静默覆盖
+        # 前一个——pr-h2 里红掉的那份被 pr-legacy 的绿灯覆盖，凭证上完全看不出来。
+        "channels": {
+            "%s/%s" % (step["step"], name): {
+                "step": step["step"],
+                "channel": name,
+                "module": info.get("module"),
+                "tests": info.get("tests", 0),
+                "failures": info.get("failures", 0),
+                "errors": info.get("errors", 0),
+                "skipped": info.get("skipped", 0),
+                "mutations": info.get("mutations", 0),
+                "coverage_raw": info.get("coverage_raw"),
+            }
+            for step in steps
+            for name, info in sorted(step["channels"].items())
+        },
         "absent_steps": absent_steps,
         "skip_report": {"total": len(skips), "entries": skips},
         "expected_failure_notes": baseline_notes,
@@ -819,6 +881,13 @@ def main(argv: list[str]) -> int:
         type=int,
         default=0,
         help="未单独申报的通道允许的跳过条数，默认 0（任何跳过都要显式申报）",
+    )
+    snap.add_argument(
+        "--min-tests",
+        action="append",
+        default=[],
+        metavar="CHANNEL=N",
+        help="该通道的用例数下限（可重复）：低于下限即红，防「把矩阵悄悄缩到只剩基线那几条」",
     )
     snap.add_argument("--warn", action="append", default=[], help="可重复的告警行")
     snap.add_argument("--out")

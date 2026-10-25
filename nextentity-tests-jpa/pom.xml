@@ -282,6 +282,18 @@
                                 </goals>
                                 <configuration>
                                     <reportsDirectory>${project.build.directory}/surefire-pg-reports</reportsDirectory>
+                                    <!--
+                                      只有这一遍（PG 兼容模式）忽略测试失败，因为那 8 条按设计就会红
+                                      （见 tools/expected-failures/h2-postgresql.txt）。
+
+                                      必须绑在 execution 上、而不是在 gate.sh 里加
+                                      `-Dmaven.test.failure.ignore=true`：后者是**全局** user property，
+                                      会把同一次反应堆里 api / core / jpa / spring 的 surefire 失败一并
+                                      吞掉，而凭证的 require 清单只点名了本模块的通道——那边的真回归
+                                      从此静默变绿（实测：564 条那遍 fail 4 error 4，mvn 仍 exit 0）。
+                                      绑定在这里，其它模块的 surefire 照旧 fail-fast。
+                                    -->
+                                    <testFailureIgnore>true</testFailureIgnore>
                                     <systemPropertyVariables>
                                         <nextentity.h2mode>postgresql</nextentity.h2mode>
                                     </systemPropertyVariables>

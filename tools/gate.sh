@@ -227,6 +227,20 @@ step() {
     fi
     STEP_MAX_SKIP=""
 
+    # STEP_MIN_TESTS：每通道用例数**下限**（空格分隔多条 `通道=N`）。
+    # 只钉「方言通道条数 == 基础通道条数」不够——两条一起被缩到只剩基线那几条时相等仍成立。
+    # 下限是单调的：加用例不用改，只有删用例才撞红，正好是要人解释的那个动作。
+    local -a floor_args=()
+    if [ -n "${STEP_MIN_TESTS:-}" ]; then
+        local -a floors=()
+        read -r -a floors <<< "$STEP_MIN_TESTS"
+        local _floor
+        for _floor in "${floors[@]}"; do
+            floor_args+=(--min-tests "$_floor")
+        done
+    fi
+    STEP_MIN_TESTS=""
+
     # ③ 拒绝缺 -am 的调用：它会从 ~/.m2 解析依赖模块，陈旧快照会让结论变成「旧产物能跑」。
     # 两个例外：PIT 目标（-am 会把 PIT 拖到上游模块上跑），以及紧跟在 `install -DskipTests`
     # 之后的步骤——那时 ~/.m2 里就是当前 HEAD，缺 -am 不再失真。
@@ -256,13 +270,13 @@ step() {
             return 1
         fi
         baseline+=(--expected-failures "$STEP_EXPECTED_FAILURES")
-        # 让 mvn 在测试失败时**不中断**生命周期。PG 那遍按设计必然红，默认 fail-fast 会让
-        # nextentity-tests-jpa 的 checkstyle / PMD / SpotBugs / jacoco:report（全绑在 verify）
-        # 一次都不执行——「静态检查根本没跑」会被「测试红是预期内」顺带盖过去。
-        # 加上之后判定权完全交给 receipt 的基线逐条比对：静态检查失败会让退出码非零，
-        # 那时 other_goals 非空，退不进下面的降级分支。
-        cmd+=(-Dmaven.test.failure.ignore=true)
-        warns+=(--warn "$label：本步申报了预期失败基线——surefire 失败不中断构建（-Dmaven.test.failure.ignore=true），判定权在凭证的基线逐条比对")
+        # 「测试红但不中断生命周期」这件事**由 pom 的 pg-dialect execution 自己承担**
+        # （nextentity-tests-jpa/pom.xml 里 <testFailureIgnore>true</testFailureIgnore>），
+        # 不在这里加 `-Dmaven.test.failure.ignore=true`：那是全局 user property，会把同一次
+        # 反应堆里 api / core / jpa / spring 的 surefire 失败一并吞掉。那些模块的通道
+        # 即便写进 --require 也只会看到「0 失败」，等于把真回归静默变绿（实测过）。
+        # 绑在 execution 上，只有 PG 兼容模式那一遍忽略失败，其余模块照旧 fail-fast。
+        warns+=(--warn "$label：本步申报了预期失败基线——PG 兼容模式那一遍由 pom 的 testFailureIgnore 放行，判定权在凭证的基线逐条比对")
     fi
     STEP_EXPECTED_FAILURES=""
 
@@ -312,7 +326,8 @@ step() {
     "$PY" "$RECEIPT" snapshot --root . --since "$since" --label "$label" \
         --require "$require" --out "$RUNDIR/step-$(printf '%02d' "$STEPN")-$label.json" \
         ${noreq[@]+"${noreq[@]}"} \
-        ${skip_args[@]+"${skip_args[@]}"} ${baseline[@]+"${baseline[@]}"} ${warns[@]+"${warns[@]}"} || vrc=$?
+        ${skip_args[@]+"${skip_args[@]}"} ${floor_args[@]+"${floor_args[@]}"} \
+        ${baseline[@]+"${baseline[@]}"} ${warns[@]+"${warns[@]}"} || vrc=$?
 
     if [ "$rc" -ne 0 ]; then
         # 申报了预期失败基线时，mvn 的非零退出是**预期内**的：基线里的用例就是会红的，
@@ -357,8 +372,11 @@ tier_fast() {
     # 必须是 check 不是 apply：apply 会在 check_tree 之后改写工作树，而 merge 用的是开跑前的
     # TREE_DIRTY——干净树开跑、跑到一半把自己弄脏，凭证仍记 clean/green，正是本机制要堵的假绿。
     step fast-format "" ./mvnw -B -q spotless:check
+    # `-am` 反应堆除 api/core/arch 外还会经 arch 的依赖带上 jpa/spring，它们的 surefire 报告
+    # 同样落盘；不列进 --require 的话，那三个模块的失败在凭证里不存在（同一处假绿，见 ci-container 注释）。
+    STEP_MIN_TESTS="surefire:nextentity-api=147 surefire:nextentity-core=267 surefire:nextentity-jpa=73 surefire:nextentity-spring=14 surefire:nextentity-arch=24"
     step fast \
-        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-arch" \
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-arch" \
         ./mvnw -B -pl nextentity-core,nextentity-arch -am test
 }
 
@@ -367,15 +385,26 @@ tier_ci() {
     # 这一档存在的理由：本地 pr 档用 -DskipITs 换取 30s，而 -DskipITs 不留任何标记——
     # 只有把「权威结论只在 ci 档产生」写死，才不会被本地那份省事的绿骗过去。
     EXPECT_STEPS=(ci-fast ci-container ci-legacy)
-    step ci-fast "surefire:nextentity-arch" \
+    STEP_MIN_TESTS="surefire:nextentity-api=147 surefire:nextentity-core=267 surefire:nextentity-jpa=73 surefire:nextentity-spring=14 surefire:nextentity-arch=24"
+    step ci-fast \
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-arch" \
         ./mvnw -B -pl nextentity-arch -am test
     # 预算带上用例名白名单：只限条数的话，未来任何一条与 PG 无关的无理由跳过都会被这 1 条预算吞掉。
     # 方言矩阵也在本步：`-Pdialect-pg` 让 PG 兼容模式在同一个 verify 里跑第二遍。
+    #
+    # 必需通道必须**列全反应堆里每一个产出 surefire 报告的模块**：`-am` 会把 api/core/jpa/spring
+    # 一起拉进来跑测试，只点名 tests-jpa 的话，那四个模块的失败在凭证里根本不存在
+    # （它们不进 required，`if info["failures"]` 那段就不会被执行），而 mvn 退出码又被
+    # 基线降级分支当成「预期内」——真回归由此静默变绿。
     STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* failsafe:nextentity-tests-jpa=1:*MySqlTemporalWriteIntegrationTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* surefire-pg:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadPreserveTheInstant*"
+    STEP_MIN_TESTS="surefire:nextentity-api=147 surefire:nextentity-core=267 surefire:nextentity-jpa=73 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=564 failsafe:nextentity-tests-jpa=536 surefire-pg:nextentity-tests-jpa=564"
     STEP_EXPECTED_FAILURES="tools/expected-failures/h2-postgresql.txt"
-    step ci-container "surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa" \
+    step ci-container \
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa" \
         ./mvnw -B -pl nextentity-tests-jpa -am verify -Dnextentity.requireContainer=true -Pdialect-pg
-    step ci-legacy "surefire:nextentity-tests-legacy" \
+    STEP_MIN_TESTS="surefire:nextentity-tests-legacy=727 surefire:nextentity-api=147 surefire:nextentity-core=267 surefire:nextentity-jpa=73"
+    step ci-legacy \
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-tests-legacy" \
         ./mvnw -B -pl nextentity-tests-legacy -am test
 }
 
@@ -387,11 +416,17 @@ tier_pr() {    # 容器通道在本档明确不跑（-DskipITs）。凭证会把
     # skip 预算也要单独申报：两个模式的跳过项**恰好相反**——默认模式跳「PG 专属那条」，
     # PG 模式跳「Instant 严格相等那条」（H2 的 PG 兼容模式绑 Instant 会丢偏移）。
     STEP_MAX_SKIP="$STEP_MAX_SKIP surefire-pg:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadPreserveTheInstant*"
+    # 必需通道列全反应堆（理由同 ci-container）：`-am` 把 api/core/jpa/spring 一起跑，
+    # 漏点名就等于那几个模块的失败不进凭证。
+    STEP_MIN_TESTS="surefire:nextentity-api=147 surefire:nextentity-core=267 surefire:nextentity-jpa=73 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=564 surefire-pg:nextentity-tests-jpa=564"
     STEP_EXPECTED_FAILURES="tools/expected-failures/h2-postgresql.txt"
-    step pr-h2 "surefire:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa" \
+    step pr-h2 \
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa" \
         ./mvnw -B -pl nextentity-tests-jpa -am verify -DskipITs -Pdialect-pg
     # 727 条遗留回归此前完全不在 CI 里：CI 两条命令的 -am 反应堆都不含该模块。
-    step pr-legacy "surefire:nextentity-tests-legacy" \
+    STEP_MIN_TESTS="surefire:nextentity-api=147 surefire:nextentity-core=267 surefire:nextentity-jpa=73 surefire:nextentity-tests-legacy=727"
+    step pr-legacy \
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-tests-legacy" \
         ./mvnw -B -pl nextentity-tests-legacy -am test
 }
 
@@ -399,12 +434,18 @@ tier_night() {
     # PIT 不带 -am，依赖从 ~/.m2 解析；先整仓 install 把快照刷到当前 HEAD。
     EXPECT_STEPS=(night-install night-container night-legacy night-pit-api night-pit-core night-pit-jpa night-pit-spring)
     step night-install "" ./mvnw -B -q install -DskipTests
-    # 本步刻意不带 -am：紧邻的 night-install 已把当前 HEAD 装进 ~/.m2，守卫据此放行。
     STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* failsafe:nextentity-tests-jpa=1:*MySqlTemporalWriteIntegrationTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* surefire-pg:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadPreserveTheInstant*"
+    STEP_MIN_TESTS="surefire:nextentity-api=147 surefire:nextentity-core=267 surefire:nextentity-jpa=73 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=564 failsafe:nextentity-tests-jpa=536 surefire-pg:nextentity-tests-jpa=564"
     STEP_EXPECTED_FAILURES="tools/expected-failures/h2-postgresql.txt"
-    step night-container "surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa" \
-        ./mvnw -B -pl nextentity-tests-jpa verify -Dnextentity.requireContainer=true -Pdialect-pg
-    step night-legacy "surefire:nextentity-tests-legacy" \
+    # 带 -am：`-pl` 不带 `-am` 时反应堆里只有 tests-jpa，api/core/jpa/spring 的单测与静态检查
+    # 本档就一条都不跑（night 是最强档，不能比 pr 弱）。night-install 仍然保留——PIT 步骤
+    # 不带 -am，要从 ~/.m2 解析当前 HEAD 的产物。
+    step night-container \
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa" \
+        ./mvnw -B -pl nextentity-tests-jpa -am verify -Dnextentity.requireContainer=true -Pdialect-pg
+    STEP_MIN_TESTS="surefire:nextentity-api=147 surefire:nextentity-core=267 surefire:nextentity-jpa=73 surefire:nextentity-tests-legacy=727"
+    step night-legacy \
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-tests-legacy" \
         ./mvnw -B -pl nextentity-tests-legacy -am test -Ddbc=h2,mysql
     local module
     for module in api core jpa spring; do
@@ -422,10 +463,15 @@ tier_release() {
     # 发版前必须把方言矩阵也跑一遍：`clean verify` 会先删 `target/`，PG 通道在
     # release 档若缺席，那 8 条已知差异就永远不会被重新核对，基线静默烂掉。
     STEP_EXPECTED_FAILURES="tools/expected-failures/h2-postgresql.txt"
+    # `clean verify` 是整仓反应堆，除 tests-jpa 外还跑 api/core/arch/jpa/spring 与 tests-legacy，
+    # 全部产能报告都要进 --require（否则那几处的失败不进凭证，退出码又被基线降级分支吸收）。
+    STEP_MIN_TESTS="surefire:nextentity-api=147 surefire:nextentity-core=267 surefire:nextentity-arch=24 surefire:nextentity-jpa=73 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=564 surefire:nextentity-tests-legacy=727 failsafe:nextentity-tests-jpa=536 surefire-pg:nextentity-tests-jpa=564"
     step release-verify \
-        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-arch,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa" \
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-arch,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,surefire:nextentity-tests-legacy,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa" \
         ./mvnw -B clean verify -Dnextentity.requireContainer=true -Pdialect-pg
-    step release-legacy "surefire:nextentity-tests-legacy" \
+    STEP_MIN_TESTS="surefire:nextentity-api=147 surefire:nextentity-core=267 surefire:nextentity-jpa=73 surefire:nextentity-tests-legacy=727"
+    step release-legacy \
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-tests-legacy" \
         ./mvnw -B -pl nextentity-tests-legacy -am test -Ddbc=h2,mysql
     step release-install "" ./mvnw -B -q install -DskipTests
     local module

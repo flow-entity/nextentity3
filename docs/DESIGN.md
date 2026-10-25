@@ -344,10 +344,10 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 **执行凭证（`tools/gate.sh` + `tools/gate-receipt.py`，L0）**：前面每一条门禁都有一类共同的失效方式——**构建绿了，但该跑的通道没跑**。`-DskipITs`、无 Docker、`@Disabled`、PIT 的零变异、`~/.m2` 里的陈旧产物，五种都能让 `BUILD SUCCESS` 与「证据为零」同时成立，而人读日志只看最后一行。所以门禁的产物不是日志而是**凭证**：`tools/gate.sh <fast|ci|pr|night|release>` 跑完把 surefire/failsafe XML 与 PIT 报告一起解析成 `tmp/gate/<commit>-<ts>/receipt.json`，判定只看这份 JSON。
 
-判据不是「报告存在」，而是五条：
+判据不是「报告存在」，而是六条：
 
 - **报告比本轮新**：`mtime >= 本轮开始 epoch`。上一次构建留下的报告不算——这是「`Nothing to compile` 复用前序产物」的直接防线。
-- **条数 > 0**：`tests == 0` 的通道报「报告存在但 tests=0」，不报通过。
+- **条数有下限**：`tests == 0` 的通道报「报告存在但 tests=0」，不报通过；每个通道另有**绝对下限**（`gate.sh` 的 `STEP_MIN_TESTS` 逐步申报，如 `surefire:nextentity-tests-jpa=564`），低于下限即红。只钉「方言通道与基础通道条数相等」不够——两边一起被缩到只剩那 8 条基线用例时相等仍成立，等于允许把矩阵悄悄削成空壳。下限是单调的：加用例不用改它，只有删用例才会撞红，正好是要人停下来解释的那个动作。
 - **必需通道必须真跑**：`-DskipITs` 下 failsafe 一份报告都不新（目录里上一轮的 XML 还在，靠逐文件 mtime 过滤才抓得住，这也是 `--require` 必须点名通道的原因）、`-Dnextentity.requireContainer` 下容器类整体 error，两种都判缺口；档位声明的步骤没落快照（被 `-am` 守卫拦下）同样算缺口，见 `merge --expect-step`。
 - **PIT 不许零变异**：除阈值外额外要求 `mutations > 0`，堵住根 pom `failWhenNoMutations=false` 那条假绿通道；分数按 PIT 自己的口径算并与 pom 的 `mutationThreshold` 比对。
 - **跳过要有申报预算**：每个通道的跳过条数上限由 `gate.sh` 逐步申报（`STEP_MAX_SKIP`），未申报的通道默认 0。跳过数超预算即红，且 problems 里逐个点名用例与理由——「跳过就是没跑，没跑不能记绿」。
@@ -355,7 +355,8 @@ java -jar <同上> report tmp/cov/merged.exec \
   - **失败性质参与比对**：每条带 `type=failure|error`。`failure` 是断言不符（方言渲染差异），`error` 是被测代码抛异常。只比用例名的话，某条已知差异哪天变成生产代码 NPE，名字不变、失败条数不变，凭证照旧判绿。
   - **租约与字段都收紧**：`type` / `issue` / `expires` 三个字段必填，其余字段一律报错（拼错的字段写了不生效还不报错，比没写更危险）；`expires` 用 `date.fromisoformat` 校验（只校验形状的话 `2026-13-45` 能过且字典序比较下永不过期），且不得超过今天 + 180 天——期限长到看不见就等于没有期限。空基线文件按配置错误处理：空基线等于没有基线。
   - **规模也要相等**：方言矩阵通道必须与基础通道跑同一批用例（`surefire-pg.tests == surefire.tests`）。只钉失败集不钉规模，等于允许把矩阵悄悄缩到只剩那几条预期红。同理，同名失败用例被折叠（`@ParameterizedTest` 的 display name 撞车）会判红——否则一条基线条目能盖住 N 条失败。
-  - **申报基线的步骤不许 fail-fast**：`gate.sh` 给这类步骤加 `-Dmaven.test.failure.ignore=true`。PG 那遍按设计必然红，默认 fail-fast 会让 `nextentity-tests-jpa` 的 checkstyle / PMD / SpotBugs / jacoco:report（全绑在 `verify`）**一次都不执行**——「静态检查根本没跑」会被「测试红是预期内」顺带盖过去。加了它之后判定权完全交给凭证：mvn 退出码为 0 时只看 receipt 的基线逐条比对；退出码非零则必须同时满足「失败全部来自 surefire」且「receipt 判绿」才按预期内解释，否则照样红。
+  - **必需通道必须列全反应堆，不是只列目标模块**：`-pl nextentity-tests-jpa -am` 会把 api/core/jpa/spring 一起拉进来跑测试，它们的 surefire 报告同样落盘。只点名 tests-jpa 的话，那四个模块的失败**不进凭证**（不在 `required` 里，失败检查那段根本不执行），而 mvn 的非零退出又被下面的基线降级分支当成「预期内」——真回归由此静默变绿。所以每档的 `--require` 都按 `-am` 实际反应堆列全，配 `STEP_MIN_TESTS` 卡住条数。
+  - **申报基线的步骤不许 fail-fast，且豁免必须绑在 execution 上**：PG 那遍按设计必然红，默认 fail-fast 会让 `nextentity-tests-jpa` 的 checkstyle / PMD / SpotBugs / jacoco:report（全绑在 `verify`）**一次都不执行**——「静态检查根本没跑」会被「测试红是预期内」顺带盖过去。放行方式写在 `nextentity-tests-jpa/pom.xml` 的 `pg-dialect` execution 里（`<testFailureIgnore>true</testFailureIgnore>`），**不能**用 `-Dmaven.test.failure.ignore=true`：后者是全局 user property，会把同一次反应堆里 api / core / jpa / spring 的 surefire 失败一并吞掉（实测：564 条那遍 fail 4 error 4，mvn 仍 exit 0）。绑在 execution 上，只有 PG 兼容模式那一遍忽略失败，其余模块照旧 fail-fast。判定权完全交给凭证：mvn 退出码为 0 时只看基线逐条比对；退出码非零则必须同时满足「失败全部来自 surefire」且「receipt 判绿」才按预期内解释，否则照样红。
 
 三件事只有凭证能给出、日志给不出：**skip 清单连理由**（`方言跳过必须可数` 从「PR 里手写」变成自动抽取）、**`~/.m2` 与源码的时间戳倒挂**（`-pl` 不带 `-am` 时会读到旧语义）、以及**跨模块合并口径的条数**（`-am` 反应堆会把 jpa/spring 一起带进来，比单看目标模块多）。
 
@@ -367,7 +368,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 - 故障注入常驻化：现在只是两次一次性实验（12 条 + 35 条手工注入），还没进流水线；连接中断、锁超时、方言不支持路径这三类也还没注入过。
 - 变异测试的历史文件（`historyInputFile` / `historyOutputFile`）：现在每次都全量重算，接上增量后夜间档可以更快。
 - L2 的参数绑定取值：`StatementInspector` 只拿得到语句文本，`where id = ?` 的两个占位符互换后 SQL 逐字节相同。唯一"文本相同而结果不同"的组合是 `single()` + `lock`，已补成同时断返回行（见上「L2 只证明…」一段）；其余位置由 L3 真库结果兜底。
-- **凭证管不到的三处绕过面**（承认，不假装已堵）：① `tools/gate.sh` 与 `tools/expected-failures/*.txt` 都是工作树里的文件，CI 只把 `gate.sh` 换成基线分支的版本，基线数据文件与 `pom.xml` 没钉——「改哑 PG profile + 清空基线」这类组合拳挡不住，只是空基线会先被判配置错误；② 删掉**基础通道**（非基线）的用例不会被察觉，`tests` 只要求 > 0（方言矩阵与基础通道的**相对**条数已强制相等，绝对条数没有下限）；③ 跨一次合并的「先提交弱门禁、下次由弱门禁把关」路径无解——它需要 CODEOWNERS 或分支保护，属于仓库设置而不是脚本能力。这三条都靠 review 兜，不要当成已解决。
+- **凭证管不到的三处绕过面**（承认，不假装已堵）：① `tools/gate.sh` 与 `tools/expected-failures/*.txt` 都是工作树里的文件，CI 只把 `gate.sh` 换成基线分支的版本，基线数据文件与 `pom.xml` 没钉——「改哑 PG profile + 清空基线」这类组合拳挡不住，只是空基线会先被判配置错误；② 删用例只能靠 `STEP_MIN_TESTS` 的绝对下限挡，而下限本身写在 `gate.sh` 里、会随版本一起被改（下限调低与删用例同时做就看不出来）；③ 跨一次合并的「先提交弱门禁、下次由弱门禁把关」路径无解——它需要 CODEOWNERS 或分支保护，属于仓库设置而不是脚本能力。这三条都靠 review 兜，不要当成已解决。
 
 **与 §6 的关系**：L3 是第二后端的验收口——新后端必须原样通过同一套一致性用例，不得为它新增特例分支（见 §6 第 8 条）。
 
