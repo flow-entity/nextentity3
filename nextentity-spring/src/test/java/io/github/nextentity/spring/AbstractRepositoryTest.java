@@ -1,6 +1,7 @@
 package io.github.nextentity.spring;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.api.EntityQuery;
 import io.github.nextentity.core.EntityOperationsFactory;
@@ -34,6 +35,14 @@ class AbstractRepositoryTest {
     private static final class ItemRepository extends AbstractRepository<Item> {
 
         private ItemRepository(EntityOperationsFactory factory) {
+            super(factory);
+        }
+    }
+
+    /// 自身仍是泛型的子类：`AbstractRepository` 的实参是它自己的类型变量，解析不出具体实体类。
+    private static final class GenericRepository<E> extends AbstractRepository<E> {
+
+        private GenericRepository(EntityOperationsFactory factory) {
             super(factory);
         }
     }
@@ -77,6 +86,22 @@ class AbstractRepositoryTest {
 
         assertThat(factory.operations.inserted).hasSize(1);
         assertThat(factory.operations.inserted.getFirst()).isSameAs(entity);
+    }
+
+    /// 泛型实参解析不出来时当场拒绝，并在消息里点名仓库类。
+    ///
+    /// 解析结果是 `null` 时若继续往下传，空指针会落在 `JpaMeta` 的 `ConcurrentHashMap` 里
+    /// （`ConcurrentHashMap` 不接受 `null` 键），栈里看不到是哪个仓库写错了泛型。
+    /// 这里用「子类自身仍是泛型」制造解析不出来的情形：容器把这类类当 raw bean 注册时就是这个形状。
+    @Test
+    void unresolvableEntityTypeIsRejectedWithRepositoryName() {
+        RecordingFactory factory = new RecordingFactory();
+
+        assertThatThrownBy(() -> new GenericRepository<Item>(factory))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining(GenericRepository.class.getName())
+                .hasMessageContaining("泛型实参");
+        assertThat(factory.requestedTypes).as("拒绝发生在取操作入口之前").isEmpty();
     }
 
     /// 记录「被请求的实体类型」的假工厂：只服务一个实体，因此始终返回同一个假操作入口。

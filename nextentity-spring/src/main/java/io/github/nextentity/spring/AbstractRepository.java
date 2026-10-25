@@ -4,6 +4,7 @@ import io.github.nextentity.api.EntityQuery;
 import io.github.nextentity.core.EntityOperationsFactory;
 import io.github.nextentity.core.TypeCastUtil;
 import io.github.nextentity.core.repo.EntityOperations;
+import java.util.Objects;
 import org.springframework.core.ResolvableType;
 
 /// 仓储基类：把「按实体取操作入口」这件事从调用方手里拿掉，子类只需声明泛型。
@@ -20,10 +21,16 @@ public abstract class AbstractRepository<T> {
 
     /// 由子类泛型解析实体类型并取操作入口。
     ///
+    /// 泛型解析失败（子类自身仍是泛型、被当 raw bean 注册，或中间隔了一层没写实参的父类）时
+    /// 直接拒绝并点名仓库类：`resolveGeneric(0)` 返回 `null` 时若继续往下传，空指针会落在
+    /// `JpaMeta` 的 `ConcurrentHashMap` 里，栈里看不到是哪个仓库坏的。
+    ///
     /// @param factory 实体操作工厂：必须是上下文里唯一的那个 bean，0 个或多 1 个都会让消费方取 bean 失败
     protected AbstractRepository(EntityOperationsFactory factory) {
         Class<T> entityType = TypeCastUtil.cast(
                 ResolvableType.forClass(getClass()).as(AbstractRepository.class).resolveGeneric(0));
+        Objects.requireNonNull(
+                entityType, () -> "无法从 " + getClass().getName() + " 解析实体类型：子类必须写死 AbstractRepository 的泛型实参");
         this.operations = factory.operations(entityType);
     }
 

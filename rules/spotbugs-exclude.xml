@@ -18,4 +18,15 @@
         <Bug pattern="MS_EXPOSE_REP"/>
     </Match>
 
+    <!-- 仓储基类必须在构造器里拒绝「泛型解析不出来」的子类：晚一步失败，空指针会落在
+         JpaMeta 的 ConcurrentHashMap 里，栈上看不出是哪个仓库写错了泛型。SpotBugs 的
+         CT_CONSTRUCTOR_THROW 针对的是「可终结类在构造期抛异常会留下未初始化对象供 finalizer
+         攻击」，而这里 1) 类层次里没有任何 finalize()，2) 异常只来自调用方自己写错的泛型，
+         对象在抛出时从未逸出。SpotBugs 给出的修法（把类声明成 final）与本类「供子类继承」
+         的设计直接冲突，因此只对这一处放行。 -->
+    <Match>
+        <Class name="io.github.nextentity.spring.AbstractRepository"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+
 </FindBugsFilter>
