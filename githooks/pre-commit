@@ -1,19 +1,22 @@
 #!/bin/sh
 #
-# pre-commit：提交前自动格式化 + 全量门禁（格式/静态检查/单测/覆盖率）
+# pre-commit：提交前跑格式检查 + 全量门禁（静态检查/单测/覆盖率）
 # 安装：git config core.hooksPath githooks
 # 跳过（仅限紧急情况）：git commit --no-verify
 #
+# 注意：本钩子**不改动暂存区**。早先的版本在这里跑 `spotless:apply` 再 `git add -u`，
+# 于是工作区里所有已跟踪改动都会被吸进当前提交——想把"文档改动"与"测试改动"分成两个
+# 提交是做不到的。现在改成 `spotless:check`：格式不合规就直接失败，由作者自己 apply
+# 后重新暂存，于是提交内容始终等于作者挑出来的那批文件。
+#
 
 echo ""
-echo "=== [pre-commit] 格式化 ==="
-mvn spotless:apply -q
+echo "=== [pre-commit] 格式检查（不动暂存区） ==="
+mvn spotless:check -q
 if [ $? -ne 0 ]; then
-    echo "❌ spotless:apply 失败"
+    echo "❌ spotless:check 失败：先跑 mvn spotless:apply，再 git add 你挑的文件"
     exit 1
 fi
-
-git add -u
 
 echo "=== [pre-commit] 门禁 verify ==="
 mvn verify -q
@@ -22,5 +25,5 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-echo "✅ 格式化 + 门禁通过"
+echo "✅ 格式 + 门禁通过"
 echo ""
