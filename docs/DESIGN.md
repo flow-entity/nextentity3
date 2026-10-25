@@ -166,7 +166,7 @@ L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（
 |---|---|---|
 | 变异分数（PIT） | 主指标 | `api` / `core` / `jpa` / `spring` 均 ≥ 95%；当前实测 99% / 100% / 98% / 100%（见下「变异测试」，阈值写在各模块 pom） |
 | 语义等价律条数 | 辅助 | 每条律至少 1 条差分用例，条数只增不减 |
-| 方言矩阵通过率 | 辅助 | 100% 通过；skip 数单独报表，只许降不许升（矩阵目前是 H2 + MySQL 8.0.18 两列；skip 报表待建，见上「通道拆分」） |
+| 方言矩阵通过率 | 辅助 | 默认通道 100% 通过；skip 数单独报表，只许降不许升。矩阵列为 H2\MODE=MySQL\ + MySQL 8.0.18（默认、强制）+ H2\MODE=PostgreSQL\（opt-in，-Dnextentity.h2mode=postgresql，允许 8 条已知方言差异：4 条 SQL 文本快照 + 4 条 H2 不认的 PG 锁语法，见下「方言矩阵」）；skip 报表待建，见上「通道拆分」 |
 | 缺陷逃逸率 | 辅助 | 发版后发现的语义缺陷数 / 版本，趋势必须向下 |
 | 行/分支覆盖率（聚合口径） | **不作门禁**，仅诊断报表 | 不设百分比门槛；判据是「新增的未覆盖行必须落在下文『已判定不可达与度量限制』清单里」，落在清单外就按缺口处理 |
 
@@ -257,7 +257,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 - `core/spec/Window.limited()` 的 `return limit != null` 被换成 `return offset != null`：该方法全仓库只在 `QueryBuilder#spec(Window)` 读一次，而到达那里的 `Window` 要么两字段皆 `null`（`Window.NONE`），要么两字段皆非 `null`（`first()` / `limit(n)` / `slice(offset, limit)`），两种写法对该判定等价。**这条等价依赖"读点只有一个"**：`QuerySpec#forExists()` 造的是 `new Window(null, 1)`（只有 `limit` 非 `null`），现在没人读 `limited()` 所以无差异；哪天 exists 路径开始读它，这个变异就不再等价。
 - `core/util/ImmutableList.ofIterable` 的 `iterable instanceof Collection<?> sized` 同理（只影响新建 `ArrayList` 的初始容量）。
 - `jpa/compile/JpaPaths:62` 的 `meta.association(...)` 判定被换成恒真（中段一律 `join`）：Hibernate 7 对嵌入属性的 `join` 是"虚拟"的——渲染成同一批列，语句与结果逐字节不变。**已实验证实两次**：单层嵌入（`Shipment#address.city`，`JpaPathsNestedTest#embeddedMiddleSegmentUsesGet`）与两段嵌入（`Warehouse#location.coordinates.zone`，`JpaEmbeddedChainTest#nestedEmbeddedPathUsesGet`）在注入后都仍然绿，且整句 SQL 一字不差；三层嵌入的四段路径（`location.coordinates.datum.code`，`JpaEmbeddedChainTest#nestedEmbeddedPathAtFourthSegmentUsesGet`）走的是同一段递归，并顺带覆盖了前缀缓存第一次新建前缀项的那一步。要杀它只能改生产代码（例如把 `association` 判定换成显式的 `get`/`join` 双分支断言），或换一个不把嵌入 `join` 摊平的 JPA 实现。**这条等价依赖 Hibernate 的实现细节**：若某个实现给嵌入 `join` 加上 `is not null` 谓词（INNER 的常见实现），嵌入列全 `null` 的行会静默消失——那是结果差异。`JpaEmbeddedChainTest#nullEmbeddedRowIsReturned` 钉住"嵌入为 null 的行必须返回"，换大版本或接第二后端时由它先报；`JpaPaths.navigate` 的 javadoc 也记了同一句限定。
-- `jpa/meta/JpaMeta:53` 的 `resolved instanceof PluralAttribute` 判定被换成恒假：`PluralAttribute#isAssociation()` 本来就返回 `true`，集合关联（`VersionedLedger#entries`）在去掉这条特判后仍然走 `isAssociation()` 一侧，结果不变。**等价性依赖「`PluralAttribute#isAssociation() == true`」这条实现契约**，保留该特判仍然有意义：它把"集合关联按可 join 处理"写成显式意图，也不假设第二后端守这条契约。
+- `jpa/meta/JpaMeta` 的 `resolved instanceof PluralAttribute` 判定**曾经**是等价变异（`PluralAttribute#isAssociation()` 本来就返回 `true`，去掉特判后集合关联仍走 `isAssociation()` 一侧）。它现在**不再等价**：该判定已抽成 `JpaMeta#pluralAssociation`，成为 `JpaPaths` 拒绝「集合关联路径」的唯一依据——去掉它，`where(Article::getTags)` 会渲染成一个 JOIN 并静默返回错行数（`JpaPluralAssociationRejectionTest` 三条用例钉住拒绝分支，`mvn -pl nextentity-jpa pitest:mutationCoverage` 已无这条存活体）。
 - `jpa/compile/JpaQueryBuilder:60`、`:70` 的 `!spec.groupBy().isEmpty()` / `!spec.orderBy().isEmpty()` 判定被换成恒真：`builder.groupBy(List.of())` / `builder.orderBy(List.of())` 是 JPA 的 no-op，空列表照样下发与不下发等价。
 
 所以「`STRONGER` 下还有存活体」不等于「还有盲区」：判定顺序永远是「先确认语义套件是否已覆盖（它不在任何变异分数里），再确认是否等价」，两步都不成立才是缺口。
@@ -282,9 +282,28 @@ java -jar <同上> report tmp/cov/merged.exec \
 2. **跨算子族的碰撞比族内碰撞更隐蔽**：`contains` 格原先取子串 `bet`（命中 `beta` 那行），与 `ge(beta)` 的期望集合完全相同——把 `contains` 渲染成 `>=` 照样全绿。族内自检（同族算子两两可区分）发现不了这种跨族退化，所以可区分性自检里补了 `contains` vs `ge` 这一对，子串也换成 `am`（只命中 `amber`，`{6}` 在 17 格里唯一）。注意子串作用在**关联方的名字**（`alpha`/`beta`/`aardvark`/`amber`/`alps`）上，不是实体自己的名字——第一版选的 `ch` 命中空集合，当场被「期望集合不能为空」的自检拦下。同类的第二处是下划线通配格：原模式 `_lpha` 只命中 `alpha`，与 `eq(alpha)` 同集合，把 `like` 渲染成 `=` 全绿；改成 `a___`（四字符、以 `a` 开头，只命中 `alps`）后与所有比较格都不同集合，并补了 `eq(alpha)` vs `like(a___)` 这一对。
 3. **模块 PIT 的存活体不能直接当盲区清单**：`STRONGER` 的 16 条存活体里，只有 1 条（`jpa/exec/JpaExecutor:47` 的锁模式下发）是被语义套件真杀死的覆盖，11 条等价、4 条防御性不可达（见上「变异组本身的强度也会骗人」）。把模块分数直接当结论会同时犯两个错：把等价变异当缺口，把语义套件的覆盖当成没覆盖。
 
+**方言矩阵（已实测两次，opt-in，不是默认通道）**：`nextentity-tests-jpa` 的建库入口 `HibernateHarness#start`（`nextentity-tests-jpa/src/test/java/io/github/nextentity/tests/jpa/support/HibernateHarness.java`）按系统属性 `-Dnextentity.h2mode` 分派，判定逻辑是纯函数 `HibernateHarness#resolveMode(String)`：缺省（属性缺省或空白）`mysql`，URL 与从前逐字节相同；`postgresql` 时改连 `MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH` 并钉 `PostgreSQLDialect`；其他取值（含大小写变体）归一化后仍不认识就抛 `IllegalArgumentException`，不静默回退（打错一个字母必须当场炸，否则等于什么都没跑）。**不读环境变量**：环境变量会被 fork 出来的 surefire JVM 继承，一条 `NEXTENTITY_H2MODE=postgresql` 就能让后续所有构建静默跑成另一个方言，而日志里看不出来——方言必须是命令行显式声明的。跑法：`./mvnw -pl nextentity-tests-jpa -am test -DskipITs -Dnextentity.h2mode=postgresql`（**要带 `-am`**；不带时 `nextentity-testing` 从 `~/.m2` 取陈旧快照，表现是新写的基类构造器「找不到方法」）。开关自身的正确性有独立用例 `HibernateHarnessModeTest`（5 条，纯函数，不连库）：钉住 MySQL 模式的 URL 与历史逐字节一致、PG 模式的三个兼容开关一个不少、方言只在 PG 下钉、未知取值失败而不是静默回退、NULL 序映射与方言一致——这几行的错误形态都是「默认通道照样全绿」，只能靠直钉。
+
+第一次实测（H2 侧 535 条）：**25 红，其中 16 条指向 oracle 而非库**——排序/分组/关联差分的内存侧内建了 MySQL 的「ASC 时 NULL 在前」，PG 是 NULLS LAST。这 16 条按「一致性基类保持后端中立」那条红线属于违规，已修（见下「NULL 序参数化」），不是被当成「已知差异」记下来的。
+
+第二次实测（H2 侧 539 条，修完 R1 之后的基线；此后新增方言开关自身的 5 条纯函数用例，现为 540 条）：**8 红，全部可归因，零生产缺陷**——3 条是 SQL 文本快照/渲染（`ItemSqlSnapshotTest` / `ItemProjectionMapperRenderingTest` / `ItemTier1RenderingTest` 各一格），快照钉的是字面量 SQL，换方言必然不同，这不是缺陷；5 条是锁模式（`PostgreSQLDialect` 给 `PESSIMISTIC_WRITE` 渲染 `for no key update`、给 `PESSIMISTIC_READ` 渲染 `for share`，H2 的 PG 兼容模式不认这两条语法，真 PG 接受），其中 `ItemQueryEntrySnapshotTest` 的两条失败按 cause 归这一类（两条 cause 都是 `for no key update`），不属于快照类。其余 531 条（现 532 条；含全部谓词格、排序、分组、关联、窗口、写侧往返）在两个方言下断言逐字相同——**这才是「换后端也通过」的证据**，快照与锁模式两类明确排除在外。`Oracle` 模式没做：H2 的 Oracle 兼容模式覆盖不到 Oracle 的实质差异（空串即 NULL、`NUMBER` 精度），做了只会给假证据。
+
+**NULL 序参数化（R1，已落，方言中立那一格补齐）**：`ORDER BY x` 里 `null` 排前还是排后是**后端事实**，不是可推导语义，所以两处都改成显式传入、默认值 = MySQL：
+
+- 分组/排序差分族（`ConsistencyTestBase`）：protected `nullOrdering()`，默认 `NULLS_FIRST`；`SortDifferentialTest` 的排序 oracle、`HavingDifferentialTest` 的分组 oracle 全部读它。
+- 关联嵌套路径族（`AssociationDifferentialTest`）：构造器注入 `NullOrdering`（不设可覆写方法——这一族的方法数已顶到 PMD 的 `TooManyMethods` 上限，参数走构造器既不占方法位也不会被忘掉）。
+- 两个族的 JPA 适配器从同一处取值：`HibernateHarness#nullOrdering(H2Mode)`（`MYSQL` → `NULLS_FIRST`，`POSTGRESQL` → `NULLS_LAST`）；无参 `nullOrdering()` 只负责读 `-Dnextentity.h2mode` 再转调它。
+- **容器通道的差分类不读属性**，各自钉死 MySQL：`MySqlItemSortDifferentialIntegrationTest` / `MySqlItemHavingDifferentialIntegrationTest` 覆写 `nullOrdering()` 返回 `NULLS_FIRST`，`MySqlItemAssociationDifferentialIntegrationTest` 构造器传 `HibernateHarness.nullOrdering(H2Mode.MYSQL)`。它们连的是真 MySQL，与 H2 兼容模式开关无关；带 `-Dnextentity.h2mode=postgresql` 跑容器通道时若沿用属性值，排序/分组 oracle 会用 `NULLS_LAST` 去比真 MySQL 的 `NULLS_FIRST`，整族假红。只有 H2 侧的 `ItemSortDifferentialTest` / `ItemHavingDifferentialTest` / `ItemAssociationDifferentialTest` 读属性。
+
+默认值仍是 MySQL，所以既有用例的断言逐字未变；接第二后端时只覆盖适配器那一行，不许放宽成「只钉非空部分」。
+
+**L4 的写侧关联语义（已补）**：`update` 的 SET 子句跳过关联列这件事，此前只有 H2 证据（`nextentity-jpa/src/test/java/io/github/nextentity/jpa/JpaPersistAssociationTest.java:247` 的 `.doesNotContain("customer_id")`），容器通道一条都没有——把 `JpaPersistExecutor` 的跳过条件改坏，H2 会红、真 MySQL 通道静默放过。现在有 `MySqlAssetWriteSkipsAssociationIntegrationTest`（3 条）：语句层断「`update asset` 的 SET 里没有 `owner_id`」，结果层断「库里的外键仍是原值」（片段断言挡不住「多写一条 UPDATE 再覆盖回来」），再加一条 insert 的正向对照（证明跳过只作用于 `update`，没被误扩展到写入路径）。
+
+**Spring 接线的容器变体（已补）**：`nextentity-spring` 的 `NextEntityRealBackendTest` 跑的是 H2，而「自动配置 + `SharedEntityManagerCreator` 的事务绑定代理 + 真方言」这一组合此前没有任何实证。现由 `nextentity-tests-jpa` 的 `MySqlSpringRepositoryIntegrationTest`（4 条，容器通道）补上：自动配置产出的工厂喂给 `AbstractRepository` 子类，在真 MySQL 上断三件事——回滚真丢数据（`setRollbackOnly` 后 `count()` 为 0）、本线程未提交的行对另一线程不可见（插入若被静默自动提交会立刻变红）、4 线程并发各查各的行。它用自己的实体 `SpringWiredEntity` 独占一张表，理由是**行集隔离**：多个容器类都在断言精确行集（`containsExactly`），共用一张表会互相污染行集。`create-drop` 不是理由——它只处理本 PU 映射的表，不会删别人的表，JUnit 默认也串行。这与 H2 版不是重复证据——H2 版证「代理是线程绑定的」，这里证「绑定的是真 MySQL 连接且提交边界正确」。
+
 **尚未实施**（方向，不是已有能力——写进这里的东西不得当成现状引用）：
 
-- H2 兼容模式矩阵：以 `MODE=MySQL` / `PostgreSQL` / `Oracle` 跑同一套一致性用例。
+- ~~排序差分的方言化~~（已完成，见上「NULL 序参数化」）：`NULLS FIRST` / `NULLS LAST` 已是显式参数，接第二后端只需在适配器里覆盖一行。
 - 故障注入常驻化：现在只是两次一次性实验（12 条 + 35 条手工注入），还没进流水线；连接中断、锁超时、方言不支持路径这三类也还没注入过。
 - 变异测试的历史文件（`historyInputFile` / `historyOutputFile`）：现在每次都全量重算，接上增量后夜间档可以更快。
 - L2 的参数绑定取值：`StatementInspector` 只拿得到语句文本，`where id = ?` 的两个占位符互换后 SQL 逐字节相同。唯一"文本相同而结果不同"的组合是 `single()` + `lock`，已补成同时断返回行（见上「L2 只证明…」一段）；其余位置由 L3 真库结果兜底。
