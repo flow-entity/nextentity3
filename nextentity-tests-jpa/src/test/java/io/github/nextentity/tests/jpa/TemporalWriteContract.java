@@ -10,15 +10,19 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.TimeZone;
 import java.util.function.Predicate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
 /// 时间类型（`Instant` / `LocalDateTime` / `LocalDate`）的写读契约：**同一套断言、两套连接**。
 ///
@@ -41,10 +45,13 @@ import org.junit.jupiter.api.Test;
 /// 用 `LocalDateTime` 钉（`Instant` 的小数位精度会撞上 `instantBindingKeepsTheInstant` 说明的
 /// PG 兼容模式差异，两者不混在一起）。
 ///
-/// **时区**：默认把 JVM 时区钉成 `+08:00`（见 [TemporalWriteContract#resetBefore]），这样 `Instant`
-/// 的断言在任何跑测机器上都保留区分力。要验证「换时区仍然对」，**整通道**跑一次：
-/// `./mvnw -pl nextentity-tests-jpa test -Dnextentity.pinTimezone=false -DargLine=-Duser.timezone=America/New_York`
-/// ——不能在单个用例里改默认时区，理由（H2/Hibernate 缓存了建连时的时区）写在同一处注释里。
+/// **时区**：JVM 默认时区由 surefire/failsafe 的 `-Duser.timezone` 钉成 `+08:00`
+/// （`nextentity-tests-jpa/pom.xml` 的 `pinned.timezone`），这样 `Instant` 的断言在任何跑测机器上都
+/// 保留区分力。**不能**在用例里改：Hibernate 在 `buildSessionFactory()` 时就缓存了默认时区，而装置由
+/// 子类字段初始化创建，早于任何 `@BeforeEach`——在 `@BeforeEach` 里 `TimeZone.setDefault` 是「晚于
+/// 建连」的，实测会把 `LocalDate.of(2024,3,10)` 写成 `2024-03-09`，等于把装置搞成非法的时区实验。
+/// 钉没钉上是可断言的事实（见 [TemporalWriteContract#resetBefore]）。要验证「换时区仍然对」，
+/// **整通道**跑一次：`./mvnw -pl nextentity-tests-jpa test -DargLine=-Duser.timezone=America/New_York`。
 abstract class TemporalWriteContract {
 
     /// 行 1 的时刻：三条列各不相同，便于发现「用错列/用错绑定路径」。
@@ -62,8 +69,8 @@ abstract class TemporalWriteContract {
     /// 夹具的内存副本：差分 oracle 的输入，与灌进库里的那三行逐字段相同。
     private List<TemporalItemEntity> fixture = List.of();
 
-    /// 跑测机器原来的默认时区，`@AfterEach` 负责还原。
-    private TimeZone originalTimeZone;
+    /// 装置钉住的 JVM 时区偏移：与 pom 的 `pinned.timezone` 是同一个值，`resetBefore` 拿它自检。
+    static final ZoneOffset PINNED_OFFSET = ZoneOffset.ofHours(8);
 
     /// 被测装置：子类只决定接哪条库。
     protected abstract WriteRoundTripSupport<TemporalItemEntity> support();
@@ -77,27 +84,17 @@ abstract class TemporalWriteContract {
 
     @BeforeEach
     void resetBefore() {
-        // 钉住 JVM 默认时区：`Instant` 的区分力全部来自「墙钟被挪过就会差整小时」，跑测机器若在
-        // UTC 上，这条断言对「按 JVM 时区换算」类缺陷的区分力归零。还原见 [TemporalWriteContract#resetAfter]。
-        //
-        // 钉的是**建 SessionFactory 之前**就该定下的值：H2/Hibernate 会把默认时区缓存进连接/类型绑定，
-        // 所以「harness 建好之后再 `TimeZone.setDefault`」不是合法的时区实验——实测（`hibernate`
-        // 直调 `em.persist`、完全不经过 nextentity）会把 `LocalDate.of(2024,3,10)` 写成 `2024-03-09`，
-        // 差的正好是切换前后两个时区的偏移；而整个 JVM 一开始就在负偏移时区下则完全正常。
-        // 想验证「换时区仍然对」请整通道跑，见 `nextentity.pinTimezone=false` 的说明。
-        originalTimeZone = TimeZone.getDefault();
-        if (!"false".equalsIgnoreCase(System.getProperty("nextentity.pinTimezone", "true"))) {
-            TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"));
-        }
+        // 时区由 pom 的 `-Duser.timezone` 在 fork 启动时钉住（见类注释），这里把它变成**可断言的
+        // 事实**：钉不上就等于所有 `Instant` 断言在 UTC 机器上失去区分力，那种「绿」没有意义。
+        assertThat(ZoneId.systemDefault().getRules().getOffset(CREATED_1))
+                .as("JVM 时区必须被 pom 的 -Duser.timezone 钉在 %s（见 nextentity-tests-jpa/pom.xml）", PINNED_OFFSET)
+                .isEqualTo(PINNED_OFFSET);
         resetRows();
     }
 
     @AfterEach
     void resetAfter() {
         resetRows();
-        if (originalTimeZone != null) {
-            TimeZone.setDefault(originalTimeZone);
-        }
     }
 
     @Test
@@ -111,21 +108,57 @@ abstract class TemporalWriteContract {
     }
 
     @Test
+    @DisabledIfSystemProperty(
+            named = "nextentity.h2mode",
+            matches = "postgresql",
+            disabledReason = "H2 的 PG 兼容模式把 Instant 绑成丢偏移的 timestamp，本通道的形态由"
+                    + " insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode 单独钉")
     @DisplayName("insert/reload：Instant 回到同一个时刻，不被时区挪动")
     void insertAndReloadPreserveTheInstant() {
         insert(row(1L, "first", CREATED_1, UPDATED_1, DUE_1));
 
-        assertInstantRoundTrip(reload(1L).createdAt(), CREATED_1, "Instant 必须回到同一个时刻：被 JVM 时区挪过就会差出整小时");
+        TemporalItemEntity reloaded = reload(1L);
+        assertThat(reloaded).as("行必须还在").isNotNull();
+        assertThat(reloaded.createdAt())
+                .as("Instant 必须回到同一个时刻：被 JVM 时区挪过就会差出整小时")
+                .isEqualTo(CREATED_1);
+    }
+
+    /// PG 兼容模式的 `Instant` 形态：钉「丢掉的偏移**恰好**是一个 JVM 时区偏移」。
+    ///
+    /// 这条只在 opt-in 通道跑，且用显式注解 + `@Tag` 标记（AGENTS.md「方言跳过必须可数」），
+    /// 不用 `assumeTrue`：跳过不进任何计数，而这里要证明的恰恰是「该通道上偏移是 8 小时而不是别的量」。
+    /// 断言不留容忍带——写成「漂移小于 24 小时」会把所有合法时区差（UTC−12…UTC+14）都放过去，
+    /// 对这个用例唯一要抓的缺陷类别（时刻被时区挪动）零区分力。
+    @Test
+    @EnabledIfSystemProperty(named = "nextentity.h2mode", matches = "postgresql")
+    @Tag("dialect-h2-postgresql")
+    @DisplayName("insert/reload（PG 兼容模式）：Instant 丢掉的偏移恰好是一个 JVM 时区偏移")
+    void insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode() {
+        insert(row(1L, "first", CREATED_1, UPDATED_1, DUE_1));
+
+        TemporalItemEntity reloaded = reload(1L);
+        assertThat(reloaded).as("行必须还在").isNotNull();
+        long drift = Duration.between(CREATED_1, reloaded.createdAt()).getSeconds();
+        long offset = ZoneId.systemDefault().getRules().getOffset(CREATED_1).getTotalSeconds();
+        assertThat(drift)
+                .as("%s（丢的必须恰好是一个 JVM 时区偏移：偏移量变了、方向反了、或哪天不丢了都要红）", reloaded.createdAt())
+                .isEqualTo(-offset);
     }
 
     @Test
     @DisplayName("insert/reload：LocalDateTime 的小数秒不丢")
     void preservesSubSecondPrecision() {
-        LocalDateTime precise = LocalDateTime.of(2024, 6, 1, 18, 15, 30, 123_456_000);
+        // 钉毫秒而不是微秒：这条要证明的是「绑定不把小数秒截到整秒」，而列精度是方言映射的
+        // 默认值（H2 `timestamp(6)` / MySQL `datetime(6)`），不是框架语义——用微秒会把
+        // 「Hibernate 哪天把默认精度调小」也算成红，那是装置事实，不是本用例要守的东西。
+        LocalDateTime precise = LocalDateTime.of(2024, 6, 1, 18, 15, 30, 123_000_000);
 
         insert(row(1L, "sub", CREATED_1, precise, DUE_1));
 
-        assertThat(reload(1L).updatedAt()).as("微秒级小数秒：列精度不足或绑定截断都会在这里露出来").isEqualTo(precise);
+        TemporalItemEntity reloaded = reload(1L);
+        assertThat(reloaded).as("行必须还在").isNotNull();
+        assertThat(reloaded.updatedAt()).as("毫秒级小数秒：绑定截断到整秒会在这里露出来").isEqualTo(precise);
     }
 
     @Test
@@ -304,7 +337,9 @@ abstract class TemporalWriteContract {
 
         TemporalItemEntity reloaded = reload(1L);
         assertThat(reloaded).as("行必须还在").isNotNull();
-        assertInstantRoundTrip(reloaded.createdAt(), CREATED_2, "Instant 列也必须真的换成新值");
+        assertThat(reloaded.createdAt())
+                .as("Instant 列也必须真的换成新值（期望值按通道算，见 storedInstant）")
+                .isEqualTo(storedInstant(CREATED_2));
         assertThat(reloaded.updatedAt()).isEqualTo(UPDATED_2);
         assertThat(reloaded.dueDate()).isEqualTo(newDue);
     }
@@ -319,34 +354,32 @@ abstract class TemporalWriteContract {
         insert(fixture.toArray(TemporalItemEntity[]::new));
     }
 
-    /// 该通道下 `Instant` 的往返是否保持时刻不变。
+    /// 该通道下 `Instant` 写进库再读回来之后的**精确**期望值。
     ///
-    /// H2 的 PostgreSQL 兼容模式配上钉死的 `PostgreSQLDialect` 时，`Instant` 会被绑成丢偏移的
-    /// `timestamp`：写进去 `10:15:30Z`、读回来 `02:15:30Z`（正好差一个 JVM 时区）。这不是框架缺陷
-    /// ——同一个实体在 PG 模式下**不走 nextentity**、直接 `em.persist` + `em.find` 也差 8 小时，
-    /// 且两种模式建出的列都是 `timestamp with time zone(6)`（真 PostgreSQL 的 `timestamptz` 存的是
-    /// 时刻，没有这个偏移）。
+    /// 默认恒等：能保时刻的通道（H2 的 MySQL 兼容模式、真 MySQL）必须原样回来，这是区分
+    /// 「按 JVM 时区换算」的唯一判据。H2 的 PostgreSQL 兼容模式配上钉死的 `PostgreSQLDialect` 时，
+    /// `Instant` 会被绑成丢偏移的 `timestamp`：写 `10:15:30Z`、读回 `02:15:30Z`（实测漂移
+    /// `-28800` 秒 = `-1 × +08:00` 偏移）。这不是框架缺陷——同一个实体在该模式下**不走 nextentity**、
+    /// 直接 `em.persist` + `em.find` 也差 8 小时，且两种模式建出的列都是
+    /// `timestamp with time zone(6)`（真 PostgreSQL 的 `timestamptz` 存时刻，没有这个偏移）。
     ///
-    /// 因此 `Instant` 的往返断言走 [TemporalWriteContract#assertInstantRoundTrip]：能保时刻的通道钉
-    /// **相等**（这是区分「按 JVM 时区换算」的唯一判据），PG 兼容模式钉「非 null 且已被换成新值」。
-    /// 不用 `assumeTrue` 跳过——跳过会让该通道少一条证据且不进任何计数，而「Instant 列到底写没写进去」
-    /// 在两种模式下都能判。
-    private static boolean instantBindingKeepsTheInstant() {
-        return !"postgresql".equalsIgnoreCase(System.getProperty("nextentity.h2mode", "mysql"));
+    /// 所以这里把「方言事实」与「用例期望」收敛到一处：期望值按通道现算，断言一律是**相等**，
+    /// 没有容忍带；该通道的偏移量本身另由
+    /// [TemporalWriteContract#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode] 钉死。
+    private Instant storedInstant(Instant value) {
+        if (instantRoundTripKeepsTheInstant()) {
+            return value;
+        }
+        return value.minusSeconds(
+                ZoneId.systemDefault().getRules().getOffset(value).getTotalSeconds());
     }
 
-    /// `Instant` 往返的断言形态按通道分派，理由见 [TemporalWriteContract#instantBindingKeepsTheInstant]。
-    private static void assertInstantRoundTrip(Instant actual, Instant expected, String message) {
-        if (instantBindingKeepsTheInstant()) {
-            assertThat(actual).as(message).isEqualTo(expected);
-        } else {
-            assertThat(actual)
-                    .as(message + "（PG 兼容模式的绑定丢偏移，本通道只钉「列确实被写过且仍是同一时刻附近」）")
-                    .isNotNull();
-            assertThat(Math.abs(Duration.between(expected, actual).toHours()))
-                    .as("%s：只容忍时区偏移量级的漂移，超出说明写错了列或根本没落库", message)
-                    .isLessThan(24);
-        }
+    /// 该通道下 `Instant` 的往返是否保持时刻不变。
+    ///
+    /// 与 [TemporalWriteContract#nullOrdering] 同一套写法：方言事实由子类声明，基类不读系统属性，
+    /// 于是「后端中立」这条在契约基类上仍然成立。
+    protected boolean instantRoundTripKeepsTheInstant() {
+        return true;
     }
 
     /// 差分 oracle：在内存里对**同一批夹具行**做同样的筛选与排序。

@@ -98,8 +98,12 @@ abstract class GeneratedIdInsertContract {
         assertThat(first.id()).isNotNull();
         assertThat(second.id()).as("第二条必须是另一号（同号说明回填被覆盖），且递增").isNotNull().isGreaterThan(first.id());
 
-        assertThat(reload(first.id()).name()).isEqualTo("first");
-        assertThat(reload(second.id()).name()).isEqualTo("second");
+        GeneratedItemEntity reloadedFirst = reload(first.id());
+        GeneratedItemEntity reloadedSecond = reload(second.id());
+        assertThat(reloadedFirst).as("第一条必须真的落库").isNotNull();
+        assertThat(reloadedSecond).as("第二条必须真的落库").isNotNull();
+        assertThat(reloadedFirst.name()).isEqualTo("first");
+        assertThat(reloadedSecond.name()).isEqualTo("second");
     }
 
     @Test
@@ -119,13 +123,17 @@ abstract class GeneratedIdInsertContract {
         GeneratedItemEntity third = new GeneratedItemEntity("gamma");
         insert(third);
 
-        // 复用已删的号会让任何「按 id 记下的引用」指向另一行：这是自增列最容易被误解的语义，
-        // 而它只在「删了再插」之后才暴露（真 MySQL 的 AUTO_INCREMENT 单调前进，H2 也只在显式
-        // `restart` 后才回退，所以这条断言两边都成立）
+        // 这条守的是「Hibernate 的 IDENTITY 取号 + 回填」这条路径，不是「框架自己不复用号」——
+        // 框架在这条路径上只调 `em.persist`，号由数据库发（「不写 id」这一点由 INSERT 列清单那条
+        // 用例覆盖）。价值在于：号一旦复用，任何「按 id 记下的引用」就指向了另一行，而这只有
+        // 「删了再插」才暴露（真 MySQL 的 AUTO_INCREMENT 单调前进，H2 也只在显式 `restart` 后回退，
+        // 所以断言两边都成立）。
         assertThat(third.id()).as("已删掉的号不得被复用").isNotEqualTo(first.id()).isNotEqualTo(second.id());
         assertThat(third.id()).isGreaterThan(first.id());
         assertThat(reload(second.id())).as("被删的行确实不在了").isNull();
-        assertThat(reload(third.id()).name()).isEqualTo("gamma");
+        GeneratedItemEntity reloadedThird = reload(third.id());
+        assertThat(reloadedThird).as("第三行必须还在").isNotNull();
+        assertThat(reloadedThird.name()).isEqualTo("gamma");
     }
 
     @Test
@@ -166,9 +174,16 @@ abstract class GeneratedIdInsertContract {
         insertAll(List.of(zulu, alpha, mike));
         support().clear();
 
+        // 期望值在内存里现算（Java 的字典序），不写死常量：写死的 `[alpha, mike, zulu]` 会把
+        // 「数据库的 collation 怎么排」偷偷钉进用例，夹具一旦出现大小写混合或重音字符就会随方言
+        // 失真。与其它断言同一口径：差分 oracle 给正确性，手算常量只钉「列序 ≠ 主键序」这一事实。
         assertThat(names(query().orderBy(GeneratedItemEntity::name).asc().list()))
                 .as("按 name 升序：与插入顺序（也是主键序）不同，ORDER BY 丢了就会红")
-                .containsExactly("alpha", "mike", "zulu");
+                .isEqualTo(Stream.of(zulu, alpha, mike)
+                        .map(GeneratedItemEntity::name)
+                        .sorted()
+                        .toList())
+                .isNotEqualTo(names(List.of(zulu, alpha, mike)));
 
         assertThat(ids(query().where(GeneratedItemEntity::id).eq(alpha.id()).list()))
                 .as("按回填的主键等值查询")

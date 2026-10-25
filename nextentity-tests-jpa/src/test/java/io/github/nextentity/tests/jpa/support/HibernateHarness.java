@@ -31,7 +31,7 @@ public final class HibernateHarness implements AutoCloseable {
     /// 只认系统属性、**不**读环境变量：环境变量是隐式全局开关，机器上留一个
     /// `NEXTENTITY_H2MODE=postgresql` 就会让默认通道静默换方言，而 `-DskipITs` 的本地跑法尤其隐蔽。
     /// surefire 的 fork 会继承 Maven 命令行上的 `-D`，所以系统属性足够。
-    static final String MODE_PROPERTY = "nextentity.h2mode";
+    public static final String MODE_PROPERTY = "nextentity.h2mode";
 
     private final SessionFactory sessionFactory;
     private final SqlRecorder recorder;

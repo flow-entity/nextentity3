@@ -26,6 +26,13 @@ class TemporalWriteTest extends TemporalWriteContract {
         return HibernateHarness.nullOrdering();
     }
 
+    /// 同一套装置口径：H2 的 PG 兼容模式把 `Instant` 绑成丢偏移的 `timestamp`，其余模式保时刻。
+    @Override
+    protected boolean instantRoundTripKeepsTheInstant() {
+        return HibernateHarness.resolveMode(System.getProperty(HibernateHarness.MODE_PROPERTY))
+                != HibernateHarness.H2Mode.POSTGRESQL;
+    }
+
     @AfterAll
     void closeSupport() {
         support.close();
