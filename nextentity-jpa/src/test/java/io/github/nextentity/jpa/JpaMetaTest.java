@@ -41,6 +41,16 @@ class JpaMetaTest extends JpaTestSupport {
     }
 
     @Test
+    @DisplayName("entityType：同一实体多次调用返回同一实例（缓存契约）")
+    void entityTypeIsCachedPerEntity() {
+        // JpaMeta 的 javadoc 承诺"同一实体多次调用返回同一实例"；不钉住它，缓存退化成
+        // 每次重建也全绿——重建会连带丢掉 attributes() 里缓存的字段句柄，
+        // 只是性能与身份语义的变化，任何结果断言都看不出来。
+        assertThat(meta().entityType(ShopOrder.class)).isSameAs(meta().entityType(ShopOrder.class));
+        assertThat(meta().entityType(ShopOrder.class)).isSameAs(meta().entityType(ShopOrder.class));
+    }
+
+    @Test
     @DisplayName("attribute.type()：取的是字段声明类型")
     void attributeTypeComesFromField() {
         JpaEntityType<VersionedLedger> ledger = meta().entityType(VersionedLedger.class);

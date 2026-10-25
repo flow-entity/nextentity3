@@ -10,6 +10,7 @@ import io.github.nextentity.jpa.entity.Shipment;
 import io.github.nextentity.jpa.entity.ShopOrder;
 import io.github.nextentity.jpa.entity.VersionedEntry;
 import io.github.nextentity.jpa.entity.VersionedLedger;
+import io.github.nextentity.jpa.entity.Warehouse;
 import io.github.nextentity.jpa.meta.JpaMeta;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityTransaction;
@@ -64,6 +65,7 @@ abstract class JpaTestSupport {
         configuration.addAnnotatedClass(DerivedRecord.class);
         configuration.addAnnotatedClass(Shipment.class);
         configuration.addAnnotatedClass(PriceWindow.class);
+        configuration.addAnnotatedClass(Warehouse.class);
         this.sessionFactory = configuration.buildSessionFactory();
         this.meta = new JpaMeta(sessionFactory);
     }
