@@ -10,7 +10,7 @@
 #
 # 用法
 #   tools/gate.sh fast              保存/提交前：格式检查 + 架构规则 + api/core 快测试（无容器）
-#   tools/gate.sh pr                push 前自查：H2 全量 + 遗留 727 条（无容器，-DskipITs）
+#   tools/gate.sh pr                push 前自查：H2 全量 + 架构规则 + 遗留 727 条（无容器，-DskipITs）
 #   tools/gate.sh ci                CI 权威档：容器通道必须真跑 + 遗留 727 条
 #   tools/gate.sh night             夜间：全量含容器 + 遗留 MySQL + PIT×4
 #   tools/gate.sh release           发版前：clean verify + 全矩阵 + PIT + api 兼容
@@ -444,11 +444,14 @@ tier_pr() {    # 容器通道在本档明确不跑（-DskipITs）。凭证会把
     STEP_MAX_SKIP="$STEP_MAX_SKIP surefire-pg:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadPreserveTheInstant*"
     # 必需通道列全反应堆（理由同 ci-container）：`-am` 把 api/core/jpa/spring 一起跑，
     # 漏点名就等于那几个模块的失败不进凭证。
-    STEP_MIN_TESTS="surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-jpa=82 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=577 surefire-pg:nextentity-tests-jpa=577"
+    # `nextentity-arch` 不在 tests-jpa 的依赖链上，`-am` 带不上它：不显式写进 `-pl`，
+    # 本档就一条架构规则都不跑。`fast` 档跑它、`pr` 档不跑，等于「提交前红、推之前绿」——
+    # 谁只跑 `pr` 自查谁就漏掉架构门禁。本档要严格覆盖 `fast`，所以补上。
+    STEP_MIN_TESTS="surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-arch=24 surefire:nextentity-jpa=82 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=577 surefire-pg:nextentity-tests-jpa=577"
     STEP_EXPECTED_FAILURES="tools/expected-failures/h2-postgresql.txt"
     step pr-h2 \
-        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa,static:nextentity-api,static:nextentity-core,static:nextentity-jpa,static:nextentity-spring,static:nextentity-testing,static:nextentity-tests-jpa" \
-        ./mvnw -B -pl nextentity-tests-jpa -am verify -DskipITs -Pdialect-pg
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-arch,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa,static:nextentity-api,static:nextentity-core,static:nextentity-arch,static:nextentity-jpa,static:nextentity-spring,static:nextentity-testing,static:nextentity-tests-jpa" \
+        ./mvnw -B -pl nextentity-tests-jpa,nextentity-arch -am verify -DskipITs -Pdialect-pg
     # 727 条遗留回归此前完全不在 CI 里：CI 两条命令的 -am 反应堆都不含该模块。
     STEP_MIN_TESTS="surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-jpa=82 surefire:nextentity-tests-legacy=727"
     step pr-legacy \
