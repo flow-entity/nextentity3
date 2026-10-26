@@ -45,7 +45,7 @@ public interface Collector<T> {
     ///
     /// - 普通查询：满足条件的行数；
     /// - `distinct()`：**去重后的投影值个数**（`count(DISTINCT 投影)`，证据：
-    ///   `jpa/exec/JpaExecutor.java:68-71`）；
+    ///   `jpa/exec/JpaExecutor.java:71-81`）；
     /// - 带 `groupBy` / `having` 或聚合投影：不支持。
     ///
     /// @return 行数，或 `distinct()` 时的去重投影值个数（多列去重不支持，抛 `UnsupportedOperationException`）
@@ -60,7 +60,7 @@ public interface Collector<T> {
     ///
     /// 带 `groupBy` / `having` 或聚合投影的查询**不支持**：`having` 能把所有组都过滤掉，只渲染
     /// `where` 会给出与查询**相反**的布尔值，因此直接拒绝而不是静默近似（证据：
-    /// `jpa/exec/JpaExecutor.java:91-97`）。与 `count()` 的处理一致。
+    /// `jpa/exec/JpaExecutor.java:100-103`）。与 `count()` 的处理一致。
     ///
     /// @return 命中至少一行返回 `true`
     /// @throws UnsupportedOperationException 带 `groupBy` / `having` 或聚合投影的查询：静默近似会返回相反结论

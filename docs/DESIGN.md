@@ -59,15 +59,15 @@ S  （后端语句）
 结果（实体 / Tuple / DTO / Slice / 计数）
 ```
 
-行成形之后由 `builder` 的 `RowAssembler` 把原始行装成 `Tuple` 或映射器结果（见下表 `builder` 行）。
+执行器交出后端原始行、不做任何行成形；行成形与装配由 `builder` 的 `RowAssembler` 负责——把原始行装成 `Tuple` 再交给 `ValueSelection#rowMapper()`。`select(...)` 的 1/2/3 列与 `project(...)` 走**同一条**装配路径，区别只在选中哪个映射器（`ValueMappers` 的内置映射器 vs 调用方映射器）；行的 cell 数与投影列数不等时当场抛 `IllegalStateException`，见下表 `builder` 行。
 
 | 层 | 职责 | 边界判据 |
 |---|---|---|
 | `meta` | 属性名 → JPA 属性（`JpaMeta` 按实体类型缓存）；不含方法引用解析 | 只认 JPA 映射注解，不认业务语义 |
-| `builder` | 方法引用 → 属性名（`PathRefs` 解析 `SerializedLambda`，每次调用解析、无缓存）；步骤接口 → `Spec` 节点（表达式 → 投影项的唯一转换点是 `ValueProjections`）；可选条件（`eqIfNotNull` / `containsIfNotEmpty`）在此短路；后端原始行 → 结果对象（`RowAssembler`：`Tuple` 装配与 `ProjectionMapper` 映射） | 不产生 SQL/Criteria，不做类型转换以外的逻辑 |
+| `builder` | 方法引用 → 属性名（`PathRefs` 解析 `SerializedLambda`，每次调用解析、无缓存）；步骤接口 → `Spec` 节点（表达式 → 投影项的唯一转换点是 `ValueProjections`）；可选条件（`eqIfNotNull` / `containsIfNotEmpty`）在此短路；后端原始行 → 结果对象（`RowAssembler`：包 `Tuple` 后一律经 `ValueSelection#rowMapper()` 装配，`select(...)` 的内置映射器在 `ValueMappers`） | 不产生 SQL/Criteria，不做类型转换以外的逻辑 |
 | `spec` | 不可变 AST：条件 `Comparison`/`Between`/`In`/`NullCheck`/`Logical`/`Constant`；值表达式 `Operand`（`Literal`/`AttributePath`/`AggregateOperand`/`ArithmeticOperand` + `BinaryOperator`）；投影 `Projection`/`AggregateProjection`/`PathProjection`/`ComputedProjection`/`ValueSelection`/`EntitySelection`；枚举 `AggregateFunction`/`ComparisonOperator`/`LogicalOperator`；`Ordering`/`Window`/`QuerySpec`/`Selection` | 不含任何后端类型，可序列化、可断言、可复用 |
 | `compile` | `Spec → S`，唯一渲染出口 | 一个 `switch` 分支处理一个节点，穷尽性由编译器保证 |
-| `exec` | 执行、分页计数、后端行成形（多列 `Object[]` / 单列标量）、锁模式 | 不解释条件语义 |
+| `exec` | 执行、分页计数、锁模式；**只交后端原始行**（单列可为裸值或长度 1 的 `Object[]`，多列是**长度等于**投影列数的 `Object[]`；长度不符——多给或少给——装配层抛 `IllegalStateException`） | 不解释条件语义，**不做行成形/装配**（装配规则含「投影了几列」，只有 `builder` 知道） |
 | `repo` | CRUD、批量、乐观锁、事务边界 | 不拼查询 |
 
 **关键手段**：`Spec` 用 `sealed interface` + `record`，编译器用 `switch` 模式匹配。新增节点时 Java 25 的穷尽性检查会强制补齐所有分支——这是相对 2.x 反射式 AST 最实质的改进。
@@ -177,7 +177,7 @@ L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（
 - 夹具质量门有两道，缺第二道会留下一个看不见的洞：`fixtureSupportsEveryPartitionBucket()` 只校验**逐列**边缘分布（每列都有大于/小于/等于边界与 `null` 的行）；`degenerateCellsAreExactlyTheKnownOnes()` 才校验**逐格**——遍历 6 个基谓词 × 3 个分区的 18 格，把「至少一桶为空」的格钉成常量清单。18 格里当前有 4 格退化，成因要分开说，笼统写成「逻辑必然」是错的：这 4 格的**共同**成因是结构性的——四个基谓词都不接受 `NULL`，所以 `p ∧ (列 IS NULL)` 桶恒空，换任何夹具都消不掉；其中前两格**另外**还因为**当前阈值**恰好让 `p` 蕴含 `c`（`score >= 50` 对 `c = score >= 48`）而连 `neg` 桶也空，等式退化成 `whole == pos`、杀伤力归零，把分区阈值调大就不再退化。真正的判据是「`neg` 与 `null` 同时为空」，那才是零杀伤力格。而「结构必然的空桶」和「夹具悄悄退化的空桶」在运行结果里长得一模一样，所以退化集合一旦变化就判红，逼人重新论证每一格。只有第一道门时，空桶会被静默放过——`and()` 原样返回左操作数也能过。
 - 倒序互逆那格（`descendingOrderIsTheReverseOfAscending`）专门补 TLP 的盲区：TLP 两侧都用同一条 `ORDER BY`，渲染错会**同时**出现在两侧，等式照样成立。实测把 `JpaPaths.descending` 改成 `builder.asc(...)`，这条当场红。
 - 页大小取 7 与夹具默认行数 64 互质，末页必然不是整页——整页时「多取一行/少取一行」在拼接结果里看不出来。
-- **它看得见什么、看不见什么**（写清楚比宣称更强有用）：看得见 `AND`/`OR`/`NOT` 的优先级与分组错、`NOT` 与 `NULL` 的交互错、条件被静默丢弃、分页切片错位、排序方向写反、排序键被整段丢弃（两侧返回同一顺序，互逆关系当场破——这一条是倒序互逆那格抓的，不是它的盲区）、投影列漏列与列序错位、某列被换成常量。**看不见**三类——① 谓词整体平移（`GE`→`GT` 三桶一起移，等式仍成立，靠差分抓）；② 排序键被换成「在夹具上与 id 同序的另一列」（两侧照样互逆，看不出，只能靠差分的期望行序）；③ 投影**多出来的列**：装配按 `Selection.items().size()` 取前 N 个 cell（`RowAssembler.java:48-53`），多渲染的第 4 列被静默丢弃，`Tuple3` 照样装得出来——要抓这类得靠 SQL 快照，变形关系抓不到。
+- **它看得见什么、看不见什么**（写清楚比宣称更强有用）：看得见 `AND`/`OR`/`NOT` 的优先级与分组错、`NOT` 与 `NULL` 的交互错、条件被静默丢弃、分页切片错位、排序方向写反、排序键被整段丢弃（两侧返回同一顺序，互逆关系当场破——这一条是倒序互逆那格抓的，不是它的盲区）、投影列漏列与列序错位、某列被换成常量、**装配层的行形态错**——`RowAssembler#tuple` 对「行 cell 数 ≠ 投影列数」是**拒绝**（`IllegalStateException`，消息带两个数字，`RowAssembler.java:74-77`），不是静默截断也不是静默补 `null`，因此后端交回少列/多列的行时在装配处直接红（这一条由 `ProjectionMappersTest` 的短行/多列族用例钉住，不依赖 TLP 或差分）。**看不见**两类——① 谓词整体平移（`GE`→`GT` 三桶一起移，等式仍成立，靠差分抓）；② 排序键被换成「在夹具上与 id 同序的另一列」（两侧照样互逆，看不出，只能靠差分的期望行序）。还有一类**不在「看得见/看不见」之争里**：**SQL 里多渲染了一列**（投影项没变、语句多 `SELECT` 一列）——装配只看行 cell 数与投影列数，两者一致，多余那列在渲染侧就多余，变形关系与差分都看不出来，要抓得靠 SQL 快照。
 - 投影那一格（`projectedColumnsSurvivePagingAndStayAligned`）值得单说：分页重组若只比 id，`select` 漏列、多列、列序错位全都看不见——id 照样拼得回去。它把三列投影的结果与「从整条实体上直读同样三个字段」算出的元组逐行对齐比较，期望值不来自任何手算常量，而是同一夹具的另一条读路径；列序写反、某列被换成常量、`SELECT` 里少一列，三种都会红。
 - **它不替代差分**，实测分工是互补的：把 `JpaPredicates` 的 `AND`/`OR` 互换，TLP 当场红 4 条（分区等式与两两不相交全破）；把 `GE` 改成 `GT`，TLP **全绿**（三桶照样覆盖全集，因为 `>` 与 `NOT (> )` 仍是合法分区），红的是差分。所以判据是「哪一族关系能看见这个错」，不是「哪一层更高级」。
 
@@ -216,7 +216,7 @@ L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（
 
 用合并口径实测（`577` H2 + `549` 容器用例全跑，两个通道各 skip 1 条，见下「方言矩阵」），生产代码里没被执行的行**只剩清单里那些**，但四个模块要分开看口径：
 
-- **聚合报告只含 `nextentity-jpa` 与 `nextentity-testing` 两个 group**（`report-aggregate` 只收直接编译依赖，`api`/`core` 是传递依赖、`spring` 是 test 作用域，都不进聚合文件）。`nextentity-jpa` 组里只剩四行：`jpa/meta/JpaEntityAttribute.java:48-49`、`:58-59`（`catch` 行与 `throw` 行都从未执行，所以台账登记的 `:49`/`:59` 字符串拼接变异体是 NO_COVERAGE——两处说的是同一件事，不是行号打架）；`jpa/exec/JpaExecutor.java:122`、`:124` 的**行已被模块单测执行**，只剩分支没走全（见下表对应条目）。
+- **聚合报告只含 `nextentity-jpa` 与 `nextentity-testing` 两个 group**（`report-aggregate` 只收直接编译依赖，`api`/`core` 是传递依赖、`spring` 是 test 作用域，都不进聚合文件）。`nextentity-jpa` 组里只剩两处：`jpa/meta/JpaEntityAttribute.java:48-49`、`:58-59`（`catch` 行与 `throw` 行都从未执行，所以台账登记的 `:49`/`:59` 字符串拼接变异体是 NO_COVERAGE——两处说的是同一件事，不是行号打架）。行成形已从 `JpaExecutor` 移到 `builder.RowAssembler`，`JpaExecutor` 里原先那几行「行已被模块单测执行、只剩分支没走全」的条目随之消失（见下表）。
 - `api`/`core`/`spring` 看各自模块的 `jacoco.xml`：`api` 剩 **0 行 1 分支**（`api/Conditions.java:104` 的 `parent == null` 子分支）、`core` 剩 3 行（`core/builder/PathRefs.java:90-92`）、`spring` 零行零分支。
 - 两处口径合起来 = **清单外没有一条未覆盖的生产代码行**。剩余未覆盖行都在 `nextentity-testing/src/main` 的 oracle 自身（各差分基类的内存求值/生成器分支、`Shape` 自检的抛错分支），属于测试基础设施的自检路径，不是产品能力。
 
@@ -238,7 +238,7 @@ java -jar <同上> report tmp/cov/merged.exec \
     --sourcefiles nextentity-<模块>/src/main/java --xml tmp/cov/<模块>.xml
 ```
 
-**覆盖率快照**（合并口径，第 5 轮结束时；复算命令见上）：`api` 行 286/286（100%）、分支 80/81（98.8%）；`core` 477/480（99.4%）、分支 222/222（100%）；`jpa` 365/369（98.9%）、分支 163/166（98.2%）；`spring` 12/12、零分支；`testing`（oracle 自身的自检路径）3095/3120（99.2%）、分支 582/623（93.4%）。**生产代码四个模块合计行 1140/1147（99.4%）、分支 465/469（99.2%）**。剩下的 **7 行 / 4 分支**就是下表里 `api/Conditions.java:104`、`core/builder/PathRefs.java:90-92`、`jpa/meta/JpaEntityAttribute.java:48-59`、`jpa/exec/JpaExecutor.java:122/124` 四条（第 1、4 条是分支，第 2、3 条是行）；表里另有几行是「模块级 JaCoCo 归因范围」与「探针位置」问题（合并口径下已被执行），逐行说明见对应条目。
+**覆盖率快照**（合并口径，第 5 轮结束时；复算命令见上）：`api` 行 286/286（100%）、分支 80/81（98.8%）；`core` 477/480（99.4%）、分支 222/222（100%）；`jpa` 365/369（98.9%）、分支 163/166（98.2%）；`spring` 12/12、零分支；`testing`（oracle 自身的自检路径）3095/3120（99.2%）、分支 582/623（93.4%）。**生产代码四个模块合计行 1140/1147（99.4%）、分支 465/469（99.2%）**。剩下的 **7 行 / 4 分支**就是下表里 `api/Conditions.java:104`、`core/builder/PathRefs.java:90-92`、`jpa/meta/JpaEntityAttribute.java:48-59`、`jpa/exec/JpaExecutor.java:122/124` 四条（第 1、4 条是分支，第 2、3 条是行）；表里另有几行是「模块级 JaCoCo 归因范围」与「探针位置」问题（合并口径下已被执行），逐行说明见对应条目。**注意**：这是装配重构之前那一轮的快照；`JpaExecutor` 的 `shape`/`shapeRow` 已整段删除、行成形移入 `builder.RowAssembler`，因此该文件不再有 122/124 行这两处缺口，下一轮复算时 `jpa` 与 `core` 的分母都会随之变化。
 
 **已判定不可达与度量限制**（这些未覆盖行**已论证**，不再按缺口追；新增未覆盖行要么补用例，要么先在这里写下论证）：
 
@@ -247,7 +247,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 | `api/Conditions.java:104` 的 `parent == null` 子分支 | `PathOperatorValue` 只在 `AlwaysTrue.or(ref)` 时 `parent` 为 `null`，而那条路径 `suppressed == true`，在 `:102` 就返回了 |
 | `core/builder/PathRefs.java:90-92` | `writeReplace.invoke(ref)` 在合法方法引用上不会抛 `ReflectiveOperationException` |
 | `jpa/meta/JpaEntityAttribute.java:48-49`、`:58-59` | `resolveField` 已 `setAccessible(true)`，之后的 `IllegalAccessException` 在正常 JVM 上不会发生 |
-| `jpa/exec/JpaExecutor.java:122`、`:124`（行已被模块单测执行，剩 3 个分支未走全） | `shapeRow` 的两侧取决于 Hibernate 返回形状，公开查询造不出「单列却返回长度≠1 的 `Object[]`」。**这条不是靠读代码断的**：`STRONGER` 组已经把这四行变异过（`JpaExecutor:121`、`:122`×2、`:124`），注入是真做过的，存活原因是"构造不出能走到另一侧的输入"，不是"没试"。另外单独做了三次定向注入复核（`jpa` + `tests-jpa` 两模块一起跑）：把 `:121` 的 `itemCount == 1` 换成恒真、把 `:122` 的 `array.length == 1` 换成恒真——**都仍然全绿**（多列查询在两条路径上返回的是同一个 `Object[]`，单列查询恒是长度 1 的数组，无输入可区分）；把 `:124` 的整个 else 分支换成"一律包一层"——**红**，说明 `Object[]` 那一侧是活的、`new Object[] {row}` 那一侧才是不可达的。与 `JpaPersistExecutor:89/:90`（detach 分支）同类 |
+| ~~`jpa/exec/JpaExecutor.java:122`、`:124`~~（**已随重构消失**） | 该文件原来的 `shape`/`shapeRow` 已整段删除，行成形移入 `builder.RowAssembler`：现在「单列却返回长度≠1 的 `Object[]`」不再是「公开查询造不出来、只能靠台账记账」的不可达分支，而是 `RowAssembler#tuple` 里显式拒绝的一类输入（装配层看得见，见「测试策略」一节的「看不见」清单）。原先那四行变异体的台账条目（`JpaExecutor:113/:121/:122×2/:124`）已从 `tools/equivalents/nextentity-jpa.txt` 删除 |
 | `jpa/compile/JpaOperands.java:61-63`（`sub`/`mul`/`div`）、`jpa/compile/JpaPredicates.java:77-81`（列对列 `NE`/`GT`/`GE`/`LT`/`LE`）、`jpa/exec/JpaPersistExecutor.java:155-156`（`@Version` 类型不支持的 `UnsupportedOperationException`） | **不是未执行，是模块级 JaCoCo 的归因范围**：这三处的用例在 `nextentity-tests-jpa`（`ArithmeticDifferentialTest` 的五个算术格、`ColumnComparisonDifferentialTest` 的六格、写侧 `short` 版本往返），跑在另一个模块的 JVM 里，`nextentity-jpa` 自己的 `jacoco.xml` 看不到。判据是「模块单测没跑到、语义套件跑到了」——这正是上文「度量口径」说的两层互补 |
 | `testing/TerminalConsistencyTest.java:52`、`ProjectionMapperConsistencyTest.java:103` | **不是未执行，是 JaCoCo 归因限制**：这两个 lambda 体唯一的退出路径是被调方抛异常，探针插在被调方调用之后、`return` 之前，永远到不了。用例本身是通过的，断言也确实生效（已用 `javap` 看探针位置 + `-Xlog:exceptions` 观测到异常进 `catchThrowable` 双向确认）。修不掉，除非给 lambda 套一层只骗探针的空包装——那会把证据写糊 |
 
@@ -333,7 +333,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 1. **夹具退化会把一整族用例变成同义反复**：关联嵌套路径的 17 个谓词格，在「只有 alpha / beta 两个非空取值」的夹具下只产出 6 种不同结果集——`gt(alpha) ≡ ne(alpha)`、`le(alpha) ≡ eq(alpha)`、`between(alpha, beta) ≡ isNotNull`、`like("al%") ≡ like("_lpha")`，于是把 `gt` 渲染成 `<>`、把 `between` 渲染成 `is not null`、把 `_` 通配丢掉都能全绿（每格原有的"期望非空 / 非全表"自检挡不住这种退化）。已把夹具扩到 7 行（`aardvark` < `alpha` < `alps` < `amber` < `beta` 五个可区分取值 + 一个 `null` 关联锚点），结果集从 6 种涨到 15 种（17 格里只剩两组语义本等价的同义反复：`ne ≡ notIn`、`contains() ≡ isNotNull()`；`notIn([])` 恒真、连关联为 `null` 的行也算命中，所以它与 `isNotNull` 不是同一格），并新增 `AssociationDifferentialTest#predicateCellsAreMutuallyDistinguishable()` 逐对断言「该互相区分的格子，期望集合确实不同」+ 一条按名字断言「重复的格组就是这两组」的兜底断言（不写「去重后应有 N 种」这类裸数字：加一格不必改数字，撞车时直接点名是哪两格撞了）——**夹具再退化就先在这里红**，而不是让 17 条谓词格继续假装在验证算子。
 2. **跨算子族的碰撞比族内碰撞更隐蔽**：`contains` 格原先取子串 `bet`（命中 `beta` 那行），与 `ge(beta)` 的期望集合完全相同——把 `contains` 渲染成 `>=` 照样全绿。族内自检（同族算子两两可区分）发现不了这种跨族退化，所以可区分性自检里补了 `contains` vs `ge` 这一对，子串也换成 `am`（只命中 `amber`，`{6}` 在 17 格里唯一）。注意子串作用在**关联方的名字**（`alpha`/`beta`/`aardvark`/`amber`/`alps`）上，不是实体自己的名字——第一版选的 `ch` 命中空集合，当场被「期望集合不能为空」的自检拦下。同类的第二处是下划线通配格：原模式 `_lpha` 只命中 `alpha`，与 `eq(alpha)` 同集合，把 `like` 渲染成 `=` 全绿；改成 `a___`（四字符、以 `a` 开头，只命中 `alps`）后与所有比较格都不同集合，并补了 `eq(alpha)` vs `like(a___)` 这一对。
-3. **模块 PIT 的存活体不能直接当盲区清单**：`STRONGER` 的 16 条存活体里，只有 1 条（`jpa/exec/JpaExecutor:47` 的锁模式下发）是被语义套件真杀死的覆盖，11 条等价、4 条防御性不可达（见上「变异组本身的强度也会骗人」）。把模块分数直接当结论会同时犯两个错：把等价变异当缺口，把语义套件的覆盖当成没覆盖。
+3. **模块 PIT 的存活体不能直接当盲区清单**：`STRONGER` 的 16 条存活体里，只有 1 条（`jpa/exec/JpaExecutor:55` 的锁模式下发）是被语义套件真杀死的覆盖，11 条等价、4 条防御性不可达（见上「变异组本身的强度也会骗人」）。把模块分数直接当结论会同时犯两个错：把等价变异当缺口，把语义套件的覆盖当成没覆盖。
 
 **方言矩阵（已实测五次，opt-in，不是默认通道）**：`nextentity-tests-jpa` 的建库入口 `HibernateHarness#start`（`nextentity-tests-jpa/src/test/java/io/github/nextentity/tests/jpa/support/HibernateHarness.java`）按系统属性 `-Dnextentity.h2mode` 分派，判定逻辑是纯函数 `HibernateHarness#resolveMode(String)`：缺省（属性缺省或空白）`mysql`，URL 与从前逐字节相同；`postgresql` 时改连 `MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH` 并钉 `PostgreSQLDialect`；其他取值（含大小写变体）归一化后仍不认识就抛 `IllegalArgumentException`，不静默回退（打错一个字母必须当场炸，否则等于什么都没跑）。**不读环境变量**：环境变量会被 fork 出来的 surefire JVM 继承，一条 `NEXTENTITY_H2MODE=postgresql` 就能让后续所有构建静默跑成另一个方言，而日志里看不出来——方言必须是命令行显式声明的。跑法：`./mvnw -pl nextentity-tests-jpa -am test -DskipITs -Dnextentity.h2mode=postgresql`（**要带 `-am`**；不带时 `nextentity-testing` 从 `~/.m2` 取陈旧快照，表现是新写的基类构造器「找不到方法」）。开关自身的正确性有独立用例 `HibernateHarnessModeTest`（5 条，纯函数，不连库）：钉住 MySQL 模式的 URL 与历史逐字节一致、PG 模式的三个兼容开关一个不少、方言只在 PG 下钉、未知取值失败而不是静默回退、NULL 序映射与方言一致——这几行的错误形态都是「默认通道照样全绿」，只能靠直钉。
 
@@ -456,6 +456,6 @@ java -jar <同上> report tmp/cov/merged.exec \
 | 新聚合函数 | `core.spec.AggregateFunction` 加常量 + `JpaOperands` 的 `switch` 分支 | 否（`api.Aggregates` / `NumberPath` 已是入口） |
 | 分组后过滤（`having`） | `core.spec.QuerySpec.having` + `jpa.compile.JpaQueryBuilder` | 是（增量：`HavingStep`） |
 | 新终止符（如 `keyset`） | `exec` 加方法 + `api` 加步骤接口 | 是（增量） |
-| 新投影形态（record/DTO） | `api` 的 `ProjectionMapper` + `builder` 的 `RowAssembler`（行 → 结果对象）与 `ValueProjections`（表达式 → 投影项） | 否（映射器由调用方实现） |
+| 新投影形态（record/DTO） | `api` 的 `ProjectionMapper` + `builder` 的 `RowAssembler`（`Tuple` → 结果对象，经 `ValueSelection#rowMapper()`）与 `ValueProjections`（表达式 → 投影项） | 否（映射器由调用方实现） |
 | 新后端（JDBC） | 新模块实现 `Compiler`/`Executor` | 否 |
 | 新方言差异 | 后端模块内部 | 否 |

@@ -1,5 +1,8 @@
 package io.github.nextentity.jpa;
 
+import io.github.nextentity.api.model.Tuple;
+import io.github.nextentity.core.builder.TupleValue;
+import io.github.nextentity.core.spec.RowMapper;
 import io.github.nextentity.jpa.entity.Article;
 import io.github.nextentity.jpa.entity.Customer;
 import io.github.nextentity.jpa.entity.DerivedRecord;
@@ -142,6 +145,73 @@ abstract class JpaTestSupport {
                 .map(sql -> sql.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim())
                 .toList();
     }
+
+    /// 多列投影取的列值：按列序排列的 `Tuple`。
+    ///
+    /// 行来自 `RowAssembler` 交给映射器的那一份——多列时是后端原样的 `Object[]`，用例断言的
+    /// `row.get(i)` 因此仍是后端第 `i` 个 cell，测试里没有第二份装配实现可供抄。
+    ///
+    /// 非数组行包成「1 个 cell 的行」——与 `RowAssembler#tuple` 对多列规格的计法一致，于是「行尺寸
+    /// 不对」只在 `RowAssembler` 里判定，测试不再自带第二套形态猜测；既有断言的列位置也不变。
+    ///
+    /// 不走辅助方法：`row -> asTuple(row)` 在 `RowMapper<?>` 的目标类型下会被推成 `RowMapper<?>`，
+    /// 表达式 `row instanceof Object[]` 也就成了对捕获类型的无意义匹配。
+    static final RowMapper<Tuple> ROW = row -> asTuple(row);
+
+    /// 原样返回后端交回的行类型：`RowMapper` 的身份实现。
+    ///
+    /// 单列用例用它，规格里的映射器于是与「手写单列 `ValueSelection` + 取第 0 个 cell」一字不差，
+    /// 装配链路上没有第二份实现掺进来；后端交回的长度 1 `Object[]` 与裸值都原样可见。
+    static final RowMapper<Tuple> RAW = row -> row;
+
+    /// 把「执行器交回的原始行列表」按 {@link #ROW} 折算成按列序的 `Tuple` 列表。
+    ///
+    /// 规格若直接装映射器，产物类型就是 `R`、拿不到后端原行；要让用例断言的仍是后端第 `i` 个 cell，
+    /// 就得在这里过一遍同一个工具。生产装配里没有这一步，所以它只出现在测试侧。
+    static List<Tuple> rows(List<?> raw) {
+        return raw.stream().map(JpaTestSupport::asTuple).toList();
+    }
+
+    /// 把执行器交回的原始行列表按 {@link #SINGLE} 折成单列值列表。
+    ///
+    /// 同上：规格若直接装映射器，产物类型就是 `R`、拿不到后端原行；这里对原行过一次同一个取值器。
+    static List<Object> values(List<?> raw) {
+        return raw.stream().map(row -> SINGLE.map((Tuple) asTuple(row))).toList();
+    }
+
+    /// 把后端交回的一行包成「按列序的 `Tuple`」。
+    ///
+    /// 数组行**原样**做成 `TupleValue`（零拷贝，长度 2 的行仍是 2 个 cell，用例断言的 `row.get(i)`
+    /// 就还是后端第 `i` 个 cell）；非数组行当成「1 个 cell 的一行」。
+    private static Tuple asTuple(Object row) {
+        if (row instanceof Object[] cells) {
+            return new TupleValue(cells);
+        }
+        return new SquashedRow(row instanceof Tuple tuple ? tuple.get(0) : row);
+    }
+
+    /// 非数组行做成的 1 列元组。
+    private record SquashedRow(Object value) implements Tuple {
+
+        @Override
+        public Object get(int index) {
+            if (index != 0) {
+                throw new IndexOutOfBoundsException("1 列行只接受下标 0，实际 " + index);
+            }
+            return value;
+        }
+
+        @Override
+        public int size() {
+            return 1;
+        }
+    }
+
+    /// 单列投影取的列值。
+    ///
+    /// 单列的行在 `RowAssembler` 里已收成「1 个 cell」（容量 1 的 `Object[]` 或裸值都如此），
+    /// 取第 0 个 cell 就是列值；`SingleTuple#get` 只认下标 0，别处越界会当场报错。
+    static final RowMapper<Object> SINGLE = row -> row.get(0);
 
     /// 在事务里执行并提交，返回结果。
     ///

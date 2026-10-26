@@ -54,16 +54,16 @@ class ProjectionMapperTest {
     }
 
     @Test
-    @DisplayName("单列 + 列值本身是两元素数组：仍按 1 列装配，get(0) 就是那个数组")
+    @DisplayName("单列 + 列值本身是两元素数组：装配当场拒绝——行与列数不等，不按行长度猜形态")
     void singleColumnWithArrayValue() {
         Object value = new Object[] {1L, 2L};
         backend.rows = List.of(value);
 
-        List<ArrayColumn> rows = query().project(new ArrayColumnMapper()).list();
-
-        assertThat(rows).hasSize(1);
-        assertThat(rows.getFirst().columns()).isEqualTo(1);
-        assertThat(rows.getFirst().value()).isSameAs(value);
+        assertThatThrownBy(() -> query().project(new ArrayColumnMapper()).list())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("行 cell 数与投影列数不等")
+                .hasMessageContaining("行 2 个 cell")
+                .hasMessageContaining("投影 1 列");
     }
 
     @Test

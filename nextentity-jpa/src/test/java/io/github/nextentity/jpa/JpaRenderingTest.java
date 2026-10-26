@@ -2,6 +2,7 @@ package io.github.nextentity.jpa;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.nextentity.api.model.Tuple;
 import io.github.nextentity.core.spec.AggregateFunction;
 import io.github.nextentity.core.spec.AggregateOperand;
 import io.github.nextentity.core.spec.AggregateProjection;
@@ -40,6 +41,8 @@ import org.junit.jupiter.api.Test;
 /// 覆盖第一梯队落到 jpa 的六项：列对列比较、算术、`min`/`avg`、`having`、`not`、多列分组。
 class JpaRenderingTest extends JpaTestSupport {
 
+    // `ROW` / `SINGLE` 来自 {@link JpaTestSupport}：三处用例共用同一份装配器定义。
+
     @Test
     void columnComparisonRendersColumnsNotParameters() {
         // customer.orgId = customer.org.id：两侧都是列，因此整条语句不应出现参数占位符
@@ -48,7 +51,7 @@ class JpaRenderingTest extends JpaTestSupport {
                 ComparisonOperator.EQ,
                 AttributePath.of(ShopOrder.class, "customer", "org", "id")));
         List<ShopOrder> orders = inTx(entityManager ->
-                executor(entityManager).list(compiler(entityManager).compile(spec)));
+                executor(entityManager).<ShopOrder>list(compiler(entityManager).compile(spec)));
 
         assertThat(orders).extracting(ShopOrder::getId).containsExactly(100L);
         // 整句里一个占位符都没有：两侧都是列（c1_0.org_id 与 o1_0.id），不是把右侧当参数绑进去
@@ -67,15 +70,16 @@ class JpaRenderingTest extends JpaTestSupport {
                 new ValueSelection(
                         List.of(new ComputedProjection(new ArithmeticOperand(
                                 BinaryOperator.MOD, AttributePath.of(ShopOrder.class, "id"), Literal.of(2L)))),
-                        false),
+                        false,
+                        RAW),
                 null,
                 List.of(),
                 null,
                 List.of(),
                 Window.NONE,
                 null);
-        List<Long> remainders = inTx(entityManager ->
-                executor(entityManager).list(compiler(entityManager).compile(spec)));
+        List<Object> remainders = values(inTx(entityManager ->
+                executor(entityManager).<List<?>>list(compiler(entityManager).compile(spec))));
 
         assertThat(remainders).containsExactlyInAnyOrder(0L, 1L);
         // Hibernate 7 在 H2/MySQL 方言下把 `cb.mod` 渲染成 `%` 运算符（不是 `mod(...)` 函数），
@@ -116,8 +120,11 @@ class JpaRenderingTest extends JpaTestSupport {
     private List<String> renderWhere(Spec where) {
         QuerySpec spec = new QuerySpec(
                 ShopOrder.class, new EntitySelection(), where, List.of(), null, List.of(), Window.NONE, null);
-        inTx(entityManager ->
-                executor(entityManager).list(compiler(entityManager).compile(spec)));
+        inTx(entityManager -> executor(entityManager)
+                .<ShopOrder>list(compiler(entityManager).compile(spec))
+                .stream()
+                .map(ShopOrder::getId)
+                .toList());
         return normalized(drainSql());
     }
 
@@ -127,7 +134,8 @@ class JpaRenderingTest extends JpaTestSupport {
                 new ValueSelection(
                         List.of(new ComputedProjection(new ArithmeticOperand(
                                 operator, AttributePath.of(ShopOrder.class, "id"), Literal.of(right)))),
-                        false),
+                        false,
+                        SINGLE),
                 null,
                 List.of(),
                 null,
@@ -135,7 +143,7 @@ class JpaRenderingTest extends JpaTestSupport {
                 Window.NONE,
                 null);
         inTx(entityManager ->
-                executor(entityManager).list(compiler(entityManager).compile(spec)));
+                executor(entityManager).<Long>list(compiler(entityManager).compile(spec)));
         return normalized(drainSql());
     }
 
@@ -148,19 +156,20 @@ class JpaRenderingTest extends JpaTestSupport {
                         List.of(
                                 new AggregateProjection(AggregateFunction.MIN, amount),
                                 new AggregateProjection(AggregateFunction.AVG, amount)),
-                        false),
+                        false,
+                        ROW),
                 null,
                 List.of(),
                 null,
                 List.of(),
                 Window.NONE,
                 null);
-        List<Object[]> rows = inTx(entityManager ->
-                executor(entityManager).list(compiler(entityManager).compile(spec)));
+        List<Tuple> rows = rows(inTx(entityManager ->
+                executor(entityManager).<List<?>>list(compiler(entityManager).compile(spec))));
 
         assertThat(rows).hasSize(1);
-        assertThat(rows.getFirst()[0]).isEqualTo(new BigDecimal("5.00"));
-        assertThat(rows.getFirst()[1]).isEqualTo(8.65d);
+        assertThat(rows.getFirst().get(0)).isEqualTo(new BigDecimal("5.00"));
+        assertThat(rows.getFirst().get(1)).isEqualTo(8.65d);
         // 整句：两个聚合都在 SQL 侧、顺序与投影顺序一致、聚合的是 amount 这一列
         assertThat(normalized(drainSql()))
                 .containsExactly("select min(so1_0.amount),avg(so1_0.amount) from shop_order so1_0");
@@ -176,7 +185,8 @@ class JpaRenderingTest extends JpaTestSupport {
                                 new PathProjection(status),
                                 new AggregateProjection(
                                         AggregateFunction.COUNT, AttributePath.of(ShopOrder.class, "id"))),
-                        false),
+                        false,
+                        ROW),
                 null,
                 List.of(status),
                 new Comparison(
@@ -186,11 +196,11 @@ class JpaRenderingTest extends JpaTestSupport {
                 List.of(),
                 Window.NONE,
                 null);
-        List<Object[]> rows = inTx(entityManager ->
-                executor(entityManager).list(compiler(entityManager).compile(spec)));
+        List<Tuple> rows = rows(inTx(entityManager ->
+                executor(entityManager).<List<?>>list(compiler(entityManager).compile(spec))));
 
         assertThat(rows).hasSize(2);
-        assertThat(rows).allSatisfy(row -> assertThat(row[1]).isEqualTo(1L));
+        assertThat(rows).allSatisfy(row -> assertThat(row.get(1)).isEqualTo(1L));
         // 整句：分组列有别名 c0、`having` 上的是 count 聚合而不是别的列、阈值是绑定参数
         assertThat(normalized(drainSql()))
                 .containsExactly("select so1_0.status c0,count(so1_0.id) c1 from shop_order so1_0"
@@ -206,7 +216,7 @@ class JpaRenderingTest extends JpaTestSupport {
                         ComparisonOperator.EQ,
                         Literal.of(OrderStatus.PAID)))));
         List<ShopOrder> orders = inTx(entityManager ->
-                executor(entityManager).list(compiler(entityManager).compile(spec)));
+                executor(entityManager).<ShopOrder>list(compiler(entityManager).compile(spec)));
 
         assertThat(orders).extracting(ShopOrder::getId).containsExactly(101L);
         // 整句：`not(eq(status, PAID))` 被规约成 `status<>?`（不是 `not(so1_0.status=?)`）。
@@ -222,15 +232,15 @@ class JpaRenderingTest extends JpaTestSupport {
         AttributePath amount = AttributePath.of(ShopOrder.class, "amount");
         QuerySpec spec = new QuerySpec(
                 ShopOrder.class,
-                new ValueSelection(List.of(new PathProjection(status), new PathProjection(amount)), false),
+                new ValueSelection(List.of(new PathProjection(status), new PathProjection(amount)), false, ROW),
                 null,
                 List.of(status, amount),
                 null,
                 List.of(),
                 Window.NONE,
                 null);
-        List<Object[]> rows = inTx(entityManager ->
-                executor(entityManager).list(compiler(entityManager).compile(spec)));
+        List<Tuple> rows = rows(inTx(entityManager ->
+                executor(entityManager).<List<?>>list(compiler(entityManager).compile(spec))));
 
         assertThat(rows).hasSize(2);
         // 整句：两列都进了 `group by`，且顺序与投影一致（`group by c0,c1` 而不是只剩 c0）

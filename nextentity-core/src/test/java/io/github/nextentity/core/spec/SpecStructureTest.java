@@ -25,6 +25,10 @@ class SpecStructureTest {
     private static final AttributePath CREATED_AT = AttributePath.of(String.class, "createdAt");
     private static final AttributePath ID = AttributePath.of(String.class, "id");
 
+    /// 这些用例只关心「列集与去重标志」，装配方式不参与 `ValueSelection` 的等价性，
+    /// 因此共用一个取首列的装配器即可——需要真装配结果的用例在 `ProjectionMappersTest` 里。
+    private static final RowMapper<Object> FIRST_COLUMN = row -> row.get(0);
+
     /// 无 HAVING 的规格：多数用例只关心 where/groupBy/orderBy/window，HAVING 由专门用例覆盖。
     private static QuerySpec spec(
             Class<?> entityType,
@@ -192,7 +196,9 @@ class SpecStructureTest {
     @DisplayName("聚合投影与分组同时存在（point-mall 6 处 groupBy 的真实形态）")
     void aggregationWithGrouping() {
         ValueSelection selection = new ValueSelection(
-                List.of(new PathProjection(STATUS), new AggregateProjection(AggregateFunction.COUNT, ID)), false);
+                List.of(new PathProjection(STATUS), new AggregateProjection(AggregateFunction.COUNT, ID)),
+                false,
+                FIRST_COLUMN);
         QuerySpec spec = spec(String.class, selection, null, List.of(STATUS), List.of(), Window.NONE, null);
 
         assertThat(spec.selection()).isInstanceOf(ValueSelection.class);
@@ -204,13 +210,25 @@ class SpecStructureTest {
     @Test
     @DisplayName("表达式查询至少一个投影项，且支持 distinct")
     void valueSelection() {
-        ValueSelection selection = new ValueSelection(List.of(new PathProjection(STATUS)), true);
+        ValueSelection selection = new ValueSelection(List.of(new PathProjection(STATUS)), true, FIRST_COLUMN);
 
         assertThat(selection.distinct()).isTrue();
         assertThat(selection.items()).hasSize(1);
-        assertThatThrownBy(() -> new ValueSelection(List.of(), false))
+        assertThatThrownBy(() -> new ValueSelection(List.of(), false, FIRST_COLUMN))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("至少需要一个投影项");
+    }
+
+    @Test
+    @DisplayName("值查询的等价性只看列集与去重标志，装配方式不参与（否则同一份 SQL 的两个规格不相等）")
+    void valueSelectionEqualityIgnoresRowMapper() {
+        RowMapper<Object> other = row -> row.get(0);
+
+        assertThat(new ValueSelection(List.of(new PathProjection(STATUS)), false, FIRST_COLUMN))
+                .isEqualTo(new ValueSelection(List.of(new PathProjection(STATUS)), false, other))
+                .hasSameHashCodeAs(new ValueSelection(List.of(new PathProjection(STATUS)), false, other))
+                .isNotEqualTo(new ValueSelection(List.of(new PathProjection(STATUS)), true, FIRST_COLUMN))
+                .isNotEqualTo(new ValueSelection(List.of(new PathProjection(ID)), false, FIRST_COLUMN));
     }
 
     @Test
@@ -257,7 +275,8 @@ class SpecStructureTest {
                 spec(String.class, new EntitySelection(), null, List.of(STATUS), List.of(), Window.NONE, null);
         QuerySpec aggregated = spec(
                 String.class,
-                new ValueSelection(List.of(new AggregateProjection(AggregateFunction.SUM, CREATED_AT)), false),
+                new ValueSelection(
+                        List.of(new AggregateProjection(AggregateFunction.SUM, CREATED_AT)), false, FIRST_COLUMN),
                 null,
                 List.of(),
                 List.of(),
@@ -371,7 +390,14 @@ class SpecStructureTest {
                         (Executable) () -> new QuerySpec(
                                 String.class, new EntitySelection(), null, List.of(), null, List.of(), null, null),
                         "window"),
-                Arguments.of("ValueSelection.items", (Executable) () -> new ValueSelection(null, false), "items"),
+                Arguments.of(
+                        "ValueSelection.items",
+                        (Executable) () -> new ValueSelection(null, false, FIRST_COLUMN),
+                        "items"),
+                Arguments.of(
+                        "ValueSelection.rowMapper",
+                        (Executable) () -> new ValueSelection(List.of(new PathProjection(STATUS)), false, null),
+                        "rowMapper"),
                 Arguments.of(
                         "AttributePath.entityType",
                         (Executable) () -> new AttributePath(null, List.of("status")),

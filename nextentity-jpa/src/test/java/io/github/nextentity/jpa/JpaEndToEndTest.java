@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.api.LockMode;
+import io.github.nextentity.api.model.Tuple;
 import io.github.nextentity.core.spec.AggregateFunction;
 import io.github.nextentity.core.spec.AggregateOperand;
 import io.github.nextentity.core.spec.AggregateProjection;
@@ -44,12 +45,14 @@ import org.junit.jupiter.api.Test;
 /// 渲染形态（列对列、算术、`min`/`avg`、`having`、`not`、多列分组）见 {@link JpaRenderingTest}。
 class JpaEndToEndTest extends JpaTestSupport {
 
+    // `ROW` / `SINGLE` / `RAW` 来自 {@link JpaTestSupport}：三处用例共用同一份装配器定义。
+
     @Test
     void entityListWithEquality() {
         QuerySpec spec = query(new Comparison(
                 AttributePath.of(ShopOrder.class, "status"), ComparisonOperator.EQ, Literal.of(OrderStatus.PAID)));
         List<ShopOrder> orders = inTx(entityManager ->
-                executor(entityManager).list(compiler(entityManager).compile(spec)));
+                executor(entityManager).<ShopOrder>list(compiler(entityManager).compile(spec)));
         assertThat(orders).extracting(ShopOrder::getId).containsExactly(100L);
     }
 
@@ -58,7 +61,7 @@ class JpaEndToEndTest extends JpaTestSupport {
         QuerySpec byOrg = query(new Comparison(
                 AttributePath.of(ShopOrder.class, "customer", "orgId"), ComparisonOperator.EQ, Literal.of(1L)));
         List<ShopOrder> matched = inTx(entityManager ->
-                executor(entityManager).list(compiler(entityManager).compile(byOrg)));
+                executor(entityManager).<ShopOrder>list(compiler(entityManager).compile(byOrg)));
         assertThat(matched).extracting(ShopOrder::getId).containsExactly(100L);
 
         // 两级嵌套（point-mall OrderRepository:87 的形态）：customer.org.name
@@ -67,13 +70,13 @@ class JpaEndToEndTest extends JpaTestSupport {
                 ComparisonOperator.EQ,
                 Literal.of("Acme")));
         List<ShopOrder> byOrganization = inTx(entityManager ->
-                executor(entityManager).list(compiler(entityManager).compile(twoLevels)));
+                executor(entityManager).<ShopOrder>list(compiler(entityManager).compile(twoLevels)));
         assertThat(byOrganization).extracting(ShopOrder::getId).containsExactly(100L);
 
         // customer 为空的订单只有在 LEFT JOIN 下才会被 IS NULL 命中；INNER JOIN 会漏掉它
         QuerySpec orphan = query(new NullCheck(AttributePath.of(ShopOrder.class, "customer", "orgId"), false));
         List<ShopOrder> unmatched = inTx(entityManager ->
-                executor(entityManager).list(compiler(entityManager).compile(orphan)));
+                executor(entityManager).<ShopOrder>list(compiler(entityManager).compile(orphan)));
         assertThat(unmatched).extracting(ShopOrder::getId).containsExactly(101L);
     }
 
@@ -103,7 +106,8 @@ class JpaEndToEndTest extends JpaTestSupport {
             // distinct 的 count 走 count(distinct ...)：2 行 PAID + 1 行 CREATED → 去重后 2
             QuerySpec distinct = new QuerySpec(
                     ShopOrder.class,
-                    new ValueSelection(List.of(new PathProjection(AttributePath.of(ShopOrder.class, "status"))), true),
+                    new ValueSelection(
+                            List.of(new PathProjection(AttributePath.of(ShopOrder.class, "status"))), true, SINGLE),
                     null,
                     List.of(),
                     null,
@@ -153,7 +157,7 @@ class JpaEndToEndTest extends JpaTestSupport {
         AttributePath amount = AttributePath.of(ShopOrder.class, "amount");
         QuerySpec grouped = new QuerySpec(
                 ShopOrder.class,
-                new ValueSelection(List.of(new PathProjection(status)), false),
+                new ValueSelection(List.of(new PathProjection(status)), false, SINGLE),
                 null,
                 List.of(status),
                 null,
@@ -162,7 +166,7 @@ class JpaEndToEndTest extends JpaTestSupport {
                 null);
         QuerySpec multiColumnDistinct = new QuerySpec(
                 ShopOrder.class,
-                new ValueSelection(List.of(new PathProjection(status), new PathProjection(amount)), true),
+                new ValueSelection(List.of(new PathProjection(status), new PathProjection(amount)), true, SINGLE),
                 null,
                 List.of(),
                 null,
@@ -197,7 +201,7 @@ class JpaEndToEndTest extends JpaTestSupport {
         // groupBy：exists 只渲染 where，会把"有没有组"当成"有没有行"——直接拒绝，不给错答案
         QuerySpec grouped = new QuerySpec(
                 ShopOrder.class,
-                new ValueSelection(List.of(new PathProjection(status)), false),
+                new ValueSelection(List.of(new PathProjection(status)), false, SINGLE),
                 null,
                 List.of(status),
                 null,
@@ -248,15 +252,15 @@ class JpaEndToEndTest extends JpaTestSupport {
     void singleColumnProjection() {
         QuerySpec ids = new QuerySpec(
                 ShopOrder.class,
-                new ValueSelection(List.of(new PathProjection(AttributePath.of(ShopOrder.class, "id"))), false),
+                new ValueSelection(List.of(new PathProjection(AttributePath.of(ShopOrder.class, "id"))), false, RAW),
                 null,
                 List.of(),
                 null,
                 List.of(),
                 new Window(0, 10),
                 null);
-        List<Long> result = inTx(entityManager ->
-                executor(entityManager).list(compiler(entityManager).compile(ids)));
+        List<Object> result = values(inTx(entityManager ->
+                executor(entityManager).<List<?>>list(compiler(entityManager).compile(ids))));
         assertThat(result).containsExactlyInAnyOrder(100L, 101L);
     }
 
@@ -369,43 +373,45 @@ class JpaEndToEndTest extends JpaTestSupport {
                                 new PathProjection(status),
                                 new AggregateProjection(AggregateFunction.COUNT, amount),
                                 new AggregateProjection(AggregateFunction.SUM, amount)),
-                        false),
+                        false,
+                        ROW),
                 null,
                 List.of(status),
                 null,
                 List.of(),
                 Window.NONE,
                 null);
-        List<Object[]> rows = inTx(entityManager ->
-                executor(entityManager).list(compiler(entityManager).compile(grouped)));
+        List<Tuple> rows = rows(inTx(entityManager ->
+                executor(entityManager).<List<?>>list(compiler(entityManager).compile(grouped))));
         assertThat(rows).hasSize(2);
-        assertThat(rows).allSatisfy(row -> assertThat(row[1]).isEqualTo(1L));
+        assertThat(rows).allSatisfy(row -> assertThat(row.get(1)).isEqualTo(1L));
 
         QuerySpec maxAmount = new QuerySpec(
                 ShopOrder.class,
-                new ValueSelection(List.of(new AggregateProjection(AggregateFunction.MAX, amount)), false),
+                new ValueSelection(List.of(new AggregateProjection(AggregateFunction.MAX, amount)), false, SINGLE),
                 null,
                 List.of(),
                 null,
                 List.of(),
                 Window.NONE,
                 null);
-        List<BigDecimal> max = inTx(entityManager ->
-                executor(entityManager).list(compiler(entityManager).compile(maxAmount)));
+        List<Object> max = values(inTx(entityManager ->
+                executor(entityManager).<List<?>>list(compiler(entityManager).compile(maxAmount))));
         assertThat(max).hasSize(1);
-        assertThat(max.getFirst()).isEqualByComparingTo("12.30");
+        assertThat((BigDecimal) max.getFirst()).isEqualByComparingTo("12.30");
 
         QuerySpec distinctStatus = new QuerySpec(
                 ShopOrder.class,
-                new ValueSelection(List.of(new AggregateProjection(AggregateFunction.COUNT_DISTINCT, status)), false),
+                new ValueSelection(
+                        List.of(new AggregateProjection(AggregateFunction.COUNT_DISTINCT, status)), false, SINGLE),
                 null,
                 List.of(),
                 null,
                 List.of(),
                 Window.NONE,
                 null);
-        List<Long> distinct = inTx(entityManager ->
-                executor(entityManager).list(compiler(entityManager).compile(distinctStatus)));
+        List<Object> distinct = values(inTx(entityManager ->
+                executor(entityManager).<List<?>>list(compiler(entityManager).compile(distinctStatus))));
         assertThat(distinct).containsExactly(2L);
     }
 
@@ -451,7 +457,7 @@ class JpaEndToEndTest extends JpaTestSupport {
                 Window.NONE,
                 LockMode.PESSIMISTIC_WRITE);
         List<ShopOrder> orders = inTx(entityManager ->
-                executor(entityManager).list(compiler(entityManager).compile(locked)));
+                executor(entityManager).<ShopOrder>list(compiler(entityManager).compile(locked)));
         assertThat(orders).extracting(ShopOrder::getId).containsExactly(100L);
         // 锁必须真的进语句：只断结果行时，把 `spec.lock()` 的判定（`JpaExecutor:47`）或
         // `setLockMode`（`JpaExecutor:49`）删掉，结果行一模一样，测试全绿——锁静默消失。

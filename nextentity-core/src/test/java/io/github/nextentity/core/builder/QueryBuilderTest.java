@@ -36,6 +36,7 @@ import io.github.nextentity.core.spec.NullCheck;
 import io.github.nextentity.core.spec.Ordering;
 import io.github.nextentity.core.spec.PathProjection;
 import io.github.nextentity.core.spec.QuerySpec;
+import io.github.nextentity.core.spec.RowMapper;
 import io.github.nextentity.core.spec.ValueSelection;
 import io.github.nextentity.core.spec.Window;
 import java.time.Instant;
@@ -50,6 +51,9 @@ import org.junit.jupiter.api.Test;
 /// 断言的是 AST 形状而不是 SQL，因此同一套用例对未来 JDBC 后端同样成立。
 @DisplayName("QueryBuilder → Spec")
 class QueryBuilderTest {
+
+    /// 结构断言只关心列集与去重旗标，行映射器取「首列」的占位形即可。
+    private static final RowMapper ROW = row -> row.get(0);
 
     private final Recorder backend = new Recorder();
 
@@ -234,7 +238,7 @@ class QueryBuilderTest {
         query().select(Order::getId).list();
 
         assertThat(backend.last().selection())
-                .isEqualTo(new ValueSelection(List.of(new PathProjection(path("id"))), false));
+                .isEqualTo(new ValueSelection(List.of(new PathProjection(path("id"))), false, ROW));
     }
 
     /// 守护 `QueryBuilder:124` 的 `return applySelection(...)` → `null`：`select(Expression)`
@@ -245,7 +249,7 @@ class QueryBuilderTest {
         query().select(Path.of(Order::getName)).list();
 
         assertThat(backend.last().selection())
-                .isEqualTo(new ValueSelection(List.of(new PathProjection(path("name"))), false));
+                .isEqualTo(new ValueSelection(List.of(new PathProjection(path("name"))), false, ROW));
     }
 
     @Test

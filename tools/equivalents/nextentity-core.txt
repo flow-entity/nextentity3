@@ -1,12 +1,17 @@
 # 等价变异台账：nextentity-core
 #
 # 算子集：STRONGER + NON_VOID_METHOD_CALLS，且不含 FRECORD 过滤器（否则 27 个 spec record 零变异）。
+#
+# 行号按本仓库当前源码记；PIT 报的是**变异体的实际位置**，与这里对不上时以报告为准并同步改本文件。
 
-io.github.nextentity.core.builder.OpInterpreter | 190 | logical | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-20
-io.github.nextentity.core.builder.PathRefs | 46 | resolve | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-20
-io.github.nextentity.core.builder.ValueProjections | 45 | ofAll | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-20
-io.github.nextentity.core.builder.RowAssembler | 35 | assemble | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-20
-io.github.nextentity.core.builder.RowAssembler | 44 | assemble | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-20
-io.github.nextentity.core.util.ImmutableList | 27 | ofIterable | NonVoidMethodCallMutator | 1 | reason=instanceof 分支里的 new ArrayList<>(sized.size()) 只是容量提示，删掉容量后逐元素复制结果相同 | expires=2027-04-20
-io.github.nextentity.core.util.ImmutableList | 27 | ofIterable | RemoveConditionalMutator_EQUAL_ELSE | 1 | reason=把 instanceof 判成假只让容量退化成默认值，复制循环与不可变包装都不受影响 | expires=2027-04-20
-io.github.nextentity.core.builder.QueryBuilder$1 | 311 | <init> | NonVoidMethodCallMutator | 1 | reason=javac 为匿名类捕获外部实例自动生成的非空校验，源码里没有这一行 | expires=2027-04-20
+io.github.nextentity.core.builder.OpInterpreter | 190 | logical | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-24
+io.github.nextentity.core.builder.PathRefs | 46 | resolve | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-24
+io.github.nextentity.core.builder.ValueProjections | 45 | ofAll | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-24
+io.github.nextentity.core.builder.RowAssembler | 38 | assemble | NonVoidMethodCallMutator | 1 | reason=javac 为 switch 模式匹配（SwitchBootstraps.typeSwitch）生成的 Objects.requireNonNull，源码里没有这一行 | expires=2027-04-24
+io.github.nextentity.core.builder.RowAssembler | 45 | mapAll | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(rows.size()) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-24
+io.github.nextentity.core.builder.RowAssembler | 78 | tuple | RemoveConditionalMutator_EQUAL_ELSE | 1 | reason=变异体把 `columns == 1` 改成恒假 → 单列行改走 `new TupleValue(cells)`；因判等已保证 `cells.length == columns`，此时 `cells` 长度恒为 1，`TupleValue(new Object[]{x})` 与 `SingleTuple(x)` 在 `get(0)`/`size()`/`equals` 上完全一致，交给 `rowMapper` 的对象可观察行为不变。恒真那一侧（多列走单列分支）由 `ProjectionMappersTest#shortRowForThreeColumnsIsRejected` 一类用例杀死，不属等价 | expires=2027-04-24
+io.github.nextentity.core.util.ImmutableList | 27 | ofIterable | NonVoidMethodCallMutator | 1 | reason=instanceof 分支里的 new ArrayList<>(sized.size()) 只是容量提示，删掉容量后逐元素复制结果相同 | expires=2027-04-24
+io.github.nextentity.core.util.ImmutableList | 27 | ofIterable | RemoveConditionalMutator_EQUAL_ELSE | 1 | reason=把 instanceof 判成假只让容量退化成默认值，复制循环与不可变包装都不受影响 | expires=2027-04-24
+io.github.nextentity.core.builder.QueryBuilder$1 | 315 | <init> | NonVoidMethodCallMutator | 1 | reason=javac 为显式构造器里的赋值语句生成的 Objects.requireNonNull 调用，源码里没有这一行；编译期产物不是源码，PIT 记到方法起始行 | expires=2027-04-24
+io.github.nextentity.core.builder.SingleTuple | 13 | value | NullReturnValsMutator | 1 | reason=record 组件访问器 `value()` 是编译器按 record 形状生成的字段读取，`value` 为 null 与工厂 `new SingleTuple(null)` 产出的对象在 record 值语义下不可区分（equals/hashCode 直接读合成字段，`get(int)` 直接返回 `value`，本类没有任何路径把访问器结果当作「非空判据」）；调用点写 `tuple.value()` 的断言因此照样通过，变异不进任何可观察结果。访问器不能删（record 的语言形状），属等价而非漏测 | expires=2027-04-24
+io.github.nextentity.core.builder.TupleValue | 18 | columns | NullReturnValsMutator | 1 | reason=`columns()` 是编译器生成的字段读取，返回 null 与构造器显式传入 null 不可区分：`get(int)`/`size()` 直接读合成字段、`equals`/`hashCode`/`toString` 由 record 生成时也直接读字段，包内没有任何路径拿访问器结果做非空判断或算术；调用点写 `tuple.columns()` 的断言（如长度断言的取反形态）在 null 下同样成立，故等价非漏测 | expires=2027-04-24
