@@ -1,9 +1,7 @@
 package io.github.nextentity.jpa.exec;
 
 import io.github.nextentity.core.exec.Executor;
-import io.github.nextentity.core.spec.EntitySelection;
 import io.github.nextentity.core.spec.QuerySpec;
-import io.github.nextentity.core.spec.Selection;
 import io.github.nextentity.core.spec.ValueSelection;
 import io.github.nextentity.core.spec.Window;
 import io.github.nextentity.jpa.compile.JpaCriteria;
@@ -32,6 +30,14 @@ public final class JpaExecutor implements Executor<JpaQuery> {
         this.meta = meta;
     }
 
+    /// 执行列表查询，**原样交出** `TypedQuery` 的结果行。
+    ///
+    /// 行形态整形不在本层：单列把长度 1 的 `Object[]` 拆包、多列把非数组行包成数组，这套逻辑
+    /// 属于 core 的 `RowAssembler` + `ValueMappers`（那里还知道投影了几列）。执行器的职责到
+    /// 「拿到原始行」为止，否则同一套整形会有两份实现，改一处就必须同步另一处。
+    ///
+    /// 未实现入口只有一个：聚合/多列 `distinct` 规格的 `count()` 与分组/聚合规格的 `exists()`
+    /// 会抛 `UnsupportedOperationException`，文案分别钉在 `JpaEndToEndTest` 的用例里。
     @Override
     @SuppressWarnings("unchecked")
     public <R> List<R> list(JpaQuery query) {
@@ -48,7 +54,7 @@ public final class JpaExecutor implements Executor<JpaQuery> {
             // api.LockMode 与 jakarta LockModeType 同名闭集，名字映射即可，不写 5 分支 switch
             typedQuery.setLockMode(LockModeType.valueOf(spec.lock().name()));
         }
-        return (List<R>) shape(typedQuery.getResultList(), spec.selection());
+        return (List<R>) typedQuery.getResultList();
     }
 
     @Override
@@ -107,20 +113,5 @@ public final class JpaExecutor implements Executor<JpaQuery> {
                 .setMaxResults(1)
                 .getResultList()
                 .isEmpty();
-    }
-
-    private static Object shape(List<?> rows, Selection selection) {
-        return switch (selection) {
-            case EntitySelection ignored -> rows;
-            case ValueSelection values ->
-                rows.stream().map(row -> shapeRow(row, values.items().size())).toList();
-        };
-    }
-
-    private static Object shapeRow(Object row, int itemCount) {
-        if (itemCount == 1) {
-            return row instanceof Object[] array && array.length == 1 ? array[0] : row;
-        }
-        return row instanceof Object[] array ? array : new Object[] {row};
     }
 }

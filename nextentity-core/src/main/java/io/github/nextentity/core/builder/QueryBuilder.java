@@ -27,6 +27,7 @@ import io.github.nextentity.core.spec.Logical;
 import io.github.nextentity.core.spec.Ordering;
 import io.github.nextentity.core.spec.Projection;
 import io.github.nextentity.core.spec.QuerySpec;
+import io.github.nextentity.core.spec.RowMapper;
 import io.github.nextentity.core.spec.Selection;
 import io.github.nextentity.core.spec.Spec;
 import io.github.nextentity.core.spec.ValueSelection;
@@ -39,11 +40,17 @@ import java.util.Objects;
 ///
 /// 分层（DESIGN §3）：本类只做"步骤 → 节点"，不拼 SQL/Criteria；编译与执行分别由
 /// {@link Compiler} 与 {@link Executor} 负责，因此同一个构建器可以驱动任意后端。
-/// 表达式 → 投影节点在 [ValueProjections]，原始行 → 结果对象在 [RowAssembler]。
+/// 表达式 → 投影节点在 [ValueProjections]，原始行 → 结果对象在 [RowAssembler]；
+/// `select(...)` 的返回形态由 [ValueMappers] 的内置映射器给出，与 `project(...)` 共用同一条装配路径。
 ///
 /// 两条终止符语义在 core 落地而不是后端（2.2.3 `Collector` 的 default 方法即如此）：
 /// - `first()/single()/slice()` 用 `list` + `count` 组合；
 /// - 分页且没有 `orderBy` 时自动追加 `ORDER BY 主键 ASC`（2.2.3 `autoAddIdOrder` 默认开启；去重投影除外）。
+///
+/// **类型参数是 `T`（实体），而 `select(...)` 的返回元素并不是 `T`**：`select(Long)` 的运行时元素是
+/// `Long`，`select(a, b)` 是 `Tuple2`。这是 2.2.3 的 api 形状（`SelectStep#select` 返回 `List<T>` 之类），
+/// 调用方声明成 `List<Long>` 时靠一次 unchecked 转型，类型安全由「选了几列 ↔ 声明了什么类型」的约定顶着。
+/// 本类内部一律按 `Object` 传递，只在 `fetch` 边界上转型；把元素类型纳进类型参数会改动公开步骤接口面。
 ///
 /// @param <T> 实体类型
 /// @param <S> 后端语句类型
@@ -60,7 +67,6 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     private Spec where;
     private Spec having;
     private LockMode lock;
-    private ProjectionMapper<T, ?> mapper;
     private boolean pendingDistinct;
 
     /// 创建查询构建器。
@@ -128,20 +134,20 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     @Override
     public <R> BaseWhereStep<T, R> select(PathRef<T, R> ref) {
         boolean distinct = takeDistinct();
-        return applySelection(new ValueSelection(List.of(ValueProjections.of(ref)), distinct), null);
+        return applySelection(List.of(ValueProjections.of(ref)), distinct, ValueMappers.single());
     }
 
     @Override
     public <R> BaseWhereStep<T, R> select(Expression<T, R> expression) {
         boolean distinct = takeDistinct();
-        return applySelection(new ValueSelection(List.of(ValueProjections.of(expression)), distinct), null);
+        return applySelection(List.of(ValueProjections.of(expression)), distinct, ValueMappers.single());
     }
 
     @Override
     public <A, B> BaseWhereStep<T, Tuple2<A, B>> select(Expression<T, A> first, Expression<T, B> second) {
         boolean distinct = takeDistinct();
         return applySelection(
-                new ValueSelection(List.of(ValueProjections.of(first), ValueProjections.of(second)), distinct), null);
+                List.of(ValueProjections.of(first), ValueProjections.of(second)), distinct, ValueMappers.pair());
     }
 
     @Override
@@ -149,10 +155,9 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
             Expression<T, A> first, Expression<T, B> second, Expression<T, C> third) {
         boolean distinct = takeDistinct();
         return applySelection(
-                new ValueSelection(
-                        List.of(ValueProjections.of(first), ValueProjections.of(second), ValueProjections.of(third)),
-                        distinct),
-                null);
+                List.of(ValueProjections.of(first), ValueProjections.of(second), ValueProjections.of(third)),
+                distinct,
+                ValueMappers.triple());
     }
 
     @Override
@@ -163,7 +168,8 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
         Objects.requireNonNull(mapper, "mapper");
         // expressions() 只求值一次：求值两次时「校验用的列集」与「建投影用的列集」会分叉
         List<Projection> items = ValueProjections.ofAll(mapper.expressions());
-        return applySelection(new ValueSelection(items, distinct), mapper);
+        // `andThen` 在这一步就折叠进方法引用，`QuerySpec` 只拿到一个裸 `Tuple -> R`
+        return applySelection(items, distinct, mapper::map);
     }
 
     // -------------------------------------------------------------- orderBy
@@ -262,13 +268,11 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
 
     // -------------------------------------------------------------- internal
 
-    /// 换投影：`selection` 与 `mapper` 必须同时换。
-    ///
-    /// 映射器路径的结果行按 `mapper` 装配，`select(...)` 路径按 `selection` 装配；两者一旦不同步，
-    /// `map()` 收到的 `Tuple` 列数就与它自己的 `expressions()` 不符。
-    private <U> BaseWhereStep<T, U> applySelection(Selection selection, ProjectionMapper<T, ?> mapper) {
-        this.selection = selection;
-        this.mapper = mapper;
+    /// 换投影：`items`、`distinct` 与 `rowMapper` 是**一份**投影的三个部分，一次性装进
+    /// [ValueSelection]。它们不再是两个字段，因此「列集」与「怎么装配」不可能各写一半——
+    /// 一旦拆成两条装配路径（`select` 按列数装配、`project` 按映射器装配），新增投影形态就要改两处。
+    private <U> BaseWhereStep<T, U> applySelection(List<Projection> items, boolean distinct, RowMapper<?> rowMapper) {
+        this.selection = new ValueSelection(items, distinct, rowMapper);
         return step();
     }
 
@@ -338,7 +342,7 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     @SuppressWarnings("unchecked")
     private List<T> fetch(Window window) {
         List<Object> rows = executor.list(compiler.compile(spec(window)));
-        return (List<T>) RowAssembler.assemble(rows, selection, mapper);
+        return (List<T>) RowAssembler.assemble(rows, selection);
     }
 
     /// 组装当前状态下的查询规格。
