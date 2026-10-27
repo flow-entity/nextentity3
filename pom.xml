@@ -16,9 +16,11 @@
         <module>nextentity-core</module>
         <module>nextentity-arch</module>
         <module>nextentity-jpa</module>
+        <module>nextentity-jdbc</module>
         <module>nextentity-spring</module>
         <module>nextentity-testing</module>
         <module>nextentity-tests-jpa</module>
+        <module>nextentity-tests-jdbc</module>
         <module>nextentity-tests-legacy</module>
         <module>nextentity-bom</module>
     </modules>
@@ -97,6 +99,11 @@
             <dependency>
                 <groupId>io.github.flow-entity</groupId>
                 <artifactId>nextentity-jpa</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.flow-entity</groupId>
+                <artifactId>nextentity-jdbc</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

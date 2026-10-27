@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.flow-entity</groupId>
+        <artifactId>nextentity</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>nextentity-jdbc</artifactId>
+    <name>nextentity-jdbc</name>
+    <description>SQL 渲染与 JDBC 执行（MySQL/H2）</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.github.flow-entity</groupId>
+            <artifactId>nextentity-core</artifactId>
+        </dependency>
+        <!-- 注解扫描：@Entity/@Table/@Column/@Id/@Version/@Enumerated 等，和 jpa 模块一样只依赖 api 包 -->
+        <dependency>
+            <groupId>jakarta.persistence</groupId>
+            <artifactId>jakarta.persistence-api</artifactId>
+        </dependency>
+
+        <!-- 编译层快照用例只构造 SqlStatement，不需要数据库；执行层用例走 H2 -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+              依赖方向门禁：jdbc 是后端实现，只许依赖 core（+ jakarta.persistence-api）。
+              不得依赖 jpa / spring / testing / Hibernate——一旦依赖，加载器就不再是「独立第二实现」，
+              而成了 JPA 后端的分身（DESIGN §2 / §6）。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>enforce-jdbc-backend-only</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <excludes>
+                                        <exclude>io.github.flow-entity:nextentity-jpa</exclude>
+                                        <exclude>io.github.flow-entity:nextentity-spring</exclude>
+                                        <exclude>io.github.flow-entity:nextentity-testing</exclude>
+                                        <exclude>org.springframework:*</exclude>
+                                        <exclude>org.hibernate.orm:*</exclude>
+                                    </excludes>
+                                    <message>jdbc 是独立后端：只依赖 core（+ jakarta.persistence-api），不得依赖 jpa/spring/testing/Hibernate</message>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!--
+              变异测试：覆盖**整个模块**（SQL 渲染、参数绑定、方言、元模型、执行器），不绑生命周期。命令：
+              `mvn -pl nextentity-jdbc test-compile pitest:mutationCoverage`（跑前先 install -DskipTests）。
+              阈值 95：与 jpa 同一道线；相等变异若确实杀不死，逐条进 tools/equivalents/nextentity-jdbc.txt。
+            -->
+            <plugin>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-maven</artifactId>
+                <configuration>
+                    <targetClasses>
+                        <param>io.github.nextentity.jdbc.*</param>
+                    </targetClasses>
+                    <targetTests>
+                        <param>io.github.nextentity.jdbc.*</param>
+                    </targetTests>
+                    <mutationThreshold>95</mutationThreshold>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
