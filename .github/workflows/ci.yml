@@ -22,7 +22,7 @@ name: ci
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -30,15 +30,26 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# 镜像源：根 pom 的默认是 `docker.xuanyuan.run/...`（受限网络下的镜像站），GitHub runner
+# 拉不到，容器通道会整条卡死。这里用 gate.sh 的 GATE_EXTRA_MVN_ARGS 换回 Docker Hub 原名
+# ——runner 能直连，代价是吃匿名拉取限流（每 IP 每 6 小时 100 次），偶发 429 会让容器步
+# 随机红。要彻底摆脱这个外部依赖，得换成 `services:` 起 MySQL + 外部实例模式（见
+# nextentity-tests-jpa 的 MySqlL4Container）。
+#
+# 为什么不用 env：这两个值是 pom 的 `<properties>`，只在 Maven 侧解析，环境变量覆盖不了；
+# 而 gate.sh 的命令行是写死的数组，只能从 GATE_EXTRA_MVN_ARGS 注入 -D。
+env:
+  GATE_EXTRA_MVN_ARGS: "-Dnextentity.mysql.image=library/mysql:8.0.18 -Dnextentity.ryuk.image=testcontainers/ryuk:0.11.0"
+
 jobs:
   gate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "25"
@@ -90,6 +101,7 @@ jobs:
 
       # ci 档 = 架构规则 + H2 全量 + 容器通道（强制）+ 遗留 727 条回归。
       # `--require-clean`：CI 上凭证必须对得上一个 commit，脏树直接拒。
+      # 镜像源覆盖见文件头的 `env.GATE_EXTRA_MVN_ARGS`。
       - name: Gate (ci tier + receipt)
         run: |
           GATE="${GATE_SCRIPT:-$PWD/tools/gate.sh}"
@@ -99,7 +111,7 @@ jobs:
       # 凭证一直是构建产物，失败时也要拿到——否则「为什么红」只能靠翻几千行日志。
       - name: Upload gate receipt
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gate-receipt
           path: tmp/gate/**/receipt.json
@@ -107,7 +119,7 @@ jobs:
 
       - name: Upload test logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gate-logs
           path: tmp/gate/

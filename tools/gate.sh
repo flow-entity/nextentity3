@@ -211,6 +211,23 @@ step() {
     STEPN=$((STEPN + 1))
     refresh_lock
     local -a cmd=("$@")
+    # GATE_EXTRA_MVN_ARGS：给每条 mvn 命令追加 -D 属性，用来在不改 pom 的前提下换环境相关的
+    # 默认值（当前唯一用途是镜像源：pom 默认走 docker.xuanyuan.run 镜像站，GitHub runner
+    # 拉不到，CI 要用它换回 Docker Hub 原名）。只允许 `-D` 开头，防止把 `-pl`/`-DskipITs`
+    # 这类会改变「跑了什么」的开关从环境里悄悄塞进来——那等于绕过凭证的可核对性。
+    if [ -n "${GATE_EXTRA_MVN_ARGS:-}" ]; then
+        local -a extra=()
+        read -r -a extra <<< "$GATE_EXTRA_MVN_ARGS"
+        local _a
+        for _a in "${extra[@]}"; do
+            case "$_a" in
+                -D?*) ;;
+                *) echo "✗ GATE_EXTRA_MVN_ARGS 只接受 -D 开头的属性，收到：$_a" >&2; exit 2 ;;
+            esac
+            cmd+=("$_a")
+            echo "  [+mvn] $_a" >&2
+        done
+    fi
     local joined=" ${cmd[*]} "
     local -a skip_args=()
     # STEP_MAX_SKIP 支持空格分隔多条申报（如 "surefire:nextentity-tests-jpa=1"）：
