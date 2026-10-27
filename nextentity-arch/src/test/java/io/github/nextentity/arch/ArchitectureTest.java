@@ -221,16 +221,40 @@ class ArchitectureTest {
             .allowEmptyShould(true)
             .because("api ← core ← jpa ← spring 只能单向；api 反向依赖会让契约层被实现细节绑死");
 
-    /// `core` 只放与后端无关的抽象：不得依赖 `jpa` / `spring`。
+    /// `core` 只放与后端无关的抽象：不得依赖 `jpa` / `spring` / `jdbc`。
     @ArchTest
     static final ArchRule CORE_DOES_NOT_DEPEND_ON_BACKENDS = noClasses()
             .that()
             .resideInAPackage("io.github.nextentity.core..")
             .should()
             .dependOnClassesThat()
-            .resideInAnyPackage("io.github.nextentity.jpa..", "io.github.nextentity.spring..")
+            .resideInAnyPackage(
+                    "io.github.nextentity.jpa..", "io.github.nextentity.spring..", "io.github.nextentity.jdbc..")
             .allowEmptyShould(true)
             .because("Compiler / Executor 是接缝，接缝自己引用实现就是循环的开始");
+
+    /// `jdbc` 是实现侧后端：只许依赖 `core` 接缝、`jakarta.persistence` 注解与 JDK。
+    ///
+    /// 与上一条互为反向：那条守「core 不得引用实现」，这条守「实现不得回头依赖别的实现，
+    /// 也不得把测试基座拖进生产代码」。`jpa` 侧由 enforcer 的 `bannedDependencies` 与模块
+    /// 依赖图共同守着，`jdbc` 目前只有本规则显式点名 testing。
+    ///
+    /// 不设 `allowEmptyShould(true)`：本模块 pom 已依赖 `nextentity-jdbc`，规则必须真能匹配到
+    /// 该包的类（理由同 `TESTING_STAYS_BACKEND_FREE`）。规则一旦匹配空集，要么是依赖被删、
+    /// 要么是包名漂移——两种都该红，而不是静默绿。
+    @ArchTest
+    static final ArchRule JDBC_IS_A_BACKEND_ONLY = noClasses()
+            .that()
+            .resideInAPackage("io.github.nextentity.jdbc..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAnyPackage(
+                    "io.github.nextentity.jpa..",
+                    "io.github.nextentity.spring..",
+                    "io.github.nextentity.testing..",
+                    "org.hibernate..",
+                    "org.springframework..")
+            .because("jdbc 是 core 接缝的第二实现：反向依赖 jpa/spring 即循环，依赖 testing 即把测试基座拖进生产代码");
 
     /// `spring` 只做装配：不得构建 Criteria。
     @ArchTest
@@ -288,6 +312,7 @@ class ArchitectureTest {
                     "io.github.nextentity.api..",
                     "io.github.nextentity.core..",
                     "io.github.nextentity.jpa..",
+                    "io.github.nextentity.jdbc..",
                     "io.github.nextentity.spring..")
             .should()
             .dependOnClassesThat()

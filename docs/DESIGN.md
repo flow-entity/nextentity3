@@ -20,21 +20,24 @@ nextentity 2.x 用 25,741 行同时做了四件事：SQL 生成（JDBC + 方言�
 api  (零三方依赖)
  ↑
 core (Meta / Spec / Compiler / Executor / Repository 接口)
- ↑                    ↑
-jpa (Criteria 实现)   (将来) jdbc (SQL 实现)
+ ↑                        ↑
+jpa (Criteria 实现)       jdbc (纯 JDBC 实现：MySQL / H2)
  ↑
 spring (自动配置、事务桥接)
 
-testing / tests-jpa / tests-legacy / arch 仅被测试与 CI 使用（bom 只做版本对齐）
+testing / tests-jpa / tests-jdbc / tests-legacy / arch 仅被测试与 CI 使用（bom 只做版本对齐）
 ```
+
+`jpa` 与 `jdbc` 是 `core` 接缝的两个平行实现，**互不依赖**：`jpa` 走 Hibernate/Criteria，`jdbc` 走 `java.sql` + 手写 SQL。`spring` 目前只桥接 `jpa`；`jdbc` 由使用方直接 `new JdbcEntityOperationsFactory(dataSource)` 装配，不经过 Spring。
 
 | 模块 | 放什么 | 不放什么 |
 |---|---|---|
 | `api` | 用户写查询会 import 的一切：`Path`、`PathRef`、`EntityPath`、`Predicate`、`Op`/`Operation`、步骤接口、`Slice`、`Tuple2`~`Tuple6`、`ProjectionMapper`/`ProjectionMappers`、`LockMode` | 任何 `jakarta.*`、`org.hibernate.*`、`org.springframework.*`、任何工具类 |
 | `core` | `Meta`（属性解析）、`Spec`（AST）、`Compiler<S>`/`Executor<S>`（接缝）、`PersistExecutor`、`EntityOperationsFactory`/`EntityOperations` | JPA/Criteria 类型、Spring 类型、SQL 字符串 |
 | `jpa` | `JpaMeta`、`JpaCompiler`、`JpaExecutor`、`JpaPersistExecutor`、`JpaEntityOperationsFactory` | Spring 类型（由 `spring` 模块桥接） |
+| `jdbc` | `JdbcMeta`、`JdbcCompiler`（`QuerySpec → {sql, bindings}`）、`JdbcDialect`（H2 / MySQL）、`JdbcExecutor`、`JdbcPersistExecutor`、`JdbcEntityOperationsFactory` | Spring 类型、JPA/Hibernate 类型（只反射 `jakarta.persistence` 注解）；`jpa` / `testing`（ArchUnit `JDBC_IS_A_BACKEND_ONLY` 执法） |
 | `spring` | `NextEntityAutoConfiguration`、属性绑定、`@Bean` 装配、`AbstractRepository`（构造器注入 `EntityOperationsFactory` + `query()` + `insert(T)`） | 查询逻辑 |
-| `arch` | ArchUnit 规则：模块循环、core 包边界、`spec` 纯净与不可变、时间/随机注入、接口宽度 | 任何业务逻辑；只有测试代码 |
+| `arch` | ArchUnit 规则：模块循环、core 包边界、`spec` 纯净与不可变、时间/随机注入、接口宽度、后端反向依赖（`jpa`/`jdbc` 不得反向依赖别的实现） | 任何业务逻辑；只有测试代码 |
 
 > `AbstractRepository` 放在 `spring` 而不是 `core`：它是 Spring 侧给消费方的仓储基类，且存量调用方（point-mall `AppVersionRepository`）直接 `import io.github.nextentity.spring.AbstractRepository`；放进 `core` 会迫使消费方改文件。
 
@@ -63,10 +66,10 @@ S  （后端语句）
 
 | 层 | 职责 | 边界判据 |
 |---|---|---|
-| `meta` | 属性名 → JPA 属性（`JpaMeta` 按实体类型缓存）；不含方法引用解析 | 只认 JPA 映射注解，不认业务语义 |
+| `meta` | 属性名 → JPA 属性（`JpaMeta` 走 `EntityManager.getMetamodel()`；`JdbcMeta` 走 `jakarta.persistence` 注解反射 + 字段类型），各自按实体类型缓存；不含方法引用解析 | 只认 JPA 映射注解，不认业务语义 |
 | `builder` | 方法引用 → 属性名（`PathRefs` 解析 `SerializedLambda`，每次调用解析、无缓存）；步骤接口 → `Spec` 节点（表达式 → 投影项的唯一转换点是 `ValueProjections`）；可选条件（`eqIfNotNull` / `containsIfNotEmpty`）在此短路；后端原始行 → 结果对象（`RowAssembler`：包 `Tuple` 后一律经 `ValueSelection#rowMapper()` 装配，`select(...)` 的内置映射器在 `ValueMappers`） | 不产生 SQL/Criteria，不做类型转换以外的逻辑 |
 | `spec` | 不可变 AST：条件 `Comparison`/`Between`/`In`/`NullCheck`/`Logical`/`Constant`；值表达式 `Operand`（`Literal`/`AttributePath`/`AggregateOperand`/`ArithmeticOperand` + `BinaryOperator`）；投影 `Projection`/`AggregateProjection`/`PathProjection`/`ComputedProjection`/`ValueSelection`/`EntitySelection`；枚举 `AggregateFunction`/`ComparisonOperator`/`LogicalOperator`；`Ordering`/`Window`/`QuerySpec`/`Selection` | 不含任何后端类型，可序列化、可断言、可复用 |
-| `compile` | `Spec → S`，唯一渲染出口 | 一个 `switch` 分支处理一个节点，穷尽性由编译器保证 |
+| `compile` | `Spec → S`，唯一渲染出口（`jpa` 产出 Criteria，`jdbc` 产出 `{sql, bindings}`） | 一个 `switch` 分支处理一个节点，穷尽性由编译器保证 |
 | `exec` | 执行、分页计数、锁模式；**只交后端原始行**（单列可为裸值或长度 1 的 `Object[]`，多列是**长度等于**投影列数的 `Object[]`；长度不符——多给或少给——装配层抛 `IllegalStateException`） | 不解释条件语义，**不做行成形/装配**（装配规则含「投影了几列」，只有 `builder` 知道） |
 | `repo` | CRUD、批量、乐观锁、事务边界 | 不拼查询 |
 
@@ -84,7 +87,7 @@ S  （后端语句）
 | 步骤接口：`EntityQuery`、`BaseWhereStep`、`Whereable`、`SelectStep`、`GroupByStep`、`OrderByStep`、`SliceStep`、`LockStep`、`Collector` | `core.spec.*` 全部节点 |
 | 谓词算子（`eq`/`in`/`gt`/`between`/`contains` 家族、`*IfNotNull`/`*IfNotEmpty`） | `core.compile.*`、`core.exec.*` |
 | 列对列比较（`ColumnComparison`）、表达式算术（`NumberArithmetic`/`NumberValue`）、逻辑组合（`LogicalOps`：`not` + n 元 `and`/`or`）、`HavingStep` | `core.spec.Operand` 家族（`Literal`/`ArithmeticOperand`/`AggregateOperand`）、`jpa.compile.JpaOperands` |
-| `Slice` / `Tuple` 与其 record 实现 `Tuple2`~`Tuple6` / `AggregateValue` / `ProjectionMapper`+`ProjectionMappers` / `LockMode` / `Op`+`Operation` | `jpa.*`、`spring.*` |
+| `Slice` / `Tuple` 与其 record 实现 `Tuple2`~`Tuple6` / `AggregateValue` / `ProjectionMapper`+`ProjectionMappers` / `LockMode` / `Op`+`Operation` | `jpa.*`、`jdbc.*`、`spring.*` |
 
 微调预算与破坏性变更的前置条件见 [AGENTS.md](../AGENTS.md)「公开 API 是契约」。
 
@@ -117,9 +120,9 @@ S  （后端语句）
 |---|---|---|---|---|
 | 0. 架构门禁 | 模块循环、`core` 包边界、`spec` 纯净与不可变、时间/随机注入 | 编译期或测试期变红；同类问题不允许留到运行期 | 无 | `nextentity-arch` |
 | 1. Spec 单测 | builder 调用 → AST 结构（对象断言） | 结构等价：断言节点类型与字段值，不看 SQL | 无 | `api` 与 `core` 的 `src/test`（api 钉线格式、core 钉 Spec 翻译，分工见下「api 值层断言的落点」） |
-| 2. 编译快照 | Spec → SQL（H2 + `StatementInspector` 抓取） | 语句文本的确定性片段必须出现；期望值不得写进方言的引号、别名、大小写 | H2 | `nextentity-tests-jpa` |
-| 3. 一致性 | 能力而非 SQL 文本：条件/分页/聚合/投影/写入/乐观锁 | 真库执行结果 vs 独立算出的期望；用例不引用任何后端类型 | 仅 `api`+`core` 接口 | `nextentity-testing` 抽象基类，由 jpa 子类继承 |
-| 4. 集成 | 真实方言、`@Convert`、并发乐观锁 | 同一用例在各方言下结果集完全相同（载体：`nextentity-tests-jpa` 的 `*IntegrationTest`，跑真 MySQL 容器） | Docker | `nextentity-tests-jpa` |
+| 2. 编译快照 | Spec → SQL（JPA 用 H2 + `StatementInspector` 抓取；JDBC 直接断言 `JdbcCompiler` 产出的 `{sql, bindings}`） | 语句文本的确定性片段必须出现；期望值不得写进方言的引号、别名、大小写 | H2 | `nextentity-tests-jpa`（JPA）、`nextentity-jdbc/src/test`（JDBC） |
+| 3. 一致性 | 能力而非 SQL 文本：条件/分页/聚合/投影/写入/乐观锁 | 真库执行结果 vs 独立算出的期望；用例不引用任何后端类型 | 仅 `api`+`core` 接口 | `nextentity-testing` 抽象基类，由 jpa / jdbc 子类各自继承 |
+| 4. 集成 | 真实方言、`@Convert`、并发乐观锁 | 同一用例在各方言下结果集完全相同（载体：`nextentity-tests-jpa` 与 `nextentity-tests-jdbc` 的 `*IntegrationTest`，跑真 MySQL 容器） | Docker | `nextentity-tests-jpa`、`nextentity-tests-jdbc` |
 
 L2 只证明「语句下发正确」，不证明「参数绑定正确」：`SqlRecorder` 只记语句文本，绑定顺序与取值抓不到（`StatementInspector` 的接口上就没有绑定值）。这一半证据由 L3（真库执行结果）兜底；文本相同而结果唯一会变的那一处——`lock(...).single()` 里主键与 `fetch first ? rows only` 两个 `Long` 占位符——已由 `ItemQueryEntrySnapshotTest#pessimisticLockSingleReturnsTheFilteredRow` 用「取回的行就是 where 里那个 id」补上。剩余的"绑定顺序写反但结果仍相同"在语义上不可观测，不计为缺口。
 
@@ -267,6 +270,8 @@ java -jar <同上> report tmp/cov/merged.exec \
 | surefire | 除 `*IntegrationTest` 外的全部（H2，MySQL 兼容模式=默认） | 无 | — |
 | surefire-pg | 与 surefire **同一批** 577 条（条数相等由凭证强制，少跑即红），H2 的 **PostgreSQL** 兼容模式 | 无 | 报告落 `target/surefire-pg-reports/`，见下「方言矩阵通道」 |
 | failsafe | `**/*IntegrationTest.java`（显式 `<includes>`） | Docker + `mysql:8.0.18` | `-DskipITs` |
+| surefire（`nextentity-tests-jdbc`） | 除 `*IntegrationTest` 外的全部（H2 MySQL 兼容模式；表由测试侧 DDL 建，不走 Hibernate） | 无 | — |
+| failsafe（`nextentity-tests-jdbc`） | `**/*IntegrationTest.java`：与 H2 通道**同一批 31 个接线类** + 方言/锁/写入容器用例 | Docker + `mysql:8.0.18`（`MySqlL4Container` 同款约定） | `-DskipITs` |
 
 **方言矩阵通道（`surefire-pg`）**：`-Pdialect-pg` 在**同一次 `verify`** 里加第二个 surefire execution（`-Dnextentity.h2mode=postgresql`），报告写进独立目录 `target/surefire-pg-reports/`，凭证按目录名认成独立通道 `surefire-pg:<模块>`。三个设计点都是被具体失真逼出来的：
 
@@ -276,7 +281,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 **默认不激活**：PG 兼容模式有 8 条已定性的方言差异（3 条 SQL 文本快照 + 5 条 H2 不认的 PG 锁语法），清单与租约在 `tools/expected-failures/h2-postgresql.txt`。让这 8 条在每次 `mvn test` 里都红，等于训练所有人忽略红；所以只在 `pr`/`ci`/`night`/`release` 档由 `gate.sh` 显式带 `-Pdialect-pg`，配合基线逐条判定（判据见下「执行凭证」）。**跳过预算也要分开申报**：两个模式的跳过项恰好相反——默认模式跳「PG 专属那条」，PG 模式跳「`Instant` 严格相等那条」（H2 的 PG 兼容模式把 `Instant` 绑成丢偏移的 `timestamp`）。
 
-两个方向都写死：surefire `<excludes>` 排掉 `*IntegrationTest`，failsafe `<includes>` 收这些类。failsafe 的默认 includes 是 `**/IT*`、`**/*IT`、`**/*ITCase`，与项目约定的 `*IntegrationTest` 一个都不匹配——不显式配置时容器用例会被 surefire 跑掉、failsafe 一条也收不到。容器用例统一 `@Tag("container")` + `@ExtendWith(MySqlL4Gate.class)`。当前实测条数：surefire **577** 条（全 H2）、failsafe **549** 条（真 MySQL，含 `@Version` 乐观锁、`@Convert`、批量写、悲观锁四类写路径场景，另加嵌入/时间/自增主键三族写侧维度），两个通道各跳过 **1** 条——就是 `TemporalWriteContract` 里那条 PG 兼容模式专用的 `Instant` 偏移用例（`@DisabledIfSystemProperty` 标记，默认两通道都不跑，PG 通道跑它、同时关掉严格相等那条），**不是**新引入的静默跳过。拆分之初是 130 / 110，差额来自后续补的差分 oracle（见下「差分 oracle 台账」）、写侧往返用例与写侧维度覆盖（见上「写侧维度覆盖」）。
+两个方向都写死：surefire `<excludes>` 排掉 `*IntegrationTest`，failsafe `<includes>` 收这些类。failsafe 的默认 includes 是 `**/IT*`、`**/*IT`、`**/*ITCase`，与项目约定的 `*IntegrationTest` 一个都不匹配——不显式配置时容器用例会被 surefire 跑掉、failsafe 一条也收不到。容器用例统一 `@Tag("container")` + `@ExtendWith(MySqlL4Gate.class)`。当前实测条数：surefire **577** 条（全 H2）、failsafe **549** 条（真 MySQL，含 `@Version` 乐观锁、`@Convert`、批量写、悲观锁四类写路径场景，另加嵌入/时间/自增主键三族写侧维度），两个通道各跳过 **1** 条——就是 `TemporalWriteContract` 里那条 PG 兼容模式专用的 `Instant` 偏移用例（`@DisabledIfSystemProperty` 标记，默认两通道都不跑，PG 通道跑它、同时关掉严格相等那条），**不是**新引入的静默跳过。拆分之初是 130 / 110，差额来自后续补的差分 oracle（见下「差分 oracle 台账」）、写侧往返用例与写侧维度覆盖（见上「写侧维度覆盖」）。**第二后端同款拆分**：`nextentity-tests-jdbc` 的 surefire 跑 H2（表由测试侧 DDL 建，不经 Hibernate），failsafe 跑同一批 31 个接线类 + 方言/锁/写入容器用例；通道条数下限登记在 `tools/gate.sh` 的 `STEP_MIN_TESTS`，跳过预算默认 0。
 
 **时区必须钉在构建参数上，不能钉在用例里**：`nextentity-tests-jpa/pom.xml` 的 `pinned.timezone`（默认 `Asia/Shanghai`）同时进 surefire/failsafe 的 `-Duser.timezone` 与 `-Dnextentity.pinnedTimezone`，后者是时间契约自检的期望值——两个 `-D` 同源，「换过时区也全绿」才不是空话。理由有两层：`Instant` 往返断言的区分力全在「墙钟被挪过就会差整小时」，跑测机器若在 UTC，这条断言对「按 JVM 时区换算」这类缺陷的区分力归零；而 Hibernate 在 `buildSessionFactory()` 时就缓存了默认时区，装置又由子类字段初始化创建，所以 `@BeforeEach` 里 `TimeZone.setDefault` 是「晚于建连」的——实测会把 `LocalDate.of(2024,3,10)` 写成 `2024-03-09`，等于把装置变成非法的时区实验。换时区验证用 `-Dpinned.timezone=America/New_York` 整通道跑；**不要**用 `-DargLine=...`，jacoco `prepare-agent` 会覆盖 `argLine` 属性、且 pom 已把 `-Duser.timezone` 写进同一个 `argLine`，后写胜出，改了等于没改。副作用要记住：这是**模块级** fork 参数，本模块全部 577 条用例都在该时区下跑（本模块只有 `TemporalWriteContract` 读 `ZoneId.systemDefault()`，其余用例与时间无关），CI 机器若在别的时区，行为与本地不同。
 
@@ -286,9 +291,9 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 **CI 上的镜像源是反过来的**：GitHub runner 拉不到 `docker.xuanyuan.run`，所以在 CI 里把这两个属性覆盖回 Docker Hub 原名（`library/mysql:8.0.18` / `testcontainers/ryuk:0.11.0`）。注入通道是 `tools/gate.sh` 的 `GATE_EXTRA_MVN_ARGS` 环境变量——它给每条 mvn 命令追加参数，**只接受 `-D` 开头的属性**：`-pl` / `-DskipITs` 这类开关会改变「实际跑了什么」，若能从环境里悄悄塞进来，凭证的可核对性就没了。代价是吃 Docker Hub 的匿名拉取限流（每 IP 每 6 小时 100 次），偶发 429 会让容器步随机红；要彻底摆脱这个外部依赖，得改成 `services:` 起 MySQL + 外部实例模式（复用 `MySqlL4Container` 的接线）。
 
-**变异测试（PIT，已接入四个模块）**：`mvn -pl nextentity-api test-compile pitest:mutationCoverage`，`-pl nextentity-core` / `-pl nextentity-jpa` / `-pl nextentity-spring` 同理。它只出分数、不新增用例形态，所以它不替代别的层，只回答一个问题：**这一行被跑到过、而且断言足够紧到能发现它被改了吗**。
+**变异测试（PIT，已接入五个模块）**：`mvn -pl nextentity-api test-compile pitest:mutationCoverage`，`-pl nextentity-core` / `-pl nextentity-jpa` / `-pl nextentity-spring` / `-pl nextentity-jdbc` 同理。它只出分数、不新增用例形态，所以它不替代别的层，只回答一个问题：**这一行被跑到过、而且断言足够紧到能发现它被改了吗**。
 
-`test-compile` 不能省：`pitest:mutationCoverage` 自己不编译，陈旧的 `target/test-classes` 会让它拿旧用例去杀新代码，表现成「刚写的用例好像没生效」。同理，PIT 不带 `-am`，它从 `~/.m2` 解析依赖模块，跑前先 `mvn install -DskipTests`。
+`test-compile` 不能省：`pitest:mutationCoverage` 自己不编译，陈旧的 `target/test-classes` 会让它拿旧用例去杀新代码，表现成「刚写的用例好像没生效」。同理，PIT 不带 `-am`，它从 `~/.m2` 解析依赖模块，跑前先 `mvn install -DskipTests -Djacoco.check.skip=true`（`-DskipTests` 下没有 jacoco exec 数据，不带 skip 会让 `jacoco:check` 判红）。
 
 当前实测（算子集 `STRONGER` + `NON_VOID_METHOD_CALLS`，且关掉 `FRECORD` 过滤器，见下）：
 
@@ -417,18 +422,24 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 ## 6. 第二后端（JDBC）接缝
 
-现在**不实现**，但接口必须为它留位。八条接缝：
+**已兑现**：`nextentity-jdbc` 是 `core` 接缝的第二实现（纯 JDBC，支持 MySQL 与 H2，其他方言留接缝）。八条接缝全部落地：
 
 1. `Spec` 不含后端类型（纯值对象）。
-2. `Compiler<S>` 泛型化：JPA 产出 Criteria 持有者，JDBC 将来产出 `{sql, bindings}`。
-3. `Executor<S>` 与 `Compiler<S>` 成对出现，终止符都在接口层。
-4. `Meta` 接口化，JPA 实现内部走 `EntityManager.getMetamodel()`；JDBC 实现将来走反射/注解扫描。
-5. `LockMode` 用自研枚举，不引 `jakarta.persistence`。
-6. `PersistExecutor` 接口化（insert/update/delete/批量）。
-7. 事务边界由调用方持有：point-mall 写入靠 `@Transactional`，id-generator 用自己的 `TransactionTemplate`。**不保留 `TransactionOperations` 接口**——它曾以「为第二后端留位」的理由存在，但零实现、零调用，属于「不写没有调用点的抽象」要清掉的那类（第二后端真的出现时随它一起引入，而不是提前摆一个空接缝）。`core`/`jpa` 仍不得依赖 `org.springframework.transaction`。
-8. `nextentity-testing` 的一致性基类只依赖接口，新后端必须通过同一套。
+2. `Compiler<S>` 泛型化：JPA 产出 Criteria 持有者，JDBC 产出 `{sql, bindings}`（`JdbcCompiler` → `JdbcQuery`）。
+3. `Executor<S>` 与 `Compiler<S>` 成对出现，终止符都在接口层；`JdbcCompiler` 额外把 `forCount`/`forExists` 之后的规格渲染成计数/存在语句（见 §7 决策表对应行）。
+4. `Meta` 接口化：JPA 实现走 `EntityManager.getMetamodel()`，JDBC 实现走 `jakarta.persistence` 注解反射（`JdbcMeta`，不带 Hibernate）。
+5. `LockMode` 用自研枚举，不引 `jakarta.persistence`；JDBC 把 `PESSIMISTIC_WRITE` 映射成 `for update`，其余四种在契约层拒绝。
+6. `PersistExecutor` 接口化（insert/update/批量）；JDBC 用 `RETURN_GENERATED_KEYS` 回填自增主键、`WHERE id=? [AND version=?]` 实现乐观锁并回写新版本号。
+7. 事务边界由调用方持有：JDBC 默认自动提交，需要事务就由调用方 `setAutoCommit(false)`/提交，后端不自带事务模板。
+8. `nextentity-testing` 的一致性基类只依赖接口，`nextentity-tests-jdbc` 原样继承同一批基类（31 个接线类，H2 与真 MySQL 各一遍），没有后端特例分支。
 
-准入条件（三条同时满足才允许新增 `nextentity-jdbc`）：出现 Hibernate 无法满足的明确需求；Criteria native query / `@Query` 原生 SQL 逃生口顶不住（`spec` 目前没有原生 SQL 片段节点，真要加就按 §8 的做法：新增 `sealed` 子类型，让编译器的 `switch` 穷尽性报错逼出全部分支）；能通过一致性测试。
+**装配面契约：`DataSource` 的 `getConnection()` 语义**。`JdbcEntityOperationsFactory` **不持有连接**；`JdbcExecutor` / `JdbcPersistExecutor` 每次操作都向 `DataSource` 取连接、在 try-with-resources 里 close（设计意图：后端不管理事务，见第 7 条）。因此消费方的 `DataSource` 合约是「`getConnection()` 每次返回可用连接（池化，或每次新建）」**或**「返回的包装连接 `close()` 是 no-op」（Spring `SingleConnectionDataSource` 一类需自行包成 no-op 代理）。反例（reviewer 探针实测，非生产缺陷）：把一条物理连接包成「close 真关」的数据源，第二条 SQL 即报 `The object is already closed`；`nextentity-tests-jdbc` 的 `SingleConnectionDataSource` 按 no-op 代理实现，不受影响。
+
+**SQL 渲染面的边界：LIKE / `contains` 的绑定语义**。JDBC 后端只有一条渲染路径：`contains(v)` 的模式串 `%v%` 由 `core` 的 `Specs.contains` 预先拼好，`JdbcCompiler` 不再拼接、也不改通配符——`%`/`_` 一律**不转义**，与 JPA 一致（`contains("%")` 仍是通配匹配，2.2.3 语义不变）。唯一改写是**绑定前把字符串字面量里的 `\` 翻倍**（`\` → `\\`），使反斜杠按字面解释，与 JPA 后端口径等价：Hibernate 在 H2 上追加 `escape ''`、在 MySQL 上把占位符包成 `replace(?, '\\', '\\\\')`，效果相同。这层转换只发生在 `JdbcCompiler` 的绑定阶段，`Spec` 与共享一致性基类保持后端中立（对应快照 `containsDoublesBackslashesBeforeBinding` / `likePatternDoublesBackslashesBeforeBinding` / `wildcardsInLikeValuesAreLeftUnescaped`）。
+
+准入条件（原三条）已由 jdbc 分支兑现：出现 Hibernate 无法满足的明确需求（纯 JDBC、无 Hibernate 依赖的消费方）；不需要 Criteria 原生 SQL 逃生口（`spec` 仍零原生 SQL 片段）；能通过一致性测试（同一批基类 + H2/MySQL 双通道）。
+
+**新后端的接线清单**（照 `nextentity-jdbc` 抄，顺序即依赖顺序）：模块 pom（enforcer 禁其它后端 + pitest 阈值 95）→ `nextentity-bom` + 根 pom `modules`/`dependencyManagement` → `nextentity-arch/pom.xml` 加 test 依赖并加 `JDBC_IS_A_BACKEND_ONLY` 等规则（ArchUnit 只看 classpath，不加依赖时规则匹配空集=假绿）→ `nextentity-testing` **不动**，只新增 `nextentity-tests-<后端>` 继承基类 + 方言容器通道 → `tools/gate.sh` 注册通道/档位/skip 预算 → AGENTS 验证表 + 本文件 §2/§5/§6/§7 + CHANGELOG。
 
 ---
 
@@ -446,6 +457,20 @@ java -jar <同上> report tmp/cov/merged.exec \
 | 引入 `core.spec.Operand` 值表达式层（`Comparison` 的右值从 `Object` 升级为 `Operand`） | 列对列比较（`a > b`）与表达式算术（`a mod 3 = 0`）要求比较两侧都可能是表达式；`Object` 只装得下字面量，值类型的分派只能推迟到运行期 | ① 在 `Comparison` 上加 `value` + `expression` 两个字段/两套重载：渲染端要写两条分支，`sealed` 穷尽性只覆盖节点、覆盖不到"值形态"；② 保留 `Object` 并在 `JpaPredicates` 里 `instanceof` 判定：类型错误延迟到运行期，且新增一种值形态时编译期不报错 |
 | 推翻「`Aggregates` 不加 `MIN`/`AVG`」（原结论：两者在 point-mall 0 命中） | 原结论是**调用点驱动**的（当时 `.min(` / `.avg(` 全库 0 命中），本次把 `min`/`avg` 纳入第一梯队能力面：`core.spec.AggregateFunction` 增加 `MIN`/`AVG`，`api.Aggregates` 暴露 `min()`/`avg()`，`jpa.compile.JpaOperands` 用同一个 `switch` 渲染 | 原理由所在处：`core.spec.AggregateFunction` 的类注释里「不加 MIN/AVG：avg 0 命中」一段——**已被本次取代**（该注释已改写为"六种聚合都在能力面内"）。保留的约束只有一条：聚合结果 `AggregateValue` 不接聚合方法，`max().max()` 编译期即不可写 |
 | 投影成调用方类型走显式 `api.ProjectionMapper`（`expressions()` 声明列集 + `map(Tuple)` 造结果） | 反射方案编译期零保护（列名写错、DTO 字段改名都要到运行期才知道），且与 2.2.3 的 `select(Class<R>)` 同构——那正是 3.x 要去掉的东西；显式映射器把「查什么」与「怎么造」放进同一个对象，两者不可能错配，且映射代码是普通 Java（IDE 可跳转、编译期可查）。代价：`Tuple#size()` 的契约下限从 2 放宽到 1（映射器路径单列也产出 `Tuple`），并新增一条「列序 ↔ 取值下标」的漂移风险，靠「`IDX_*` 常量紧邻 `expressions()`」的写法约定 + 渲染列序用例（`ItemProjectionMapperRenderingTest#projectionColumnsAppearInExpressionOrder`）兜住 | `project(Class<R>)` 这类反射 + 注解自动映射 |
+| 第二后端用 `JdbcCompiler` 额外公开 `count(QuerySpec)`/`exists(QuerySpec)`，`JdbcQuery` 携带 `QuerySpec` | `core` 的 `forCount`/`forExists` 产出的规格与普通规格不可区分，执行器不能改 SQL；编译期一次成型 `{sql, bindings}` | 执行器套派生表；让 `SqlStatement` 携带 count/exists 三份 SQL |
+| SQL 与 DDL 的标识符全程不加引号 | H2 未引用折大写、MySQL 小写，各自自洽；引用会制造大小写陷阱，DDL 与 SQL 必须同形 | 方言 `quote()`（H2 原样 / MySQL 反引号） |
+| `JdbcEntityOperationsFactory(DataSource)` 每次操作独立取连接，事务边界归调用方 | 与 JPA 后端「事务边界调用方持有」一致；JDBC 默认自动提交 | 自带事务模板/连接持有（真要时随第二后端一起引入，不提前摆空接缝） |
+| JDBC 写入不支持关联属性：非 null 抛 UOE、null 跳过该列 | 共享套件没有「写入关联」的正向用例；静默置 null 会丢数据 | 静默忽略；写入支持 `@ManyToOne`（需级联语义） |
+| `LockMode` 只映射 `PESSIMISTIC_WRITE → for update`，其余四种拒绝 | JDBC 没有可移植的等价 SQL（`FOR SHARE` 各方言不一） | 全部映射（假承诺乐观/共享锁语义） |
+| 「不限行」统一 `limit ? offset ?` + `Long.MAX_VALUE` 哨兵（`limit=0`） | api 契约「0 表示不限行」；两方言共同语法，无需分支 | MySQL 专用 `18446744073709551615` 字面量或方言分支；`LIMIT 0` |
+| 聚合/算术按静态类型收窄（`COUNT→Long`、`AVG→Double`、`SUM/MIN/MAX→列类型`、算术提升） | 与 api 泛型签名一致，跨方言统一 | 交驱动原生类型（H2 BIGINT / MySQL DECIMAL 分叉） |
+| 聚合规格与多列 distinct 的 `count/exists` 显式拒绝，文案与 JPA 逐字一致 | 后端中立一致套件不覆盖该组合；先对齐 JPA 再谈扩展 | 派生表包装（多列 distinct 语义方言不一） |
+| `EnumStorage` 提为 public enum（`NONE`/`NAME`/`ORDINAL`） | `compile` 与 `exec` 分包都要判「枚举按 name 还是序号绑定」 | 在 `JdbcEntityAttribute` 上加 `toJdbcValue`/`fromColumn`（把转换逻辑塞进 meta 接口） |
+| `attributes()` 含关联属性，但 INSERT/UPDATE 列集与行装配只走标量属性 | 路径解析需要关联属性；与 JPA「关联字段不映射成列」一致，也让「忽略关联字段」的拒绝用例可表达 | 关联字段一刀切 UOE |
+| 时间类型本轮全部拒绝（`LocalDate`/`LocalDateTime`/`Instant`/`java.sql.*`） | 共享套件无时间用例；MySQL 驱动不支持 `getObject(Instant.class)`；先对齐 JPA 再扩 | 放 `LocalDate/LocalDateTime` 白名单（零正向用例 → PIT 变异杀不死） |
+| `SQLException` 统一包 `jakarta.persistence.PersistenceException("SQL 执行失败: " + sql, e)` | 后端对调用方只暴露 JPA 异常族；查询/写/绑定一条口径 | 保留 `SQLException`；按查询/写分两种消息 |
+| 锁只支持实体查询，值选择/聚合规格带锁 → UOE | H2 拒绝 `FOR UPDATE` + DISTINCT/GROUP BY、MySQL 接受，不承诺方言不一的行为 | 按方言分支；运行时让驱动报错 |
+| `@JoinColumn(referencedColumnName=...)` 三段式：空值放行（JPA 默认指向目标 `@Id`）；非空且（忽略大小写）等于目标 `@Id` 实际列名（`@Column(name)` 优先，否则字段名）放行；其余 meta 期 UOE | 指向非 `@Id` 列时被引列不唯一，join 放大会破坏「`count(*)` 不放大、实体行数=结果行数」契约；不拒的实测代价是 H2 报错、MySQL 8.0.18 隐式转 0 静默返回 0 行 | 一律拒绝（连合法的「指向 @Id 列」也拒，破坏 JPA 兼容）；按目标列 join（需额外去重语义 + 两方言对拍 + 新基类用例） |
 
 ---
 
@@ -459,5 +484,5 @@ java -jar <同上> report tmp/cov/merged.exec \
 | 分组后过滤（`having`） | `core.spec.QuerySpec.having` + `jpa.compile.JpaQueryBuilder` | 是（增量：`HavingStep`） |
 | 新终止符（如 `keyset`） | `exec` 加方法 + `api` 加步骤接口 | 是（增量） |
 | 新投影形态（record/DTO） | `api` 的 `ProjectionMapper` + `builder` 的 `RowAssembler`（`Tuple` → 结果对象，经 `ValueSelection#rowMapper()`）与 `ValueProjections`（表达式 → 投影项） | 否（映射器由调用方实现） |
-| 新后端（JDBC） | 新模块实现 `Compiler`/`Executor` | 否 |
-| 新方言差异 | 后端模块内部 | 否 |
+| 新后端（已实现：`jdbc`） | 新模块实现 `Compiler`/`Executor`/`EntityOperationsFactory`，照 §6 末的接线清单抄 | 否 |
+| 新方言差异 | 后端模块内部（`jdbc` 侧：`JdbcDialect` 加实现 + `DialectResolver` 探测 + 方言各自一份 SQL 快照） | 否 |

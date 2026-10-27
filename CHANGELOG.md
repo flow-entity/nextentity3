@@ -9,6 +9,10 @@
 ### Added
 
 - 仓库骨架：`api` / `core` / `jpa` / `spring` / `testing` / `tests-jpa` / `bom` 七个模块与依赖方向约束。
+- **第二后端 `nextentity-jdbc`（纯 JDBC，MySQL + H2）**：`JdbcEntityOperationsFactory(DataSource)` 装配 `JdbcMeta`（`jakarta.persistence` 注解反射，不带 Hibernate）/ `JdbcCompiler`（`QuerySpec → {sql, bindings}`，预编译几份语句）/ `JdbcExecutor` / `JdbcPersistExecutor`（`RETURN_GENERATED_KEYS` 主键回填、`WHERE id=? [AND version=?]` 乐观锁）。`jdbc` 只依赖 `core`，与 `jpa` 平行；`JdbcDialect` 抽象方言（H2 / MySQL），未识别产品名抛 `UnsupportedOperationException`。设计规格见 `tmp/plan/jdbc-design.md`（评审通过后随 MR 迁入 `docs/DESIGN.md` §6/§7 与模块 Javadoc）。
+- **`nextentity-tests-jdbc`**：把 `nextentity-testing` 的 32 个一致性/差分/变形基类接到 JDBC 后端（31 个接线类），H2 走 surefire、**同一批类**跑真 MySQL 容器走 failsafe；`nextentity-testing` 一行未改，证明接缝没被 JPA 绑架。
+- **LIKE / `contains` 的反斜杠语义与 JPA 对齐**：模式串里的 `%`/`_` 一律不转义（`contains` 即模式匹配，语义同 2.2.3），但字符串字面量里的 `\` 在绑参前翻倍，使反斜杠按字面解释——等价于 Hibernate 在 H2 的 `escape ''` 与在 MySQL 的 `replace(?, '\\', '\\\\')`；两方言 `TextMatchConsistencyTest` 同一批用例全绿。`@JoinColumn(referencedColumnName=...)` 采用三段式：空值放行（JPA 默认指向目标 `@Id`）、等于目标 `@Id` 实际列名（`@Column(name)` 优先）放行、其余指向非 `@Id` 列的 meta 期拒绝（UOE）；无 `@Version` 且无可写标量列的 `update` 明确拒绝（UOE），不静默丢语义。
+- 接线：根 pom `modules`/`dependencyManagement` 与 `nextentity-bom` 增加两个模块；`nextentity-arch` 增加 `JDBC_IS_A_BACKEND_ONLY` 等规则（ArchUnit 只看 classpath，arch 的 test 依赖必须显式加 `jdbc`，否则规则匹配空集）；`tools/gate.sh` 的 `fast`/`pr`/`ci`/`night`/`release` 档注册 `jdbc-unit`/`tests-jdbc`/`tests-jdbc-it`/`pit-jdbc` 通道；`-DskipTests` 的 install 统一带 `-Djacoco.check.skip=true`。
 - 设计正文 `docs/DESIGN.md`、使用正文 `docs/USAGE.md`。
 - 本地门禁：Spotless(Palantir) + Checkstyle + PMD + SpotBugs + JaCoCo + Enforcer + ArchUnit + japicmp(API 兼容)。
 - 新增 `nextentity-arch` 模块：ArchUnit 规则集中到一处，覆盖模块循环、`core` 包边界、`spec` 纯净与不可变、时间/随机注入、接口宽度、产物边界（api 的 class 只能来自 `nextentity-api`）。原 `core` 内的 `ArchitectureTest` 因 classpath 看不到 `jpa`/`spring` 而迁出。
