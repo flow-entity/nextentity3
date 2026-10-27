@@ -36,8 +36,16 @@ public class JdbcAssetSupport implements AutoCloseable {
     }
 
     protected JdbcAssetSupport(SingleConnectionDataSource dataSource) {
+        this(dataSource, JdbcSchema.MYSQL);
+    }
+
+    /// 方言通道的接线：连接由容器给，建表脚本按方言选。
+    ///
+    /// @param dataSource     已连到本类命名空间的单连接数据源
+    /// @param schemaResource 该方言的建表脚本（`JdbcSchema` 里的常量）
+    protected JdbcAssetSupport(SingleConnectionDataSource dataSource, String schemaResource) {
         this.dataSource = dataSource;
-        JdbcSchema.apply(dataSource.connection());
+        JdbcSchema.apply(dataSource.connection(), schemaResource);
     }
 
     public EntityQuery<AssetEntity> query() {

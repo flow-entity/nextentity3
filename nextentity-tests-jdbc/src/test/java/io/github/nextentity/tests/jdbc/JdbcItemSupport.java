@@ -31,8 +31,16 @@ public class JdbcItemSupport implements ConsistencySupport<ItemEntity>, AutoClos
     }
 
     protected JdbcItemSupport(SingleConnectionDataSource dataSource) {
+        this(dataSource, JdbcSchema.MYSQL);
+    }
+
+    /// 方言通道的接线：连接由容器给（PG/MSSQL 每类独立 schema/database），建表脚本按方言选。
+    ///
+    /// @param dataSource     已连到本类命名空间的单连接数据源
+    /// @param schemaResource 该方言的建表脚本（`JdbcSchema` 里的常量）
+    protected JdbcItemSupport(SingleConnectionDataSource dataSource, String schemaResource) {
         this.dataSource = dataSource;
-        JdbcSchema.apply(dataSource.connection());
+        JdbcSchema.apply(dataSource.connection(), schemaResource);
         this.operations = new JdbcEntityOperationsFactory(dataSource).operations(ItemEntity.class);
     }
 

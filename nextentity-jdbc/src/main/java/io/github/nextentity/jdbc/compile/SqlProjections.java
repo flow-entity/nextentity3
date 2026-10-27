@@ -72,7 +72,7 @@ final class SqlProjections {
             if (attribute.isAssociation()) {
                 continue;
             }
-            columns.add(SqlPaths.ROOT_ALIAS + "." + attribute.column());
+            columns.add(renderer.paths().column(SqlPaths.ROOT_ALIAS, attribute));
             renderer.addColumnType(SqlPaths.columnType(attribute));
         }
         return String.join(", ", columns);
@@ -83,7 +83,7 @@ final class SqlProjections {
         return switch (aggregate.function()) {
             case MAX -> "max(" + inner + ")";
             case MIN -> "min(" + inner + ")";
-            case AVG -> "avg(" + inner + ")";
+            case AVG -> renderer.dialect().averageOf(inner);
             case SUM -> "sum(" + inner + ")";
             case COUNT -> "count(" + inner + ")";
             case COUNT_DISTINCT -> "count(distinct " + inner + ")";

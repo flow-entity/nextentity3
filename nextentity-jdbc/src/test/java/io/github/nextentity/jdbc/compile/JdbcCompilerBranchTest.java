@@ -565,7 +565,7 @@ class JdbcCompilerBranchTest {
 
     @Test
     void nullWindowIsTreatedAsNoClause() {
-        SqlRenderer renderer = new SqlRenderer(meta, entity(SnapshotItem.class, (Spec) null));
+        SqlRenderer renderer = new SqlRenderer(meta, new H2Dialect(), entity(SnapshotItem.class, (Spec) null));
 
         assertThat(new SqlClauses(renderer).window(null)).isEmpty();
     }
@@ -704,14 +704,14 @@ class JdbcCompilerBranchTest {
 
     @Test
     void predicatesRejectNullSpecViaSwitchNullCheck() {
-        SqlRenderer renderer = new SqlRenderer(meta, entity(SnapshotItem.class, (Spec) null));
+        SqlRenderer renderer = new SqlRenderer(meta, new H2Dialect(), entity(SnapshotItem.class, (Spec) null));
 
         assertThatThrownBy(() -> new SqlPredicates(renderer).render(null)).isInstanceOf(NullPointerException.class);
     }
 
     @Test
     void operandsRejectNullOperandViaSwitchNullCheck() {
-        SqlRenderer renderer = new SqlRenderer(meta, entity(SnapshotItem.class, (Spec) null));
+        SqlRenderer renderer = new SqlRenderer(meta, new H2Dialect(), entity(SnapshotItem.class, (Spec) null));
         SqlOperands operands = new SqlOperands(renderer);
 
         assertThatThrownBy(() -> operands.expression(null)).isInstanceOf(NullPointerException.class);
@@ -720,7 +720,7 @@ class JdbcCompilerBranchTest {
 
     @Test
     void projectionsRejectNullProjectionViaSwitchNullCheck() {
-        SqlRenderer renderer = new SqlRenderer(meta, entity(SnapshotItem.class, (Spec) null));
+        SqlRenderer renderer = new SqlRenderer(meta, new H2Dialect(), entity(SnapshotItem.class, (Spec) null));
 
         assertThatThrownBy(() -> new SqlProjections(renderer).expression(null))
                 .isInstanceOf(NullPointerException.class);

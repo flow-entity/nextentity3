@@ -12,7 +12,7 @@
 
     <artifactId>nextentity-tests-jdbc</artifactId>
     <name>nextentity-tests-jdbc</name>
-    <description>JDBC 后端测试：H2（surefire）+ 真 MySQL 容器（failsafe）</description>
+    <description>JDBC 后端测试：H2（surefire）+ 真 MySQL / PostgreSQL / SQL Server 容器（failsafe 三通道）</description>
 
     <dependencies>
         <dependency>
@@ -58,6 +58,27 @@
             <version>8.0.33</version>
             <scope>test</scope>
         </dependency>
+        <!-- PostgreSQL / SQL Server 容器通道：testcontainers 子模块 + 各自 JDBC 驱动（同 MySQL 约定） -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>mssqlserver</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.microsoft.sqlserver</groupId>
+            <artifactId>mssql-jdbc</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <properties>
@@ -96,7 +117,7 @@
                 <configuration>
                     <argLine>@{argLine}</argLine>
                     <includes>
-                        <include>**/*IntegrationTest.java</include>
+                        <include>**/MySql*IntegrationTest.java</include>
                     </includes>
                     <systemPropertyVariables>
                         <api.version>${docker.api.version}</api.version>
@@ -130,4 +151,70 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- PostgreSQL 容器通道：failsafe 类名白名单切到 Postgres*，报告写到独立目录，
+             gate-receipt.py 按该目录认 `failsafe:nextentity-tests-jdbc-postgres` 通道。
+             `-Dnextentity.requireContainer=true` 在 profile 里固化：方言通道不允许静默降级。 -->
+        <profile>
+            <id>jdbc-postgres</id>
+            <properties>
+                <nextentity.requireContainer>true</nextentity.requireContainer>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <reportsDirectory>${project.build.directory}/failsafe-pg-reports</reportsDirectory>
+                            <includes>
+                                <include>**/Postgres*IntegrationTest.java</include>
+                            </includes>
+                            <systemPropertyVariables>
+                                <api.version>${docker.api.version}</api.version>
+                                <nextentity.requireContainer>${nextentity.requireContainer}</nextentity.requireContainer>
+                                <nextentity.postgres.image>${nextentity.postgres.image}</nextentity.postgres.image>
+                                <ryuk.container.image>${nextentity.ryuk.image}</ryuk.container.image>
+                            </systemPropertyVariables>
+                            <environmentVariables>
+                                <TESTCONTAINERS_RYUK_CONTAINER_IMAGE>${nextentity.ryuk.image}</TESTCONTAINERS_RYUK_CONTAINER_IMAGE>
+                            </environmentVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- SQL Server 容器通道：同上，类名白名单切到 SqlServer*。 -->
+        <profile>
+            <id>jdbc-sqlserver</id>
+            <properties>
+                <nextentity.requireContainer>true</nextentity.requireContainer>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <reportsDirectory>${project.build.directory}/failsafe-mssql-reports</reportsDirectory>
+                            <includes>
+                                <include>**/SqlServer*IntegrationTest.java</include>
+                            </includes>
+                            <systemPropertyVariables>
+                                <api.version>${docker.api.version}</api.version>
+                                <nextentity.requireContainer>${nextentity.requireContainer}</nextentity.requireContainer>
+                                <nextentity.sqlserver.image>${nextentity.sqlserver.image}</nextentity.sqlserver.image>
+                                <ryuk.container.image>${nextentity.ryuk.image}</ryuk.container.image>
+                            </systemPropertyVariables>
+                            <environmentVariables>
+                                <TESTCONTAINERS_RYUK_CONTAINER_IMAGE>${nextentity.ryuk.image}</TESTCONTAINERS_RYUK_CONTAINER_IMAGE>
+                            </environmentVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

@@ -1,10 +1,12 @@
 package io.github.nextentity.jdbc.compile;
 
 import io.github.nextentity.core.spec.AttributePath;
+import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.EnumStorage;
 import io.github.nextentity.jdbc.meta.JdbcEntityAttribute;
 import io.github.nextentity.jdbc.meta.JdbcEntityType;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,20 +15,25 @@ import java.util.Map;
 ///
 /// 根表别名固定 `t0`，join 目标按首次出现顺序编号 `t1`、`t2`…；同一前缀只 join 一次，
 /// 因此同一关联路径在 SELECT / WHERE / ORDER BY 里出现多次仍只产生一个 join。
+/// 标识符引用（表名 / 列名）统一走方言 `quote`，别名 `tN` 不引用。
 final class SqlPaths {
 
     /// 根表别名。
     static final String ROOT_ALIAS = "t0";
 
     private final JdbcMeta meta;
+    private final JdbcDialect dialect;
     private final Class<?> rootType;
     private final Map<List<String>, String> aliases = new HashMap<>();
+    private final List<String> aliasOrder = new ArrayList<>();
     private final StringBuilder joins = new StringBuilder();
     private int nextAlias = 1;
 
-    SqlPaths(JdbcMeta meta, Class<?> rootType) {
+    SqlPaths(JdbcMeta meta, JdbcDialect dialect, Class<?> rootType) {
         this.meta = meta;
+        this.dialect = dialect;
         this.rootType = rootType;
+        this.aliasOrder.add(ROOT_ALIAS);
     }
 
     /// 解析一条属性路径。
@@ -53,12 +60,22 @@ final class SqlPaths {
             throw new UnsupportedOperationException(
                     "投影关联对象未支持: " + path.entityType().getName() + "." + String.join(".", names));
         }
-        return new Resolved(alias + "." + last.column(), last);
+        return new Resolved(column(alias, last), last);
+    }
+
+    /// 列引用：`别名.列名`，列名按方言引用。
+    String column(String alias, JdbcEntityAttribute attribute) {
+        return alias + "." + dialect.quote(attribute.column());
     }
 
     /// 已有 join 子句（` left join ... on ...` 拼接串）。
     String joins() {
         return joins.toString();
+    }
+
+    /// 本次 SELECT 实际出现的表别名，根表在前（锁方言用）。
+    List<String> aliases() {
+        return List.copyOf(aliasOrder);
     }
 
     private String join(String ownerAlias, JdbcEntityAttribute attribute, List<String> prefix) {
@@ -70,18 +87,17 @@ final class SqlPaths {
         JdbcEntityType<?> target = meta.entityType(attribute.associationTarget());
         String alias = "t" + nextAlias++;
         joins.append(" left join ")
-                .append(target.table())
+                .append(dialect.quote(target.table()))
                 .append(' ')
                 .append(alias)
                 .append(" on ")
-                .append(alias)
-                .append('.')
-                .append(target.id().column())
+                .append(column(alias, target.id()))
                 .append(" = ")
                 .append(ownerAlias)
                 .append('.')
-                .append(attribute.joinColumn());
+                .append(dialect.quote(attribute.joinColumn()));
         aliases.put(key, alias);
+        aliasOrder.add(alias);
         return alias;
     }
 

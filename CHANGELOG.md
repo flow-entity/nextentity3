@@ -9,10 +9,10 @@
 ### Added
 
 - 仓库骨架：`api` / `core` / `jpa` / `spring` / `testing` / `tests-jpa` / `bom` 七个模块与依赖方向约束。
-- **第二后端 `nextentity-jdbc`（纯 JDBC，MySQL + H2）**：`JdbcEntityOperationsFactory(DataSource)` 装配 `JdbcMeta`（`jakarta.persistence` 注解反射，不带 Hibernate）/ `JdbcCompiler`（`QuerySpec → {sql, bindings}`，预编译几份语句）/ `JdbcExecutor` / `JdbcPersistExecutor`（`RETURN_GENERATED_KEYS` 主键回填、`WHERE id=? [AND version=?]` 乐观锁）。`jdbc` 只依赖 `core`，与 `jpa` 平行；`JdbcDialect` 抽象方言（H2 / MySQL），未识别产品名抛 `UnsupportedOperationException`。设计规格见 `tmp/plan/jdbc-design.md`（评审通过后随 MR 迁入 `docs/DESIGN.md` §6/§7 与模块 Javadoc）。
-- **`nextentity-tests-jdbc`**：把 `nextentity-testing` 的 32 个一致性/差分/变形基类接到 JDBC 后端（31 个接线类），H2 走 surefire、**同一批类**跑真 MySQL 容器走 failsafe；`nextentity-testing` 一行未改，证明接缝没被 JPA 绑架。
+- **第二后端 `nextentity-jdbc`（纯 JDBC，内置 H2 / MySQL / PostgreSQL / SQL Server 四方言）**：`JdbcEntityOperationsFactory(DataSource)` 探测方言后装配 `JdbcMeta`（`jakarta.persistence` 注解反射，不带 Hibernate）/ `JdbcCompiler`（`QuerySpec → {sql, bindings}`）/ `JdbcExecutor` / `JdbcPersistExecutor`（生成键回填、`WHERE id=? [AND version=?]` 乐观锁）。`jdbc` 只依赖 `core`，与 `jpa` 平行。**方言是可实现的对外接缝**：`JdbcDialect` 公开 7 个方法（`name()` + `quote`/`selectHead`/`limitClause`/`lock`/`averageOf`/`likeEscape` 六个 default 钩子），未内置的数据库实现该接口后 `new JdbcEntityOperationsFactory(dataSource, customDialect)` 即可接入，无需改 `jdbc` 模块；`JdbcDialect.of(String)` 按产品名探测四种内置方言，未识别时抛 `UnsupportedOperationException` 并引导注入自定义实现。方言接缝与不变量见 `docs/DESIGN.md` §6.1，决策见 §7。
+- **`nextentity-tests-jdbc`**：把 `nextentity-testing` 的 32 个一致性/差分/变形基类接到 JDBC 后端（31 个基类 × 三方言接线 = 93 个接线类，`MySql*`/`Postgres*`/`SqlServer*` 互斥命名），H2 走 surefire、真 MySQL（`MySql*`）、真 PostgreSQL（`-Pjdbc-postgres`，`Postgres*`）、真 SQL Server（`-Pjdbc-sqlserver`，`SqlServer*`）各走一条 failsafe 容器通道；`nextentity-testing` 一行未改，证明接缝没被 JPA 绑架。三条容器通道的报告目录分别为 `target/failsafe-reports/`、`target/failsafe-pg-reports/`、`target/failsafe-mssql-reports/`，凭证按目录认成 `failsafe:` / `failsafe-pg:` / `failsafe-mssql:` 三条独立通道。
 - **LIKE / `contains` 的反斜杠语义与 JPA 对齐**：模式串里的 `%`/`_` 一律不转义（`contains` 即模式匹配，语义同 2.2.3），但字符串字面量里的 `\` 在绑参前翻倍，使反斜杠按字面解释——等价于 Hibernate 在 H2 的 `escape ''` 与在 MySQL 的 `replace(?, '\\', '\\\\')`；两方言 `TextMatchConsistencyTest` 同一批用例全绿。`@JoinColumn(referencedColumnName=...)` 采用三段式：空值放行（JPA 默认指向目标 `@Id`）、等于目标 `@Id` 实际列名（`@Column(name)` 优先）放行、其余指向非 `@Id` 列的 meta 期拒绝（UOE）；无 `@Version` 且无可写标量列的 `update` 明确拒绝（UOE），不静默丢语义。
-- 接线：根 pom `modules`/`dependencyManagement` 与 `nextentity-bom` 增加两个模块；`nextentity-arch` 增加 `JDBC_IS_A_BACKEND_ONLY` 等规则（ArchUnit 只看 classpath，arch 的 test 依赖必须显式加 `jdbc`，否则规则匹配空集）；`tools/gate.sh` 的 `fast`/`pr`/`ci`/`night`/`release` 档注册 `jdbc-unit`/`tests-jdbc`/`tests-jdbc-it`/`pit-jdbc` 通道；`-DskipTests` 的 install 统一带 `-Djacoco.check.skip=true`。
+- 接线：根 pom `modules`/`dependencyManagement` 与 `nextentity-bom` 增加两个模块；`nextentity-arch` 增加 `JDBC_IS_A_BACKEND_ONLY` 等规则（ArchUnit 只看 classpath，arch 的 test 依赖必须显式加 `jdbc`，否则规则匹配空集）；`tools/gate.sh` 的 `fast`/`pr`/`ci`/`night`/`release` 档注册 `jdbc-unit`/`tests-jdbc`/`tests-jdbc-it` 通道，`ci`/`night`/`release` 另注册方言矩阵通道 `ci-jdbc-pg`/`ci-jdbc-mssql`、`night-jdbc-it-pg`/`night-jdbc-it-mssql`、`release-jdbc-it-pg`/`release-jdbc-it-mssql`（`-Pjdbc-postgres` / `-Pjdbc-sqlserver`），`tools/gate-receipt.py` 认 `failsafe-pg:`/`failsafe-mssql:` 通道；`-DskipTests` 的 install 统一带 `-Djacoco.check.skip=true`。
 - 设计正文 `docs/DESIGN.md`、使用正文 `docs/USAGE.md`。
 - 本地门禁：Spotless(Palantir) + Checkstyle + PMD + SpotBugs + JaCoCo + Enforcer + ArchUnit + japicmp(API 兼容)。
 - 新增 `nextentity-arch` 模块：ArchUnit 规则集中到一处，覆盖模块循环、`core` 包边界、`spec` 纯净与不可变、时间/随机注入、接口宽度、产物边界（api 的 class 只能来自 `nextentity-api`）。原 `core` 内的 `ArchitectureTest` 因 classpath 看不到 `jpa`/`spring` 而迁出。
@@ -98,11 +98,18 @@
 ### Removed
 
 - `AbstractRepository<T, ID>` 的 `ID` 类型参数：本类从不使用它，Javadoc 里也写着「仅用于子类声明的可读性」。**为什么必须破**：未使用的类型参数会误导子类以为主键类型参与契约，且它让 `AbstractRepository` 的签名与 `EntityOperations` 的泛型面不一致。迁移是机械替换：`extends AbstractRepository<Order, Long>` → `extends AbstractRepository<Order>`（README、`docs/USAGE.md` 与本仓库示例已同步）。
-- 相对 nextentity 2.x 不再提供：JDBC 第二引擎与方言、自研元模型、实体事件总线、CGLIB 仓储代理、`Tuple5`~`Tuple10`。
+- 相对 nextentity 2.x 不再提供：自研元模型、实体事件总线、CGLIB 仓储代理、`Tuple5`~`Tuple10`（2.x 的 JDBC 第二引擎已由 3.0.0 的 `nextentity-jdbc` 以新形态重新提供）。
 - `api` 包 44 个类型整体移除（完整清单与逐条理由见下方 Migration 第 1 节）。
 - `core.expression.*`、`core.meta.impl.DefaultMetamodel`、`core.util.Iterators`、`core.EntityTemplateFactory`、`spring.EntityFactoryBuilder` 等 2.x 内部符号不再提供。
 - `SelectStep.selectDistinct(PathRef)`：由 `distinct().select(ref)` 取代。**为什么必须破**：两者语义完全相同，留着就是两个入口；而补「多列 `selectDistinct` 重载」会让「投影形态 × 是否去重」变成笛卡尔积（4 × 2 = 8 个入口），并把 `SelectStep` 从 6 个方法推到 8 个、撞穿 `API_INTERFACES_STAY_NARROW` 的 ≤6。迁移是机械替换：`x.selectDistinct(f)` → `x.distinct().select(f)`，仓库内 5 处移植用例与 point-mall 2 个调用点（`DigitalCardRepository:85`、`OrderImportRecordRepository:71`）均已替换。
 - `core.TransactionOperations`：零实现、零调用的空接缝已删除（事务边界由调用方 `@Transactional` 持有）。需要第二后端时随它一起引入，不提前摆空接口。
+
+### 不提供的能力
+
+- 自定义方言的 `quote` 只作用于**查询渲染**（表名 / SELECT 列 / WHERE·ON 列 / GROUP BY·HAVING·ORDER BY 列）：
+  INSERT/UPDATE 与建表 DDL 恒用裸名，`JdbcPersistExecutor` 不接方言、`WriteSql` 不调 `quote`。内置四种方言的 `quote`
+  均为恒等，故对开箱用法无影响；需要引用型标识符（保留字/大小写敏感）时，DDL 与写侧裸名要能接受，或自行在列名/表名层规避。
+  生成键回读用的列标签也不 quote（驱动返回原始 label）。
 
 ### Migration
 

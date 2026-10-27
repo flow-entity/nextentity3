@@ -23,7 +23,7 @@
 | 仅文档/注释（`*.md`、Javadoc） | 跳过构建 |
 | `api` / `core` / `spec` / `compile` / `exec` | `mvn -q spotless:apply` → `mvn -pl nextentity-core,nextentity-arch -am test` |
 | `jpa` / `spring` | `mvn -q spotless:apply` → `mvn -pl nextentity-arch -am test` → `mvn -pl nextentity-tests-jpa -am verify`（含 MySQL 容器通道；无 Docker 时自动跳过，见 DESIGN §5「通道拆分」） |
-| `jdbc` / `nextentity-tests-jdbc` | `mvn -q spotless:apply` → `mvn -pl nextentity-jdbc -am test` → `mvn -pl nextentity-arch -am test` → `mvn -pl nextentity-tests-jdbc -am verify`（含 MySQL 容器通道；无 Docker 时自动跳过，CI 必须加 `-Dnextentity.requireContainer=true`） |
+| `jdbc` / `nextentity-tests-jdbc` | `mvn -q spotless:apply` → `mvn -pl nextentity-jdbc -am test` → `mvn -pl nextentity-arch -am test` → `mvn -pl nextentity-tests-jdbc -am verify`（H2 + MySQL 容器通道）→ `mvn -pl nextentity-tests-jdbc -am verify -Pjdbc-postgres` → `mvn -pl nextentity-tests-jdbc -am verify -Pjdbc-sqlserver`（PG / SQL Server 容器通道；三条容器通道都需 Docker，无 Docker 时自动跳过。CI 必须加 `-Dnextentity.requireContainer=true`——两个方言 profile 已把 requireContainer 固化在 profile 里，默认 MySQL 通道仍需显式带） |
 | `jdbc` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-jdbc test-compile pitest:mutationCoverage`（阈值 95）；**跑前先 `mvn install -DskipTests -Djacoco.check.skip=true`** 刷 `~/.m2`——PIT 不带 `-am`，且 `-DskipTests` 下没有 jacoco exec 数据会让 `jacoco:check` 判红 |
 | `nextentity-testing`（一致性基类、夹具、`ConsistencySupport`） | `mvn -q spotless:apply` → `mvn -pl nextentity-tests-jpa -am verify`（含 MySQL 容器通道；无 Docker 时自动跳过，见 DESIGN §5「通道拆分」） |
 | `nextentity-tests-legacy` | `mvn -pl nextentity-tests-legacy -am test`（默认 H2，无容器）；动到方言相关再跑 `-Ddbc=h2,mysql -Dnextentity.requireContainer=true`（**不带 require 时容器起不来会静默降级成只跑 H2**，见 DESIGN §5「通道拆分」） |

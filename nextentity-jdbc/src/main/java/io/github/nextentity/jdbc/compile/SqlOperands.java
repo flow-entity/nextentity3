@@ -53,7 +53,7 @@ final class SqlOperands {
         return switch (aggregate.function()) {
             case MAX -> "max(" + inner + ")";
             case MIN -> "min(" + inner + ")";
-            case AVG -> "avg(" + inner + ")";
+            case AVG -> renderer.dialect().averageOf(inner);
             case SUM -> "sum(" + inner + ")";
             case COUNT -> "count(" + inner + ")";
             case COUNT_DISTINCT -> "count(distinct " + inner + ")";

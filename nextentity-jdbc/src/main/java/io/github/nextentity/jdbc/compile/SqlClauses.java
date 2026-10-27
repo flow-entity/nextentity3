@@ -7,13 +7,16 @@ import io.github.nextentity.core.spec.Ordering;
 import io.github.nextentity.core.spec.QuerySpec;
 import io.github.nextentity.core.spec.Spec;
 import io.github.nextentity.core.spec.Window;
+import io.github.nextentity.jdbc.dialect.LockClause;
 import java.util.ArrayList;
 import java.util.List;
 
 /// 除 SELECT 列表以外的子句渲染：`where / group by / having / order by / limit offset / for update`。
 ///
-/// 每个方法返回「带前导空格的子句」或空串，由 `SqlRenderer` 顺序拼接。
+/// 每个方法返回「带前导空格的子句」或空串，由 `SqlRenderer` 顺序拼接；窗口与锁片段由方言提供。
 final class SqlClauses {
+
+    private static final LockClause NO_LOCK = new LockClause("", "");
 
     private final SqlRenderer renderer;
 
@@ -53,34 +56,13 @@ final class SqlClauses {
     }
 
     String window(Window window) {
-        if (window == null) {
-            return "";
-        }
-        Integer offset = window.offset();
-        Integer limit = window.limit();
-        boolean hasOffset = offset != null && offset > 0;
-        boolean hasLimit = limit != null && limit > 0;
-        if (!hasLimit && !hasOffset) {
-            return "";
-        }
-        // limit 缺省但给了 offset：MySQL 要求 LIMIT 在前，用哨兵 Long.MAX_VALUE（设计 §3.7）
-        // 注意不能写成三元：`hasLimit ? limit : Long.MAX_VALUE` 会把 limit 提升成 long，绑定值类型就变了。
-        if (hasLimit) {
-            renderer.addParameter(limit);
-        } else {
-            renderer.addParameter(Long.MAX_VALUE);
-        }
-        if (!hasOffset) {
-            return " limit ?";
-        }
-        renderer.addParameter(offset);
-        return " limit ? offset ?";
+        return window == null ? "" : renderer.window(false);
     }
 
-    String lock(QuerySpec spec) {
+    LockClause lock(QuerySpec spec) {
         LockMode lock = spec.lock();
         if (lock == null) {
-            return "";
+            return NO_LOCK;
         }
         if (lock != LockMode.PESSIMISTIC_WRITE) {
             throw new UnsupportedOperationException("JDBC 后端只支持 PESSIMISTIC_WRITE: " + lock);
@@ -89,6 +71,6 @@ final class SqlClauses {
             throw new UnsupportedOperationException(
                     "锁只支持实体查询: " + spec.entityType().getName());
         }
-        return " for update";
+        return renderer.dialect().lock(lock, renderer.paths().aliases());
     }
 }

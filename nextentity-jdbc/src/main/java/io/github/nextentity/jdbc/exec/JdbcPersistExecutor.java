@@ -100,7 +100,7 @@ public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
                 if (!keys.next()) {
                     throw new PersistenceException("未返回生成键: " + statement.sql());
                 }
-                id.set(entity, identifier(keys.getLong(1), id.type()));
+                id.set(entity, identifier(GeneratedKeys.read(keys, id.column(), statement.sql()), id.type()));
             }
         } catch (SQLException e) {
             throw new PersistenceException(EXECUTION_FAILED + statement.sql(), e);

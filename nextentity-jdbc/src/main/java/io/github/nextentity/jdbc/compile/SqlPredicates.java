@@ -60,11 +60,17 @@ final class SqlPredicates {
                     ? escapeBackslash(literal.value())
                     : literal.value();
             renderer.addParameter(convert(value, attributeOf(comparison.left())));
-            return left + " " + operator(comparison.operator()) + " ?";
+            String predicate = left + " " + operator(comparison.operator()) + " ?";
+            return comparison.operator() == ComparisonOperator.LIKE
+                    ? predicate + renderer.dialect().likeEscape()
+                    : predicate;
         }
         if (comparison.left() instanceof Literal literal) {
             renderer.addParameter(convert(literal.value(), attributeOf(right)));
-            return "? " + operator(comparison.operator()) + " " + operands.expression(right);
+            String predicate = "? " + operator(comparison.operator()) + " " + operands.expression(right);
+            return comparison.operator() == ComparisonOperator.LIKE
+                    ? predicate + renderer.dialect().likeEscape()
+                    : predicate;
         }
         return operands.expression(comparison.left()) + " " + operator(comparison.operator()) + " "
                 + operands.expression(right);

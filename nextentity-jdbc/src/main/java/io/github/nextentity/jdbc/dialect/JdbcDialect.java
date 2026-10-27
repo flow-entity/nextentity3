@@ -1,28 +1,117 @@
 package io.github.nextentity.jdbc.dialect;
 
-/// JDBC 后端方言接缝。
+import io.github.nextentity.api.LockMode;
+import io.github.nextentity.core.spec.Window;
+import java.util.List;
+
+/// 对外可实现的方言接缝：实现本接口并 `new JdbcEntityOperationsFactory(dataSource, dialect)` 即完成自定义方言接入。
 ///
-/// 本期 MySQL 8 与 H2（MODE=MySQL）在 SQL 语法上完全对齐（`limit ? offset ?`、`for update`、
-/// `count(*)`、`left join` 均共同支持），因此这里只有产品名探测，没有渲染分叉方法。
+/// 共 8 个成员：静态 `of(String)` + 7 个实例钩子（`name` / `quote` / `selectHead` / `limitClause` /
+/// `lock` / `averageOf` / `likeEscape`）。除 [JdbcDialect#name()] 外全部实例钩子有默认实现，
+/// 默认形态 = H2 / MySQL / PostgreSQL；SQL Server 覆写 `selectHead` / `limitClause` / `lock` / `averageOf` / `likeEscape`。
+/// 钩子语义与绑定契约见设计 §6.1，允许的渲染点见 §6.3——不在那列的差异不得加钩子。
 public interface JdbcDialect {
 
-    /// 方言名，用于诊断：`"mysql"` / `"h2"`。
+    /// 内置名：`"h2"` / `"mysql"` / `"postgresql"` / `"sqlserver"`；自定义方言返回自己的名（仅用于日志/错误）。
     ///
     /// @return 方言名
     String name();
 
-    /// 按数据库产品名取方言实现（大小写无关）。
+    /// 产品名 → 内置实现：忽略大小写；`PostgreSQL 16.2` / `Microsoft SQL Server 2022` 按前缀容错。
     ///
     /// @param databaseProductName `DatabaseMetaData#getDatabaseProductName()`，可为 null
     /// @return 对应方言
-    /// @throws UnsupportedOperationException 产品名不受支持
+    /// @throws UnsupportedOperationException 产品名不受支持（消息引导传入自定义实现）
     static JdbcDialect of(String databaseProductName) {
-        if ("MySQL".equalsIgnoreCase(databaseProductName)) {
+        String product = databaseProductName == null ? "" : databaseProductName.trim();
+        if ("MySQL".equalsIgnoreCase(product)) {
             return new MySqlDialect();
         }
-        if ("H2".equalsIgnoreCase(databaseProductName)) {
+        if ("H2".equalsIgnoreCase(product)) {
             return new H2Dialect();
         }
-        throw new UnsupportedOperationException("不支持的数据库产品: " + databaseProductName + "（本期只支持 MySQL / H2）");
+        if (startsWithIgnoreCase(product, "PostgreSQL")) {
+            return new PostgresDialect();
+        }
+        if (startsWithIgnoreCase(product, "Microsoft SQL Server")) {
+            return new SqlServerDialect();
+        }
+        throw new UnsupportedOperationException(
+                "内置支持 H2 / MySQL / PostgreSQL / SQL Server；其它产品请实现 JdbcDialect 并通过 (DataSource, JdbcDialect) 传入："
+                        + databaseProductName);
+    }
+
+    /// 标识符引用；默认恒等。当前只有 4 个调用点（设计 §6.3）：`SqlPaths` 的列/表达式/关联解析三处
+    /// 与 `SqlRenderer` 的 FROM 表名一处。
+    ///
+    /// @param identifier 裸标识符（表名 / 列名）
+    /// @return 引用后的标识符
+    default String quote(String identifier) {
+        return identifier;
+    }
+
+    /// 完整 SELECT 头：默认 `select <columns>`；SQL Server 的 exists 用 `select top (1) <columns>`。
+    ///
+    /// @param columns 已渲染的 SELECT 列表
+    /// @param exists  是否是 exists 查询（单行上限）
+    /// @return SELECT 头片段
+    default String selectHead(String columns, boolean exists) {
+        return "select " + columns;
+    }
+
+    /// 语句尾部窗口片段；窗口参数由方言按自己的顺序 append，renderer 不解析占位符位置。
+    ///
+    /// @param window      窗口，可能为 [Window#NONE]
+    /// @param exists      是否是 exists 查询（默认渲染字面量 ` limit 1`，不绑参）
+    /// @param hasOrderBy  本次 SQL 是否已有 ORDER BY（false 时要求排序的方言自行补）
+    /// @param parameters  窗口参数出口
+    /// @return 语句尾片段（` limit ?` / ` limit ? offset ?` / 空串）
+    default String limitClause(Window window, boolean exists, boolean hasOrderBy, SqlParameterSink parameters) {
+        if (exists) {
+            return " limit 1";
+        }
+        Integer offset = window == null ? null : window.offset();
+        Integer limit = window == null ? null : window.limit();
+        boolean hasOffset = offset != null && offset > 0;
+        boolean hasLimit = limit != null && limit > 0;
+        if (hasLimit) {
+            parameters.append(limit);
+        } else if (hasOffset) {
+            // limit 缺省但给了 offset：MySQL/H2/PG 都要求 LIMIT 在前，用哨兵表示不限行
+            parameters.append(Long.MAX_VALUE);
+        }
+        if (!hasOffset) {
+            return hasLimit ? " limit ?" : "";
+        }
+        parameters.append(offset);
+        return " limit ? offset ?";
+    }
+
+    /// 锁片段；aliases = 本次 SELECT 实际出现的表别名，根表在前。
+    ///
+    /// @param mode    锁模式（renderer 已保证只传 `PESSIMISTIC_WRITE`）
+    /// @param aliases 表别名列表（根别名在前）
+    /// @return 锁片段；不支持锁的方言必须抛 [UnsupportedOperationException]
+    default LockClause lock(LockMode mode, List<String> aliases) {
+        return new LockClause("", " for update");
+    }
+
+    /// 聚合表达式：入参是已渲染的列表达式（含别名与 quote）。默认 `avg(x)`。
+    ///
+    /// @param operand 已渲染的聚合操作数
+    /// @return AVG 表达式
+    default String averageOf(String operand) {
+        return "avg(" + operand + ")";
+    }
+
+    /// LIKE 谓词尾的转义子句；默认空串。SQL Server 需要 ` escape '\'`。
+    ///
+    /// @return 追加在 `like ?` 之后的片段
+    default String likeEscape() {
+        return "";
+    }
+
+    private static boolean startsWithIgnoreCase(String value, String prefix) {
+        return value.regionMatches(true, 0, prefix, 0, prefix.length());
     }
 }

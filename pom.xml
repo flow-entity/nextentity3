@@ -43,6 +43,8 @@
         <archunit.version>1.4.1</archunit.version>
         <h2.version>2.3.232</h2.version>
         <testcontainers.version>1.20.4</testcontainers.version>
+        <postgresql.version>42.7.10</postgresql.version>
+        <mssql-jdbc.version>13.2.1.jre11</mssql-jdbc.version>
 
         <!-- 容器通道的公共开关。放在根 pom 而不是各测试模块里：这套值漏在任何一个模块外，
              那个模块的容器通道就会以「Could not find a valid Docker environment」静默降级
@@ -63,6 +65,8 @@
              拉不到镜像等于这层没跑。默认走 docker.xuanyuan.run，换源/换版本用 -D 覆盖。
              ryuk 也要走同一个源：Testcontainers 会另起一个 Ryuk 容器负责回收，它默认从 Docker Hub 拉。 -->
         <nextentity.mysql.image>docker.xuanyuan.run/library/mysql:8.0.18</nextentity.mysql.image>
+        <nextentity.postgres.image>docker.xuanyuan.run/library/postgres:16</nextentity.postgres.image>
+        <nextentity.sqlserver.image>mcr.microsoft.com/mssql/server:2022-latest</nextentity.sqlserver.image>
         <nextentity.ryuk.image>docker.xuanyuan.run/testcontainers/ryuk:0.11.0</nextentity.ryuk.image>
 
         <!-- 构建插件版本 -->
@@ -171,6 +175,30 @@
                 <groupId>org.testcontainers</groupId>
                 <artifactId>junit-jupiter</artifactId>
                 <version>${testcontainers.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${testcontainers.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>mssqlserver</artifactId>
+                <version>${testcontainers.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${postgresql.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.microsoft.sqlserver</groupId>
+                <artifactId>mssql-jdbc</artifactId>
+                <version>${mssql-jdbc.version}</version>
                 <scope>test</scope>
             </dependency>
         </dependencies>

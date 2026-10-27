@@ -16,6 +16,7 @@ import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.logging.Logger;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
@@ -76,6 +77,32 @@ class JdbcEntityOperationsFactoryTest {
     }
 
     @Test
+    void injectedCustomDialectDrivesTheWholePipeline() throws SQLException {
+        DataSource dataSource = new SimpleDataSource(URL);
+        execute(dataSource, "create table if not exists factory_item (id bigint primary key, name varchar(255))");
+        execute(dataSource, "delete from factory_item");
+        JdbcDialect custom = new H2CompatibleDialect();
+        JdbcEntityOperationsFactory factory = new JdbcEntityOperationsFactory(dataSource, custom);
+        EntityOperations<FactoryItem> operations = factory.operations(FactoryItem.class);
+
+        operations.insert(new FactoryItem(1L, "a"));
+        operations.insertAll(List.of(new FactoryItem(2L, "b"), new FactoryItem(3L, "c")));
+        operations.update(new FactoryItem(3L, "renamed"));
+
+        assertThat(factory.dialect().name()).isEqualTo("custom-h2");
+        assertThat(operations
+                        .query()
+                        .select(Path.of(FactoryItem::name))
+                        .orderBy(Path.of(FactoryItem::id))
+                        .asc()
+                        .list())
+                .containsExactly("a", "b", "renamed");
+        assertThat(operations.query().count()).isEqualTo(3);
+        assertThat(operations.query().slice(1, 1).total()).isEqualTo(3);
+        assertThat(operations.query().slice(1, 1).data()).hasSize(1);
+    }
+
+    @Test
     void operationsOfUnmappedClassIsRejected() {
         assertThatThrownBy(() -> new JdbcEntityOperationsFactory(new SimpleDataSource(URL)).operations(Object.class))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -88,7 +115,8 @@ class JdbcEntityOperationsFactoryTest {
 
         assertThatThrownBy(() -> new JdbcEntityOperationsFactory(dataSource))
                 .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessage("不支持的数据库产品: Oracle（本期只支持 MySQL / H2）");
+                .hasMessage(
+                        "内置支持 H2 / MySQL / PostgreSQL / SQL Server；其它产品请实现 JdbcDialect 并通过 (DataSource, JdbcDialect) 传入：Oracle");
     }
 
     @Test
@@ -167,6 +195,15 @@ class JdbcEntityOperationsFactoryTest {
         try (Connection connection = dataSource.getConnection();
                 var statement = connection.createStatement()) {
             statement.execute(sql);
+        }
+    }
+
+    /// 只实现 `name()`，其余全部走 `JdbcDialect` 默认实现（= H2 / MySQL / PostgreSQL 形态）。
+    private static final class H2CompatibleDialect implements JdbcDialect {
+
+        @Override
+        public String name() {
+            return "custom-h2";
         }
     }
 
