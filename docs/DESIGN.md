@@ -217,7 +217,7 @@ L4 的载体在 `nextentity-tests-jpa`：H2 用例走 surefire，容器用例（
 
 **覆盖率要用合并口径看**：各模块自己的 `jacoco.xml` 只统计本模块 `src/test` 的执行数据，而 L2/L3/L4 的用例跑在 `nextentity-tests-jpa` 的 JVM 里——只看模块报告会把「语义套件跑到了、模块单测没跑到」的行误判成缺口（`JpaOperands` 的 `sub`/`mul`/`div` 分支就是这么被误判的）。所以 `nextentity-tests-jpa/pom.xml` 绑了 `jacoco:report-aggregate`，`mvn -pl nextentity-tests-jpa -am verify` 之后看 `nextentity-tests-jpa/target/site/jacoco-aggregate/jacoco.xml`，那才是「全部测试合起来」的口径。
 
-用合并口径实测（`577` H2 + `549` 容器用例全跑，两个通道各 skip 1 条，见下「方言矩阵」），生产代码里没被执行的行**只剩清单里那些**，但四个模块要分开看口径：
+用合并口径实测（`587` H2 + `559` 容器用例全跑，两个通道各 skip 1 条，见下「方言矩阵」），生产代码里没被执行的行**只剩清单里那些**，但四个模块要分开看口径：
 
 - **聚合报告只含 `nextentity-jpa` 与 `nextentity-testing` 两个 group**（`report-aggregate` 只收直接编译依赖，`api`/`core` 是传递依赖、`spring` 是 test 作用域，都不进聚合文件）。`nextentity-jpa` 组里只剩两处：`jpa/meta/JpaEntityAttribute.java:48-49`、`:58-59`（`catch` 行与 `throw` 行都从未执行，所以台账登记的 `:49`/`:59` 字符串拼接变异体是 NO_COVERAGE——两处说的是同一件事，不是行号打架）。行成形已从 `JpaExecutor` 移到 `builder.RowAssembler`，`JpaExecutor` 里原先那几行「行已被模块单测执行、只剩分支没走全」的条目随之消失（见下表）。
 - `api`/`core`/`spring` 看各自模块的 `jacoco.xml`：`api` 剩 **0 行 1 分支**（`api/Conditions.java:104` 的 `parent == null` 子分支）、`core` 剩 3 行（`core/builder/PathRefs.java:90-92`）、`spring` 零行零分支。
@@ -283,11 +283,11 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 **默认不激活**：PG 兼容模式有 8 条已定性的方言差异（3 条 SQL 文本快照 + 5 条 H2 不认的 PG 锁语法），清单与租约在 `tools/expected-failures/h2-postgresql.txt`。让这 8 条在每次 `mvn test` 里都红，等于训练所有人忽略红；所以只在 `pr`/`ci`/`night`/`release` 档由 `gate.sh` 显式带 `-Pdialect-pg`，配合基线逐条判定（判据见下「执行凭证」）。**跳过预算也要分开申报**：两个模式的跳过项恰好相反——默认模式跳「PG 专属那条」，PG 模式跳「`Instant` 严格相等那条」（H2 的 PG 兼容模式把 `Instant` 绑成丢偏移的 `timestamp`）。
 
-两个方向都写死：surefire `<excludes>` 排掉 `*IntegrationTest`，failsafe `<includes>` 收这些类。failsafe 的默认 includes 是 `**/IT*`、`**/*IT`、`**/*ITCase`，与项目约定的 `*IntegrationTest` 一个都不匹配——不显式配置时容器用例会被 surefire 跑掉、failsafe 一条也收不到。容器用例统一 `@Tag("container")` + `@ExtendWith(MySqlL4Gate.class)`。当前实测条数：surefire **577** 条（全 H2）、failsafe **549** 条（真 MySQL，含 `@Version` 乐观锁、`@Convert`、批量写、悲观锁四类写路径场景，另加嵌入/时间/自增主键三族写侧维度），两个通道各跳过 **1** 条——就是 `TemporalWriteContract` 里那条 PG 兼容模式专用的 `Instant` 偏移用例（`@DisabledIfSystemProperty` 标记，默认两通道都不跑，PG 通道跑它、同时关掉严格相等那条），**不是**新引入的静默跳过。拆分之初是 130 / 110，差额来自后续补的差分 oracle（见下「差分 oracle 台账」）、写侧往返用例与写侧维度覆盖（见上「写侧维度覆盖」）。**第二后端同款拆分**：`nextentity-tests-jdbc` 的 surefire 跑 H2（表由测试侧 DDL 建，不经 Hibernate；H2 用 `MODE=MySQL`，DDL 是 MySQL/PG/MSSQL 三家都能执行的子集，库名/列类型差异由 `JdbcSchema` 按方言替换）；failsafe 默认跑真 MySQL（`MySqlL4Container`），`-Pjdbc-postgres` / `-Pjdbc-sqlserver` 把 failsafe 的 `include` 与 `reportsDirectory` 切到对应方言（`failsafe-pg-reports` / `failsafe-mssql-reports`）——三条容器通道**互斥**，各自跑同名基类的 31 个方言接线类（`MySql*` / `Postgres*` / `SqlServer*`，共 31×3 = 93 个接线类），即每家容器上都是同一个「31 个基类」的语义面。通道条数下限登记在 `tools/gate.sh` 的 `STEP_MIN_TESTS`（**H2 511 / MySQL 502 / PG 502 / MSSQL 501**，2026-10-28 容器首跑实测、四条通道 skip 全 0），三条容器通道跳过预算默认 0。
+两个方向都写死：surefire `<excludes>` 排掉 `*IntegrationTest`，failsafe `<includes>` 收这些类。failsafe 的默认 includes 是 `**/IT*`、`**/*IT`、`**/*ITCase`，与项目约定的 `*IntegrationTest` 一个都不匹配——不显式配置时容器用例会被 surefire 跑掉、failsafe 一条也收不到。容器用例统一 `@Tag("container")` + `@ExtendWith(MySqlL4Gate.class)`。当前实测条数：surefire **587** 条（全 H2）、failsafe **559** 条（真 MySQL，含 `@Version` 乐观锁、`@Convert`、批量写、悲观锁四类写路径场景，另加嵌入/时间/自增主键三族写侧维度），两个通道各跳过 **1** 条——就是 `TemporalWriteContract` 里那条 PG 兼容模式专用的 `Instant` 偏移用例（`@DisabledIfSystemProperty` 标记，默认两通道都不跑，PG 通道跑它、同时关掉严格相等那条），**不是**新引入的静默跳过。拆分之初是 130 / 110，差额来自后续补的差分 oracle（见下「差分 oracle 台账」）、写侧往返用例与写侧维度覆盖（见上「写侧维度覆盖」）。**第二后端同款拆分**：`nextentity-tests-jdbc` 的 surefire 跑 H2（表由测试侧 DDL 建，不经 Hibernate；H2 用 `MODE=MySQL`，DDL 是 MySQL/PG/MSSQL 三家都能执行的子集，库名/列类型差异由 `JdbcSchema` 按方言替换）；failsafe 默认跑真 MySQL（`MySqlL4Container`），`-Pjdbc-postgres` / `-Pjdbc-sqlserver` 把 failsafe 的 `include` 与 `reportsDirectory` 切到对应方言（`failsafe-pg-reports` / `failsafe-mssql-reports`）——三条容器通道**互斥**，各自跑同名基类的 31 个方言接线类（`MySql*` / `Postgres*` / `SqlServer*`，共 31×3 = 93 个接线类），即每家容器上都是同一个「31 个基类」的语义面。通道条数下限登记在 `tools/gate.sh` 的 `STEP_MIN_TESTS`（**H2 528 / MySQL 512 / PG 512 / MSSQL 511**，2026-10-28 冻结实测、四条通道 skip 全 0）；`nextentity-jdbc` 单测通道 `surefire:nextentity-jdbc` = **329**，三条容器通道跳过预算默认 0。
 
-**时区必须钉在构建参数上，不能钉在用例里**：`nextentity-tests-jpa/pom.xml` 的 `pinned.timezone`（默认 `Asia/Shanghai`）同时进 surefire/failsafe 的 `-Duser.timezone` 与 `-Dnextentity.pinnedTimezone`，后者是时间契约自检的期望值——两个 `-D` 同源，「换过时区也全绿」才不是空话。理由有两层：`Instant` 往返断言的区分力全在「墙钟被挪过就会差整小时」，跑测机器若在 UTC，这条断言对「按 JVM 时区换算」这类缺陷的区分力归零；而 Hibernate 在 `buildSessionFactory()` 时就缓存了默认时区，装置又由子类字段初始化创建，所以 `@BeforeEach` 里 `TimeZone.setDefault` 是「晚于建连」的——实测会把 `LocalDate.of(2024,3,10)` 写成 `2024-03-09`，等于把装置变成非法的时区实验。换时区验证用 `-Dpinned.timezone=America/New_York` 整通道跑；**不要**用 `-DargLine=...`，jacoco `prepare-agent` 会覆盖 `argLine` 属性、且 pom 已把 `-Duser.timezone` 写进同一个 `argLine`，后写胜出，改了等于没改。副作用要记住：这是**模块级** fork 参数，本模块全部 577 条用例都在该时区下跑（本模块只有 `TemporalWriteContract` 读 `ZoneId.systemDefault()`，其余用例与时间无关），CI 机器若在别的时区，行为与本地不同。
+**时区必须钉在构建参数上，不能钉在用例里**：`nextentity-tests-jpa/pom.xml` 的 `pinned.timezone`（默认 `Asia/Shanghai`）同时进 surefire/failsafe 的 `-Duser.timezone` 与 `-Dnextentity.pinnedTimezone`，后者是时间契约自检的期望值——两个 `-D` 同源，「换过时区也全绿」才不是空话。理由有两层：`Instant` 往返断言的区分力全在「墙钟被挪过就会差整小时」，跑测机器若在 UTC，这条断言对「按 JVM 时区换算」这类缺陷的区分力归零；而 Hibernate 在 `buildSessionFactory()` 时就缓存了默认时区，装置又由子类字段初始化创建，所以 `@BeforeEach` 里 `TimeZone.setDefault` 是「晚于建连」的——实测会把 `LocalDate.of(2024,3,10)` 写成 `2024-03-09`，等于把装置变成非法的时区实验。换时区验证用 `-Dpinned.timezone=America/New_York` 整通道跑；**不要**用 `-DargLine=...`，jacoco `prepare-agent` 会覆盖 `argLine` 属性、且 pom 已把 `-Duser.timezone` 写进同一个 `argLine`，后写胜出，改了等于没改。副作用要记住：这是**模块级** fork 参数，本模块全部 587 条用例都在该时区下跑（本模块只有 `TemporalWriteContract` 读 `ZoneId.systemDefault()`，其余用例与时间无关），CI 机器若在别的时区，行为与本地不同。
 
-**容器通道不许静默降级**：`MySqlL4Gate` 是自定义的 `ExecutionCondition`，默认「没有 Docker 就跳过」（本地开发需要这个宽进），但加上 `-Dnextentity.requireContainer=true` 后不再跳过——Docker 缺失时容器在静态初始化阶段启动失败，构建直接变红。**CI 必须带这个属性**，否则真方言对拍会悄悄变成 skip，报表上看不出区别，L4 就成了纸面门禁（数字以「通道拆分」一节的实测条数为准）。**CI 已接入**：`.github/workflows/ci.yml`（push/PR）与 `nightly.yml`（每日 02:00 Asia/Shanghai）都经 `tools/gate.sh` 的 `ci`/`night` 档调 `-Dnextentity.requireContainer=true`，且凭证对「跳过数超过申报预算」判缺口（容器通道在 `ci`/`night` 档申报预算 `1`，就是那条 PG 专用用例；预算写死在 `tier_ci`/`tier_night` 里，改不动的是默认值 0）——所以这条门禁不再依赖人记得加属性。三条路径都实测过：宽进 + 无 Docker → 容器用例全部 skip / SUCCESS；强制 + 无 Docker → 容器类整体 error / FAILURE；强制 + 有 Docker → 549 条全 pass（1 条 PG 专用用例按标记 skip）/ SUCCESS。
+**容器通道不许静默降级**：`MySqlL4Gate` 是自定义的 `ExecutionCondition`，默认「没有 Docker 就跳过」（本地开发需要这个宽进），但加上 `-Dnextentity.requireContainer=true` 后不再跳过——Docker 缺失时容器在静态初始化阶段启动失败，构建直接变红。**CI 必须带这个属性**，否则真方言对拍会悄悄变成 skip，报表上看不出区别，L4 就成了纸面门禁（数字以「通道拆分」一节的实测条数为准）。**CI 已接入**：`.github/workflows/ci.yml`（push/PR）与 `nightly.yml`（每日 02:00 Asia/Shanghai）都经 `tools/gate.sh` 的 `ci`/`night` 档调 `-Dnextentity.requireContainer=true`，且凭证对「跳过数超过申报预算」判缺口（容器通道在 `ci`/`night` 档申报预算 `1`，就是那条 PG 专用用例；预算写死在 `tier_ci`/`tier_night` 里，改不动的是默认值 0）——所以这条门禁不再依赖人记得加属性。三条路径都实测过：宽进 + 无 Docker → 容器用例全部 skip / SUCCESS；强制 + 无 Docker → 容器类整体 error / FAILURE；强制 + 有 Docker → 559 条全 pass（1 条 PG 专用用例按标记 skip）/ SUCCESS。
 
 **镜像源**：容器镜像默认走 `docker.xuanyuan.run`（`docker.xuanyuan.run/library/mysql:8.0.18` 与 `docker.xuanyuan.run/testcontainers/ryuk:0.11.0`），不走 `registry-1.docker.io`——受限网络下直连 Docker Hub 会 `EOF`，而容器用例是 L4 的唯一载体，镜像拉不到就等于这层没跑。两处细节：`MySQLContainer` 会校验镜像仓库名，用镜像站前缀必须显式 `asCompatibleSubstituteFor("mysql")`，否则被判「不兼容」拒启；Ryuk 是 Testcontainers 另起的回收容器，默认也从 Docker Hub 拉，所以它要单独用 `ryuk.container.image` 属性（同时给 `TESTCONTAINERS_RYUK_CONTAINER_IMAGE` 环境变量，防版本差异只认其中一条）指到同一个源。换源或换版本用 `-Dnextentity.mysql.image=` / `-Dnextentity.ryuk.image=` 覆盖，不必改 pom。实测确认：运行期 `docker ps` 里出现的就是这两个镜像站的引用，跑完由镜像站的 Ryuk 回收干净。
 
@@ -356,7 +356,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 第五次实测（H2 侧 564 条，第三轮审查整改之后）：**仍是 8 红、仍是「3 快照 + 5 锁」，零生产缺陷**（`ItemSqlSnapshotTest` / `ItemProjectionMapperRenderingTest` / `ItemTier1RenderingTest` 各 1 条，`ItemLockConsistencyTest` 3 条、`ItemQueryEntrySnapshotTest` 2 条），另有 1 条**严格相等**用例按标记 skip（互斥对的另一半，PG 专用那条在 PG 通道是跑的）。这次把 `Instant` 那条从「容忍带」换成**精确断言**：先实测漂移量——PG 兼容模式 `driftSeconds=-28800`、`offsetSeconds=28800`，恰好 `-1 ×` JVM 偏移；H2 的 MySQL 模式 `driftSeconds=0`、读回原值——于是 PG 分支钉 `drift == -offset`。上一轮那个「漂移小于 24 小时」覆盖 UTC−12…UTC+14 全部合法偏移，对「`Instant` 被时区挪动」零区分力，属于假断言，已废弃。严格相等那条与 PG 专用那条用 `@DisabledIfSystemProperty` / `@EnabledIfSystemProperty` 互斥，**两个通道的 skip 计数恒为 1**，且两条都在报表明面上。其余 554 条在两个方言下断言逐字相同。
 
-> 口径提示：上面「第 N 次实测」里的 563 / 564 / 536 是**当轮**的条数，不是当前值；当前条数以「通道拆分」表的 577 / 549 为准（差异来自后续补的差分 oracle 与写侧维度用例）。
+> 口径提示：上面「第 N 次实测」里的 563 / 564 / 536 是**当轮**的条数，不是当前值；当前条数以「通道拆分」表的 587 / 559 为准（差异来自后续补的差分 oracle 与写侧维度用例）。
 
 
 **NULL 序参数化（R1，已落，方言中立那一格补齐）**：`ORDER BY x` 里 `null` 排前还是排后是**后端事实**，不是可推导语义，所以两处都改成显式传入、默认值 = MySQL：
@@ -377,7 +377,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 判据不是「报告存在」，而是七条：
 
 - **报告比本轮新**：`mtime >= 本轮开始 epoch`。上一次构建留下的报告不算——这是「`Nothing to compile` 复用前序产物」的直接防线。
-- **条数有下限**：`tests == 0` 的通道报「报告存在但 tests=0」，不报通过；每个通道另有**绝对下限**（`gate.sh` 的 `STEP_MIN_TESTS` 逐步申报，如 `surefire:nextentity-tests-jpa=577`），低于下限即红。只钉「方言通道与基础通道条数相等」不够——两边一起被缩到只剩那 8 条基线用例时相等仍成立，等于允许把矩阵悄悄削成空壳。下限是单调的：加用例不用改它，只有删用例才会撞红，正好是要人停下来解释的那个动作。
+- **条数有下限**：`tests == 0` 的通道报「报告存在但 tests=0」，不报通过；每个通道另有**绝对下限**（`gate.sh` 的 `STEP_MIN_TESTS` 逐步申报，如 `surefire:nextentity-tests-jpa=587`），低于下限即红。只钉「方言通道与基础通道条数相等」不够——两边一起被缩到只剩那 8 条基线用例时相等仍成立，等于允许把矩阵悄悄削成空壳。下限是单调的：加用例不用改它，只有删用例才会撞红，正好是要人停下来解释的那个动作。
 - **必需通道必须真跑**：`-DskipITs` 下 failsafe 一份报告都不新（目录里上一轮的 XML 还在，靠逐文件 mtime 过滤才抓得住，这也是 `--require` 必须点名通道的原因）、`-Dnextentity.requireContainer` 下容器类整体 error，两种都判缺口；档位声明的步骤没落快照（被 `-am` 守卫拦下）同样算缺口，见 `merge --expect-step`。
 - **PIT 不许零变异**：除阈值外额外要求 `mutations > 0`，堵住根 pom `failWhenNoMutations=false` 那条假绿通道；分数按 PIT 自己的口径算并与 pom 的 `mutationThreshold` 比对。
 - **静态检查也要进凭证**：checkstyle / PMD / SpotBugs 都绑在 `verify`，改一处
@@ -399,7 +399,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 三件事只有凭证能给出、日志给不出：**skip 清单连理由**（`方言跳过必须可数` 从「PR 里手写」变成自动抽取）、**`~/.m2` 与源码的时间戳倒挂**（`-pl` 不带 `-am` 时会读到旧语义）、以及**跨模块合并口径的条数**（`-am` 反应堆会把 jpa/spring 一起带进来，比单看目标模块多）。
 
-档位与「该跑什么」一一对应：`fast` = 格式化检查 + 架构规则 + `api`/`core` 快测试（无容器；跑 `test` 阶段，故不含静态检查——静态检查只在 `verify` 上，落点在 `pr` 及以后各档）；`pr` = 架构规则 + H2 577 + PG 兼容模式 577（基线 8 条）+ 遗留 727（`nextentity-arch` 不在 tests-jpa 的依赖链上，`-am` 带不上它，必须显式写进 `-pl`；漏了就是「提交前红、推之前绿」）；`ci` = 前者 + 真 MySQL 容器通道 + `-Dnextentity.requireContainer=true`；`night` = `install` 刷快照 + 全量含容器 + 遗留 h2/mysql 双跑 + PIT×5；`release` = `clean verify` + api-compat。**`pr` 与 `ci` 都不覆盖遗留语料的 MySQL 通道**：两档的遗留步骤**都不传 `-Ddbc`**，`Env` 在未设置时退化为 `List.of("h2")`，于是只有 H2 一遍（PR 期换 30 秒级反馈），那条通道最早在 `night` 才有结论——所以「遗留方言回归」的反馈延迟是「最长到次日 02:00」，本地要提前看必须自己跑 `-Ddbc=h2,mysql -Dnextentity.requireContainer=true`。`ci`/`pr` 刻意不跑全量 PIT（单模块分钟级，不该挡 push），PIT 的落点在 `night` 与 `release`。
+档位与「该跑什么」一一对应：`fast` = 格式化检查 + 架构规则 + `api`/`core` 快测试（无容器；跑 `test` 阶段，故不含静态检查——静态检查只在 `verify` 上，落点在 `pr` 及以后各档）；`pr` = 架构规则 + H2 587 + PG 兼容模式 587（基线 8 条）+ 遗留 727（`nextentity-arch` 不在 tests-jpa 的依赖链上，`-am` 带不上它，必须显式写进 `-pl`；漏了就是「提交前红、推之前绿」）；`ci` = 前者 + 真 MySQL 容器通道 + `-Dnextentity.requireContainer=true`；`night` = `install` 刷快照 + 全量含容器 + 遗留 h2/mysql 双跑 + PIT×5；`release` = `clean verify` + api-compat。**`pr` 与 `ci` 都不覆盖遗留语料的 MySQL 通道**：两档的遗留步骤**都不传 `-Ddbc`**，`Env` 在未设置时退化为 `List.of("h2")`，于是只有 H2 一遍（PR 期换 30 秒级反馈），那条通道最早在 `night` 才有结论——所以「遗留方言回归」的反馈延迟是「最长到次日 02:00」，本地要提前看必须自己跑 `-Ddbc=h2,mysql -Dnextentity.requireContainer=true`。`ci`/`pr` 刻意不跑全量 PIT（单模块分钟级，不该挡 push），PIT 的落点在 `night` 与 `release`。
 **唯一例外是 `ci` 档多跑一个 `nextentity-core` 的 PIT**（`: ci-pit-core`）。它买到的是**反馈时延**，不是
 「堵住一个漏洞」——这一点初稿写错过，这里改正：等价变异台账是工作树里的数据文件，与被它豁免的用例、生产代码
 同源，**没有独立锚点**。因此「PR 里删一条断言、同时给对应变异体加一行台账」这条路径**在哪一档校验都同样绿**，
@@ -438,12 +438,12 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 ### 6.1 方言接缝：`JdbcDialect` 的渲染钩子
 
-`JdbcDialect` 是**公开 API**（`io.github.nextentity.jdbc.dialect`），职责是「SQL 方言差异的**唯一**集中点」，不是名字标签。接口共 8 个成员（静态 `of(String)` + 7 个实例钩子），除必答题 `name()` 外全部有默认实现，默认形态 = H2 / MySQL / PostgreSQL；SQL Server 覆写了 `selectHead` / `limitClause` / `lock` / `averageOf` / `likeEscape`：
+`JdbcDialect` 是**公开 API**（`io.github.nextentity.jdbc.dialect`），职责是「SQL 方言差异的**唯一**集中点」，不是名字标签。接口共 8 个成员（静态 `of(String)` + 7 个实例钩子），除必答题 `name()` 外全部有默认实现，默认形态 = H2 / MySQL / PostgreSQL；四个内置方言都覆写 `quote`（H2/PG `"…"`、MySQL 反引号、SQL Server `[…]`），SQL Server 另覆写 `selectHead` / `limitClause` / `lock` / `averageOf` / `likeEscape`：
 
 | 钩子 | 方言差异 | H2 | MySQL | PostgreSQL | SQL Server |
 |---|---|---|---|---|---|
 | `name()` | 方言名（`h2`/`mysql`/`postgresql`/`sqlserver`），用于日志与错误消息 | h2 | mysql | postgresql | sqlserver |
-| `quote(String identifier)` | 标识符引用；**默认恒等**，内置四方言都不覆写（决策表「标识符全程不加引号」），调用点只有 `SqlRenderer` 的表名与 `SqlPaths` 的列名/join 目标表/join 列共 4 处 | 恒等 | 恒等 | 恒等 | 恒等 |
+| `quote(String identifier)` | 标识符引用：**默认裸名（恒等）**；只有 meta 标记 `quoted=true`（注解名被反引号包裹）的标识符才调用 → 按方言渲染：H2/PG `"…"`、MySQL 反引号、SQL Server `[…]`。调用点只有两类：查询侧 4 处（表名/列名/join 目标表/join 列）+ 写侧（INSERT 表名·列名、UPDATE 表名·SET 列·WHERE id/version 列），写侧同样只对 quoted 生效；DDL 不由模块生成（§6.2） | 默认恒等 | `` `…` `` | `"…"` | `[…]` |
 | `selectHead(String columns, boolean exists)` | SELECT 头 | `select <columns>` | `select <columns>` | `select <columns>` | exists → `select top (1) <columns>`，普通查询 `select <columns>` |
 | `limitClause(Window, boolean exists, boolean hasOrderBy, SqlParameterSink)` | 语句尾部窗口片段 | `limit ? [offset ?]`；窗口缺省时不追加 | 同 H2 | 同 H2 | `offset ? rows [fetch next ? rows only]`；`hasOrderBy=false` 时先补 ` order by 1`；exists 不追加 |
 | `lock(LockMode, List<String> aliases)` | 行锁片段（返回 `LockClause(tableSuffix, statementSuffix)`；`aliases` 里根别名在前） | ` for update` | ` for update` | ` for update of <根别名>` | 抛 UOE（autocommit 下 `with (updlock)` 语义不等价） |
@@ -459,7 +459,9 @@ EntityOperationsFactory factory = new JdbcEntityOperationsFactory(dataSource, my
 
 `JdbcEntityOperationsFactory(DataSource, JdbcDialect)` 是**显式注入**路径：不探测、不自动注册，也是唯一保证「用户自定义渲染真的生效」的路径。单参构造器 `JdbcEntityOperationsFactory(DataSource)` 在构造期取一条连接、读 `DatabaseMetaData.getDatabaseProductName()`、交给 `JdbcDialect.of(String)` 探测（忽略大小写；`PostgreSQL 16.2` / `Microsoft SQL Server 2022` 按前缀容错；`MySQL`/`H2` 全等）；**探测不到时 `JdbcDialect.of` 抛 `UnsupportedOperationException`，消息列出内置四种方言并引导用 `(DataSource, JdbcDialect)` 传入自定义实现**——不猜、不回退到默认方言。
 
-**不变量（自定义方言也必须遵守）**：① 参数只能经 `SqlParameterSink.append(...)` 追加，不得把字面量拼进 SQL（防注入 + PIT 可覆盖）；② 锁只接受 `PESSIMISTIC_WRITE`，其余四种模式在 `JdbcCompiler` 层就 `UnsupportedOperationException`；③ 生成的 SQL 必须让 `JdbcExecutor` 按 `QuerySpec` 的投影列数读回（钩子不得改 SELECT 列表的**内容**，只允许 `selectHead` 加 `top (1)` 这类行数上限）；④ `limitClause` 只追加语句**尾部**，SELECT 头的方言差异归 `selectHead`，两钩子不交叉；⑤ `quote` 的调用点只允许 `SqlRenderer`（根表名）与 `SqlPaths`（列名/join 目标表/join 列）那 4 处（写侧与 DDL 不走 `quote`，恒裸名；生成键回读的列标签也不 quote），新增调用点要同步改本文件。
+**不变量（自定义方言也必须遵守）**：① 参数只能经 `SqlParameterSink.append(...)` 追加，不得把字面量拼进 SQL（防注入 + PIT 可覆盖）；② 锁只接受 `PESSIMISTIC_WRITE`，其余四种模式在 `JdbcCompiler` 层就 `UnsupportedOperationException`；③ 生成的 SQL 必须让 `JdbcExecutor` 按 `QuerySpec` 的投影列数读回（钩子不得改 SELECT 列表的**内容**，只允许 `selectHead` 加 `top (1)` 这类行数上限）；④ `limitClause` 只追加语句**尾部**，SELECT 头的方言差异归 `selectHead`，两钩子不交叉；⑤ `quote` 只允许上述两类调用点，且**只对 `quoted=true` 的标识符**调用（未 quoted 恒裸名，默认方言不产生任何引号 → 既有 SQL 快照零改动）；新增调用点要同步改本文件。
+
+**标识符引用（保留字 / 存量表，v5）**：注解名（`@Table/@Entity(name)`、`@Column(name)`、`@JoinColumn(name|referencedColumnName)`）**被反引号包裹 ⇒ 需要引用**；未包裹 ⇒ 裸名。反引号是跨后端**标记**，渲染字符由方言决定：JDBC 侧 H2/PG `"…"`、MySQL 反引号、SQL Server `[…]`；**JPA 侧同一规则由 Hibernate 原生支持，生产代码零改动**（H2 上 Hibernate 实测渲染 `"…"`，与 JDBC 的 H2 方言逐字节一致；MySQL 两侧都是反引号）。**JPA 的承诺范围只有 H2 + MySQL**：JPA + PG/MSSQL 未验证、不在矩阵（Hibernate 在该两库上的引用形态属推断），实测失败形态 PG `must appear in the GROUP BY`、MSSQL `INVALID_OBJECT_NAME` 记入已知限制，不据此改 JPA 生产代码、也不引入 `columnQuoting` 类第二套配置。MSSQL 方括号只存在于 JDBC `quote()`。meta 归一化：剥引号存裸名 + `quoted` 标志，所有名字比较/生成键回读用裸名；测试侧 DDL 按方言引号建表（`schema-h2.sql` 用 `"`、`schema-mysql.sql` 反引号、`schema-postgres.sql` `"`、`schema-sqlserver.sql` `[]`）。
 
 **升级指南**：`jdbc` 是 3.0.0 首发模块，无 2.x 兼容负担。相对设计期草稿的唯一破坏点是 `JdbcDialect` 的接口形态（草稿里是「两个方法 + 名字」，定稿是上表 7 个实例钩子 + 静态 `of(String)`，共 8 个成员）——照草稿写过自研方言的消费方需按上表补 `limitClause`/`lock` 的签名；`JdbcEntityOperationsFactory(DataSource)` 单参构造器保留，只装默认路径的代码不受影响。
 
@@ -489,7 +491,7 @@ EntityOperationsFactory factory = new JdbcEntityOperationsFactory(dataSource, my
 | 推翻「`Aggregates` 不加 `MIN`/`AVG`」（原结论：两者在 point-mall 0 命中） | 原结论是**调用点驱动**的（当时 `.min(` / `.avg(` 全库 0 命中），本次把 `min`/`avg` 纳入第一梯队能力面：`core.spec.AggregateFunction` 增加 `MIN`/`AVG`，`api.Aggregates` 暴露 `min()`/`avg()`，`jpa.compile.JpaOperands` 用同一个 `switch` 渲染 | 原理由所在处：`core.spec.AggregateFunction` 的类注释里「不加 MIN/AVG：avg 0 命中」一段——**已被本次取代**（该注释已改写为"六种聚合都在能力面内"）。保留的约束只有一条：聚合结果 `AggregateValue` 不接聚合方法，`max().max()` 编译期即不可写 |
 | 投影成调用方类型走显式 `api.ProjectionMapper`（`expressions()` 声明列集 + `map(Tuple)` 造结果） | 反射方案编译期零保护（列名写错、DTO 字段改名都要到运行期才知道），且与 2.2.3 的 `select(Class<R>)` 同构——那正是 3.x 要去掉的东西；显式映射器把「查什么」与「怎么造」放进同一个对象，两者不可能错配，且映射代码是普通 Java（IDE 可跳转、编译期可查）。代价：`Tuple#size()` 的契约下限从 2 放宽到 1（映射器路径单列也产出 `Tuple`），并新增一条「列序 ↔ 取值下标」的漂移风险，靠「`IDX_*` 常量紧邻 `expressions()`」的写法约定 + 渲染列序用例（`ItemProjectionMapperRenderingTest#projectionColumnsAppearInExpressionOrder`）兜住 | `project(Class<R>)` 这类反射 + 注解自动映射 |
 | 第二后端用 `JdbcCompiler` 额外公开 `count(QuerySpec)`/`exists(QuerySpec)`，`JdbcQuery` 携带 `QuerySpec` | `core` 的 `forCount`/`forExists` 产出的规格与普通规格不可区分，执行器不能改 SQL；编译期一次成型 `{sql, bindings}` | 执行器套派生表；让 `SqlStatement` 携带 count/exists 三份 SQL |
-| SQL 与 DDL 的标识符全程不加引号 | H2 未引用折大写、MySQL 小写，各自自洽；引用会制造大小写陷阱，DDL 与 SQL 必须同形 | 方言 `quote()`（H2 原样 / MySQL 反引号） |
+| 标识符默认裸名，需要引用时在注解名里用**反引号显式标记**，渲染字符由方言决定（H2/PG `"…"`、MySQL 反引号、MSSQL `[…]`） | 默认不引用保持既有 250 条快照零改动、无大小写陷阱；显式标记让保留字/存量表（含空格、混合大小写）可用，且 JPA（Hibernate 原生支持反引号）与 JDBC 共用同一条机械规则、JPA 生产代码零改动 | 全程不加引号（保留字不可用）；默认全引用（全量快照 churn + 大小写陷阱）；内置保留字表自动引用（词表不可测、方言不一） |
 | `JdbcEntityOperationsFactory(DataSource)` 每次操作独立取连接，事务边界归调用方 | 与 JPA 后端「事务边界调用方持有」一致；JDBC 默认自动提交 | 自带事务模板/连接持有（真要时随第二后端一起引入，不提前摆空接缝） |
 | JDBC 写入不支持关联属性：非 null 抛 UOE、null 跳过该列 | 共享套件没有「写入关联」的正向用例；静默置 null 会丢数据 | 静默忽略；写入支持 `@ManyToOne`（需级联语义） |
 | `LockMode` 只映射 `PESSIMISTIC_WRITE → for update`，其余四种拒绝 | JDBC 没有可移植的等价 SQL（`FOR SHARE` 各方言不一） | 全部映射（假承诺乐观/共享锁语义） |
@@ -510,6 +512,9 @@ EntityOperationsFactory factory = new JdbcEntityOperationsFactory(dataSource, my
 | MSSQL 不做行锁（`lock` 抛 UOE），`LockClause.tableSuffix` 留给自定义方言 | MSSQL 无标准 `FOR UPDATE`；`with (updlock)` 在 autocommit 下不持锁、语义不等价 | 用 updlock hint 冒充行锁 |
 | 生成键 / 绑定 / 事务 / ResultSet 列读取不进方言接口 | 四种数据库的标准 JDBC 行为一致（容器探针验证）；需要不同策略属于「新后端实现」而非「方言差异」 | exec 层方言策略钩子 |
 | `offset==0` 视为无 offset；`limit==0` 视为不限行且方言不得渲染 fetch | 与 JPA `setFirstResult(0)` 一致；MSSQL `fetch next 0` 实测报错 | 按 `limited()` 字面渲染（会渲出 `fetch next 0` / 多余 `offset 0`） |
+| 标识符引用 = 「注解名反引号标记 + 方言 `quote()` 渲染」的机械规则，JPA/JDBC 共用 | 用户要求保留字/存量表可用且 JPA 也实现；Hibernate 原生支持反引号（探针 H2/MySQL 命中），JPA 生产代码零改动；JDBC 仅在 quoted 时引用，既有 250 条快照零 churn | 新增第二套配置/注解（`@QuotedColumn` 等）；按方言加保留字表自动引用 |
+| 引用字符按方言，且 H2 上 JPA 与 JDBC **逐字节一致用双引号** | 避免两后端同库同表不同引号导致排查/快照做语义换算；H2(MODE=MySQL) 两种引号都接受，形一致更易验证 | JDBC 的 H2 用反引号（语义等价但形态不一致） |
+| JPA 侧测试矩阵只有 H2 + MySQL，不写 PG/MSSQL 的 JPA 用例 | 仓库 JPA 通道本就只有两条；不虚构未验证组合；JDBC 四方言已实测 | 声称 JPA 四方言全支持（无证据） |
 
 ---
 

@@ -41,8 +41,12 @@ public interface JdbcDialect {
                         + databaseProductName);
     }
 
-    /// 标识符引用；默认恒等。当前只有 4 个调用点（设计 §6.3）：`SqlPaths` 的列/表达式/关联解析三处
-    /// 与 `SqlRenderer` 的 FROM 表名一处。
+    /// 标识符引用；默认恒等（自定义方言可保持不引用）。内置四方言实现：H2 / PostgreSQL 双引号、
+    /// MySQL 反引号、SQL Server 方括号，内部同字符双写转义。
+    ///
+    /// 只有 meta 标记为 quoted 的名字（注解名用反引号包裹过）才会调用本方法，未 quoted 一律裸名，
+    /// 因此默认方言下既有 SQL 零变化。调用点（设计 §6.3）：SELECT 列 / FROM 表 / JOIN 目标表与 ON
+    /// 两侧列 / WHERE·GROUP BY·HAVING·ORDER BY 的列引用。
     ///
     /// @param identifier 裸标识符（表名 / 列名）
     /// @return 引用后的标识符

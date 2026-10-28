@@ -187,7 +187,7 @@ class JdbcDialectTest {
 
         assertThat(dialect.averageOf("t0.score")).isEqualTo("avg(cast(t0.score as float))");
         assertThat(dialect.likeEscape()).isEqualTo(" escape '\\'");
-        assertThat(dialect.quote("item")).isEqualTo("item");
+        assertThat(dialect.quote("item")).isEqualTo("[item]");
     }
 
     /// 只实现 `name()` 的自定义方言：其余成员必须回落到默认形态。

@@ -13,6 +13,12 @@ public final class SqlServerDialect implements JdbcDialect {
         return "sqlserver";
     }
 
+    /// T-SQL 方括号，内部 `]` 双写转义；双引号在 MSSQL 也可用，但方括号不依赖 `QUOTED_IDENTIFIER`。
+    @Override
+    public String quote(String identifier) {
+        return '[' + identifier.replace("]", "]]") + ']';
+    }
+
     /// exists 的单行上限放 SELECT 头（T-SQL 没有可参数化的 LIMIT 尾缀）。
     @Override
     public String selectHead(String columns, boolean exists) {

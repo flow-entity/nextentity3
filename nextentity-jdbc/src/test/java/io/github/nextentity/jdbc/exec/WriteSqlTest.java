@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.jdbc.compile.SqlStatement;
+import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
 import io.github.nextentity.jdbc.support.GeneratedItem;
 import io.github.nextentity.jdbc.support.ItemStatus;
@@ -21,12 +22,13 @@ import org.junit.jupiter.api.Test;
 class WriteSqlTest {
 
     private final JdbcMeta meta = new JdbcMeta();
+    private final JdbcDialect dialect = JdbcDialect.of("H2");
 
     @Test
     void insertWithoutGeneratedKeyListsEveryScalarColumn() {
         SnapshotItem item = new SnapshotItem(7L, "banana", 10, 20, "n1", ItemStatus.ACTIVE);
 
-        SqlStatement statement = WriteSql.insert(meta.entityType(SnapshotItem.class), item);
+        SqlStatement statement = WriteSql.insert(meta.entityType(SnapshotItem.class), item, dialect);
 
         assertThat(statement.sql())
                 .isEqualTo("insert into item (id, name, score, score2, note, status) values (?, ?, ?, ?, ?, ?)");
@@ -37,7 +39,7 @@ class WriteSqlTest {
     void insertSkipsGeneratedKeyColumn() {
         GeneratedItem item = new GeneratedItem("generated");
 
-        SqlStatement statement = WriteSql.insert(meta.entityType(GeneratedItem.class), item);
+        SqlStatement statement = WriteSql.insert(meta.entityType(GeneratedItem.class), item, dialect);
 
         assertThat(statement.sql()).isEqualTo("insert into generated_item (name) values (?)");
         assertThat(statement.parameters()).containsExactly("generated");
@@ -47,7 +49,7 @@ class WriteSqlTest {
     void insertSkipsNullAssociationColumn() {
         SnapshotAsset asset = new SnapshotAsset(3L, "bandage", null);
 
-        SqlStatement statement = WriteSql.insert(meta.entityType(SnapshotAsset.class), asset);
+        SqlStatement statement = WriteSql.insert(meta.entityType(SnapshotAsset.class), asset, dialect);
 
         assertThat(statement.sql()).isEqualTo("insert into asset (id, name) values (?, ?)");
         assertThat(statement.parameters()).containsExactly(3L, "bandage");
@@ -57,7 +59,7 @@ class WriteSqlTest {
     void insertRejectsNonNullAssociation() {
         SnapshotAsset asset = new SnapshotAsset(3L, "anvil", new SnapshotOwner(1L, "alpha"));
 
-        assertThatThrownBy(() -> WriteSql.insert(meta.entityType(SnapshotAsset.class), asset))
+        assertThatThrownBy(() -> WriteSql.insert(meta.entityType(SnapshotAsset.class), asset, dialect))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessage("关联属性写入未支持: " + SnapshotAsset.class.getName() + ".owner");
     }
@@ -66,7 +68,7 @@ class WriteSqlTest {
     void updateSetsScalarColumnsAndMatchesId() {
         SnapshotItem item = new SnapshotItem(7L, "banana", 10, 20, "n1", ItemStatus.DONE);
 
-        SqlStatement statement = WriteSql.update(meta.entityType(SnapshotItem.class), item);
+        SqlStatement statement = WriteSql.update(meta.entityType(SnapshotItem.class), item, dialect);
 
         assertThat(statement.sql()).isEqualTo("update item set name=?, score=?, score2=?, note=?, status=? where id=?");
         assertThat(statement.parameters()).containsExactly("banana", 10, 20, "n1", "DONE", 7L);
@@ -77,7 +79,7 @@ class WriteSqlTest {
         VersionedItem item = new VersionedItem(7L, "banana");
         item.version(2L);
 
-        SqlStatement statement = WriteSql.update(meta.entityType(VersionedItem.class), item);
+        SqlStatement statement = WriteSql.update(meta.entityType(VersionedItem.class), item, dialect);
 
         assertThat(statement.sql()).isEqualTo("update versioned_item set name=?, version=? where id=? and version=?");
         assertThat(statement.parameters()).containsExactly("banana", 3L, 7L, 2L);
@@ -89,7 +91,7 @@ class WriteSqlTest {
         JdbcMeta mutable = new JdbcMeta();
         assertThat(mutable.entityType(SnapshotAsset.class).attributes()).isNotEmpty();
 
-        assertThatThrownBy(() -> WriteSql.update(meta.entityType(SnapshotAsset.class), asset))
+        assertThatThrownBy(() -> WriteSql.update(meta.entityType(SnapshotAsset.class), asset, dialect))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessage("关联属性写入未支持: " + SnapshotAsset.class.getName() + ".owner");
     }
@@ -107,7 +109,7 @@ class WriteSqlTest {
     @Test
     void parametersAreImmutableCopy() {
         SnapshotItem item = new SnapshotItem(1L, "a", null, null, null, ItemStatus.NEW);
-        SqlStatement statement = WriteSql.insert(meta.entityType(SnapshotItem.class), item);
+        SqlStatement statement = WriteSql.insert(meta.entityType(SnapshotItem.class), item, dialect);
 
         assertThat(statement.parameters()).containsExactly(1L, "a", null, null, null, "NEW");
         assertThatThrownBy(() -> statement.parameters().add("x")).isInstanceOf(UnsupportedOperationException.class);

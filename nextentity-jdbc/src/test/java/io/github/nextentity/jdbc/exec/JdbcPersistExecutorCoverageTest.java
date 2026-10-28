@@ -4,6 +4,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.JdbcEntityType;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
 import io.github.nextentity.jdbc.support.GeneratedItem;
@@ -41,6 +42,7 @@ import org.junit.jupiter.api.Test;
 class JdbcPersistExecutorCoverageTest {
 
     private final JdbcMeta meta = new JdbcMeta();
+    private final JdbcDialect dialect = JdbcDialect.of("H2");
     private final DataSource dataSource = new SimpleDataSource("persist_coverage");
 
     @BeforeEach
@@ -203,7 +205,7 @@ class JdbcPersistExecutorCoverageTest {
 
     private <T> JdbcPersistExecutor<T> persist(Class<T> type) {
         JdbcEntityType<T> entityType = meta.entityType(type);
-        return new JdbcPersistExecutor<>(dataSource, entityType);
+        return new JdbcPersistExecutor<>(dataSource, entityType, dialect);
     }
 
     @SafeVarargs

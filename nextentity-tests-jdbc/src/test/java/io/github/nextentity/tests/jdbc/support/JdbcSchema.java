@@ -8,13 +8,17 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
 
-/// 建表脚本加载器：H2 与真 MySQL 共用 `schema-mysql.sql`，PG/MSSQL 用各自脚本。
+/// 建表脚本加载器：H2 用 `schema-h2.sql`、真 MySQL 用 `schema-mysql.sql`（两者内容相同，唯一差异是
+/// 保留字表 `order` 的引用字符——H2 与 Hibernate 一样用双引号，MySQL 用反引号），PG/MSSQL 用各自脚本。
 ///
-/// 按 `;` 切分逐句执行：同一容器库被多个接线类串跑，DDL 必须幂等（MySQL 用
+/// 按 `;` 切分逐句执行：同一容器库被多个接线类串跑，DDL 必须幂等（MySQL/H2 用
 /// `create table if not exists`；PG/MSSQL 每类独立 schema/database，用 `drop table if exists` + `create table`）。
 public final class JdbcSchema {
 
-    /// H2（`MODE=MySQL`）与真 MySQL 共用的建表脚本。
+    /// H2（`MODE=MySQL`）的建表脚本：保留字用双引号，与 Hibernate 在 H2 上的形态一致。
+    public static final String H2 = "schema-h2.sql";
+
+    /// 真 MySQL 的建表脚本：保留字用反引号。
     public static final String MYSQL = "schema-mysql.sql";
 
     /// PostgreSQL 16 建表脚本。
@@ -25,7 +29,7 @@ public final class JdbcSchema {
 
     private JdbcSchema() {}
 
-    /// 执行 H2/MySQL 建表脚本（`schema-mysql.sql`）。
+    /// 执行真 MySQL 建表脚本（`schema-mysql.sql`）。
     public static void apply(Connection connection) {
         apply(connection, MYSQL);
     }

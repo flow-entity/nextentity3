@@ -170,10 +170,10 @@ final class JdbcEntityRules {
     /// `@ManyToOne` 必须带 `@JoinColumn(name)`：没有 FK 列名就无法渲染 JOIN 与写入跳过规则。
     private static JdbcEntityAttribute association(Field field, String path) {
         JoinColumn joinColumn = field.getAnnotation(JoinColumn.class);
-        if (joinColumn == null || joinColumn.name().isEmpty()) {
+        if (joinColumn == null || JdbcNames.bare(joinColumn.name()).isEmpty()) {
             throw new UnsupportedOperationException("@ManyToOne 缺少 @JoinColumn(name): " + path);
         }
         JdbcColumns.rejectReferencedColumn(field, path, joinColumn.referencedColumnName());
-        return JdbcColumns.association(field, joinColumn.name());
+        return JdbcColumns.association(field, joinColumn.name(), joinColumn.referencedColumnName(), path);
     }
 }

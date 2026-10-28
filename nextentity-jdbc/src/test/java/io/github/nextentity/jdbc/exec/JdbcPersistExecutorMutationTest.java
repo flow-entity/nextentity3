@@ -3,6 +3,7 @@ package io.github.nextentity.jdbc.exec;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.JdbcEntityType;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
 import io.github.nextentity.jdbc.support.GeneratedItem;
@@ -38,6 +39,7 @@ class JdbcPersistExecutorMutationTest {
     private static final String URL = "jdbc:h2:mem:persist_mutation;MODE=MySQL;DB_CLOSE_DELAY=-1";
 
     private final JdbcMeta meta = new JdbcMeta();
+    private final JdbcDialect dialect = JdbcDialect.of("H2");
     private final DataSource dataSource = dataSource(URL);
 
     @BeforeEach
@@ -183,7 +185,8 @@ class JdbcPersistExecutorMutationTest {
         PlainKeyGenerated item = new PlainKeyGenerated("plain");
         JdbcEntityType<PlainKeyGenerated> entityType = meta.entityType(PlainKeyGenerated.class);
 
-        assertThatThrownBy(() -> new JdbcPersistExecutor<>(generatedKeylessDataSource(), entityType).insert(item))
+        assertThatThrownBy(
+                        () -> new JdbcPersistExecutor<>(generatedKeylessDataSource(), entityType, dialect).insert(item))
                 .isInstanceOf(PersistenceException.class)
                 .hasMessage("未返回生成键: insert into plain_key (name) values (?)");
     }
@@ -239,7 +242,7 @@ class JdbcPersistExecutorMutationTest {
 
     private <T> JdbcPersistExecutor<T> persist(Class<T> type) {
         JdbcEntityType<T> entityType = meta.entityType(type);
-        return new JdbcPersistExecutor<>(dataSource, entityType);
+        return new JdbcPersistExecutor<>(dataSource, entityType, dialect);
     }
 
     private long count(String table) {

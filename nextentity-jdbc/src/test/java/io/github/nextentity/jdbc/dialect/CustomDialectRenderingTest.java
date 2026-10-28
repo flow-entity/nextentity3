@@ -51,15 +51,14 @@ class CustomDialectRenderingTest {
         items().list();
 
         assertThat(executor.last.sql())
-                .isEqualTo("select /*head*/ t0.[id], t0.[name], t0.[score], t0.[score2], t0.[note], t0.[status]"
-                        + " from [item] t0");
+                .isEqualTo("select /*head*/ t0.id, t0.name, t0.score, t0.score2, t0.note, t0.status" + " from item t0");
     }
 
     @Test
     void likeEscapeIsAppendedAfterLikePredicate() {
         items().where(SnapshotItem::name).like("a%").list();
 
-        assertThat(executor.last.sql()).endsWith("where t0.[name] like ? /*like-escape*/");
+        assertThat(executor.last.sql()).endsWith("where t0.name like ? /*like-escape*/");
         assertThat(executor.last.parameters()).containsExactly("a%");
     }
 
@@ -67,7 +66,7 @@ class CustomDialectRenderingTest {
     void averageUsesDialectAverageHook() {
         items().select(Path.of(SnapshotItem::score).avg()).list();
 
-        assertThat(executor.last.sql()).isEqualTo("select /*head*/ customavg(t0.[score]) from [item] t0");
+        assertThat(executor.last.sql()).isEqualTo("select /*head*/ customavg(t0.score) from item t0");
     }
 
     @Test
@@ -85,8 +84,8 @@ class CustomDialectRenderingTest {
         JdbcQuery query = compiler.compile(spec);
 
         assertThat(query.sql())
-                .isEqualTo("select /*head*/ t0.[id], t0.[name], t0.[score], t0.[score2], t0.[note], t0.[status]"
-                        + " from [item] t0 where ? > t0.[score]");
+                .isEqualTo("select /*head*/ t0.id, t0.name, t0.score, t0.score2, t0.note, t0.status"
+                        + " from item t0 where ? > t0.score");
         assertThat(query.parameters()).containsExactly(10);
     }
 
@@ -108,8 +107,8 @@ class CustomDialectRenderingTest {
         JdbcQuery query = compiler.compile(spec);
 
         assertThat(query.sql())
-                .isEqualTo("select /*head*/ customavg(t0.[score]) from [item] t0 group by t0.[score]"
-                        + " having (customavg(t0.[score]) > ?)");
+                .isEqualTo("select /*head*/ customavg(t0.score) from item t0 group by t0.score"
+                        + " having (customavg(t0.score) > ?)");
         assertThat(query.parameters()).containsExactly(10);
         assertThat(query.columnTypes()).containsExactly(Double.class);
     }
@@ -122,7 +121,7 @@ class CustomDialectRenderingTest {
     void limitFragmentBindsThroughSink() {
         items().list(3);
 
-        assertThat(executor.last.sql()).endsWith("from [item] t0 order by t0.[id] asc limit ? /*custom*/");
+        assertThat(executor.last.sql()).endsWith("from item t0 order by t0.id asc limit ? /*custom*/");
         assertThat(executor.last.parameters()).containsExactly(3);
     }
 
@@ -131,7 +130,7 @@ class CustomDialectRenderingTest {
         items().where(Path.of(SnapshotItem::score)).gt(10).exists();
 
         SqlStatement exists = compiler.exists(executor.last.spec());
-        assertThat(exists.sql()).isEqualTo("select /*head*/ 1 from [item] t0 where t0.[score] > ? /*exists-limit*/");
+        assertThat(exists.sql()).isEqualTo("select /*head*/ 1 from item t0 where t0.score > ? /*exists-limit*/");
         assertThat(exists.parameters()).containsExactly(10);
         assertThat(exists.columnTypes()).containsExactly(Boolean.class);
     }
@@ -144,8 +143,8 @@ class CustomDialectRenderingTest {
         assets().where(ownerName.eq("alpha")).lock(LockMode.PESSIMISTIC_WRITE).list();
 
         assertThat(executor.last.sql())
-                .isEqualTo("select /*head*/ t0.[id], t0.[name] from [asset] t0 /*lock-table*/"
-                        + " left join [owner] t1 on t1.[id] = t0.[owner_id] where t1.[name] = ?"
+                .isEqualTo("select /*head*/ t0.id, t0.name from asset t0 /*lock-table*/"
+                        + " left join owner t1 on t1.id = t0.owner_id where t1.name = ?"
                         + " /*lock-tail*/ t0,t1");
         assertThat(executor.last.parameters()).containsExactly("alpha");
     }

@@ -29,26 +29,36 @@ final class JdbcColumns {
         }
         rejectColumnType(field, path);
         rejectColumnFlags(field, path);
+        ColumnName column = columnName(field, path);
         return new JdbcEntityAttribute(
                 field,
-                new JdbcEntityAttribute.Column(columnName(field), id, version, generated, enumStorage(field)),
+                new JdbcEntityAttribute.Column(
+                        column.name(), id, version, generated, enumStorage(field), column.quoted()),
                 null);
     }
 
-    /// `@ManyToOne` 的 FK 列（带 `@JoinColumn(name)`）。
-    static JdbcEntityAttribute association(Field field, String joinColumn) {
-        return new JdbcEntityAttribute(field, null, new JdbcEntityAttribute.Association(field.getType(), joinColumn));
+    /// `@ManyToOne` 的 FK 列（带 `@JoinColumn(name)`）：反引号包裹的名字剥掉并记 quoted。
+    static JdbcEntityAttribute association(Field field, String joinColumn, String referencedColumnName, String path) {
+        return new JdbcEntityAttribute(
+                field,
+                null,
+                new JdbcEntityAttribute.Association(
+                        field.getType(),
+                        JdbcNames.bare(joinColumn, path),
+                        JdbcNames.isQuoted(joinColumn),
+                        JdbcNames.isQuoted(referencedColumnName)));
     }
 
     /// §4.3 #9 被忽略的集合 / 一对一关联：可被 `attribute(name)` 解析，但不进 `attributes()`。
     static JdbcEntityAttribute ignoredAssociation(Field field) {
-        return new JdbcEntityAttribute(field, null, new JdbcEntityAttribute.Association(field.getType(), null));
+        return new JdbcEntityAttribute(
+                field, null, new JdbcEntityAttribute.Association(field.getType(), null, false, false));
     }
 
     /// R5：JOIN 固定按目标 `@Id` 列拼，`referencedColumnName` 只允许为空或等于目标 `@Id` 的实际列名
-    /// （`@Column(name)` 优先、否则字段名，忽略大小写）；其它值显式拒绝，避免静默拼出错误 JOIN。
+    /// （`@Column(name)` 优先、否则字段名，忽略大小写，反引号先剥）；其它值显式拒绝，避免静默拼出错误 JOIN。
     static void rejectReferencedColumn(Field field, String path, String referencedColumnName) {
-        String referenced = referencedColumnName.trim();
+        String referenced = JdbcNames.bare(referencedColumnName, path);
         if (referenced.isEmpty()) {
             return;
         }
@@ -59,13 +69,14 @@ final class JdbcColumns {
         }
     }
 
-    /// 目标实体的 `@Id` 实际列名，只读注解不建元数据，避免关联目标解析递归。
+    /// 目标实体的 `@Id` 实际列名（裸名），只读注解不建元数据，避免关联目标解析递归。
     private static String idColumn(Class<?> type) {
         for (Class<?> current = type; current != null && current != Object.class; current = current.getSuperclass()) {
             for (Field field : current.getDeclaredFields()) {
                 if (field.isAnnotationPresent(Id.class)) {
                     Column column = field.getAnnotation(Column.class);
-                    return column != null && !column.name().isEmpty() ? column.name() : field.getName();
+                    String name = column == null ? "" : JdbcNames.bare(column.name());
+                    return name.isEmpty() ? field.getName() : name;
                 }
             }
         }
@@ -116,10 +127,19 @@ final class JdbcColumns {
         return type == Integer.class || type == int.class || type == Long.class || type == long.class;
     }
 
-    private static String columnName(Field field) {
+    /// 列名：`@Column(name)` 非空优先（剥反引号），否则字段名。
+    private static ColumnName columnName(Field field, String path) {
         Column column = field.getAnnotation(Column.class);
-        return column != null && !column.name().isEmpty() ? column.name() : field.getName();
+        String raw = column == null ? "" : column.name();
+        String name = JdbcNames.bare(raw, path);
+        if (name.isEmpty()) {
+            return new ColumnName(field.getName(), false);
+        }
+        return new ColumnName(name, JdbcNames.isQuoted(raw));
     }
+
+    /// 列名 + quoted 标志。
+    private record ColumnName(String name, boolean quoted) {}
 
     /// 枚举存储：`@Enumerated(STRING)` → name；ORDINAL 或无注解（JPA 默认）→ ordinal。
     private static EnumStorage enumStorage(Field field) {

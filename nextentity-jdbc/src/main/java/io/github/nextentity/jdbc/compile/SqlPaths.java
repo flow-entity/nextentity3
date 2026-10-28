@@ -63,9 +63,10 @@ final class SqlPaths {
         return new Resolved(column(alias, last), last);
     }
 
-    /// 列引用：`别名.列名`，列名按方言引用。
+    /// 列引用：`别名.列名`；只有注解用反引号标记过的列名才走方言 `quote`，否则保持裸名。
     String column(String alias, JdbcEntityAttribute attribute) {
-        return alias + "." + dialect.quote(attribute.column());
+        String name = attribute.isColumnQuoted() ? dialect.quote(attribute.column()) : attribute.column();
+        return alias + "." + name;
     }
 
     /// 已有 join 子句（` left join ... on ...` 拼接串）。
@@ -86,8 +87,11 @@ final class SqlPaths {
         }
         JdbcEntityType<?> target = meta.entityType(attribute.associationTarget());
         String alias = "t" + nextAlias++;
+        String table = target.isTableQuoted() ? dialect.quote(target.table()) : target.table();
+        String joinColumn =
+                attribute.isJoinColumnQuoted() ? dialect.quote(attribute.joinColumn()) : attribute.joinColumn();
         joins.append(" left join ")
-                .append(dialect.quote(target.table()))
+                .append(table)
                 .append(' ')
                 .append(alias)
                 .append(" on ")
@@ -95,7 +99,7 @@ final class SqlPaths {
                 .append(" = ")
                 .append(ownerAlias)
                 .append('.')
-                .append(dialect.quote(attribute.joinColumn()));
+                .append(joinColumn);
         aliases.put(key, alias);
         aliasOrder.add(alias);
         return alias;

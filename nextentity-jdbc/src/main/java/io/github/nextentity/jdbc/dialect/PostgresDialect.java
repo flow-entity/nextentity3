@@ -13,6 +13,12 @@ public final class PostgresDialect implements JdbcDialect {
         return "postgresql";
     }
 
+    /// PostgreSQL 双引号，内部 `"` 双写转义。
+    @Override
+    public String quote(String identifier) {
+        return '"' + identifier.replace("\"", "\"\"") + '"';
+    }
+
     @Override
     public LockClause lock(LockMode mode, List<String> aliases) {
         return new LockClause("", " for update of " + aliases.get(0));

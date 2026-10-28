@@ -3,6 +3,7 @@ package io.github.nextentity.jdbc.exec;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
 import io.github.nextentity.jdbc.support.GeneratedItem;
 import io.github.nextentity.jdbc.support.IntegerGeneratedItem;
@@ -32,6 +33,7 @@ import org.junit.jupiter.api.Test;
 class JdbcPersistExecutorTest {
 
     private final JdbcMeta meta = new JdbcMeta();
+    private final JdbcDialect dialect = JdbcDialect.of("H2");
     private final DataSource dataSource = new SimpleDataSource("jdbc_persist");
 
     @BeforeEach
@@ -44,7 +46,7 @@ class JdbcPersistExecutorTest {
     }
 
     private <T> JdbcPersistExecutor<T> executor(Class<T> type) {
-        return new JdbcPersistExecutor<>(dataSource, meta.entityType(type));
+        return new JdbcPersistExecutor<>(dataSource, meta.entityType(type), dialect);
     }
 
     private void execute(String sql) throws SQLException {

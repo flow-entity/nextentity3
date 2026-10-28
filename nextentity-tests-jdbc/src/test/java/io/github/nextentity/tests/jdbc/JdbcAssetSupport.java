@@ -32,7 +32,7 @@ public class JdbcAssetSupport implements AutoCloseable {
     private final SingleConnectionDataSource dataSource;
 
     public JdbcAssetSupport(String databaseName) {
-        this(SingleConnectionDataSource.h2(databaseName));
+        this(SingleConnectionDataSource.h2(databaseName), JdbcSchema.H2);
     }
 
     protected JdbcAssetSupport(SingleConnectionDataSource dataSource) {

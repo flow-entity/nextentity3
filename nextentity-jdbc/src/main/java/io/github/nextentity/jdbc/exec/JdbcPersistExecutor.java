@@ -2,6 +2,7 @@ package io.github.nextentity.jdbc.exec;
 
 import io.github.nextentity.core.exec.PersistExecutor;
 import io.github.nextentity.jdbc.compile.SqlStatement;
+import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.JdbcEntityAttribute;
 import io.github.nextentity.jdbc.meta.JdbcEntityType;
 import jakarta.persistence.EntityNotFoundException;
@@ -32,14 +33,17 @@ public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
 
     private final DataSource dataSource;
     private final JdbcEntityType<T> entityType;
+    private final JdbcDialect dialect;
 
     /// 创建写入器。
     ///
     /// @param dataSource 数据源（每次操作独立取连接）
     /// @param entityType 实体元数据（表名、列名、主键 / 版本句柄）
-    public JdbcPersistExecutor(DataSource dataSource, JdbcEntityType<T> entityType) {
+    /// @param dialect     方言（只用于 quoted 标识符的引用形态，见 `JdbcDialect#quote`）
+    public JdbcPersistExecutor(DataSource dataSource, JdbcEntityType<T> entityType, JdbcDialect dialect) {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
         this.entityType = Objects.requireNonNull(entityType, "entityType");
+        this.dialect = Objects.requireNonNull(dialect, "dialect");
     }
 
     /// 插入一条：自增主键写后回填；无生成键时不接受 `null` 主键。
@@ -54,7 +58,7 @@ public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
         if (id.get(entity) == null) {
             throw new IllegalArgumentException(MISSING_ID + entityType.type().getName());
         }
-        executeUpdate(WriteSql.insert(entityType, entity));
+        executeUpdate(WriteSql.insert(entityType, entity, dialect));
         writeBackVersion(entity);
     }
 
@@ -90,7 +94,7 @@ public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
     }
 
     private void insertGenerated(T entity, JdbcEntityAttribute id) {
-        SqlStatement statement = WriteSql.insert(entityType, entity);
+        SqlStatement statement = WriteSql.insert(entityType, entity, dialect);
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement prepared =
                         connection.prepareStatement(statement.sql(), Statement.RETURN_GENERATED_KEYS)) {
@@ -118,7 +122,7 @@ public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
                         MISSING_ID + entityType.type().getName());
             }
             batch.add(entity);
-            statements.add(WriteSql.insert(entityType, entity));
+            statements.add(WriteSql.insert(entityType, entity, dialect));
         }
         if (batch.isEmpty()) {
             return;
@@ -142,7 +146,7 @@ public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
         JdbcEntityAttribute version = entityType.version();
         Object idValue = id.get(entity);
         Object versionValue = version == null ? null : version.get(entity);
-        int affected = executeUpdate(WriteSql.update(entityType, entity));
+        int affected = executeUpdate(WriteSql.update(entityType, entity, dialect));
         if (affected != 1) {
             String message = "实体 " + entityType.type().getName() + " 不存在: id=" + idValue;
             if (version == null) {

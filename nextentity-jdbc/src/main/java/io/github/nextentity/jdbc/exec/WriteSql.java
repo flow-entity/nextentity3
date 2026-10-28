@@ -1,6 +1,7 @@
 package io.github.nextentity.jdbc.exec;
 
 import io.github.nextentity.jdbc.compile.SqlStatement;
+import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.EnumStorage;
 import io.github.nextentity.jdbc.meta.JdbcEntityAttribute;
 import io.github.nextentity.jdbc.meta.JdbcEntityType;
@@ -13,12 +14,14 @@ import java.util.List;
 /// 只产出 `{sql, parameters}`；执行、生成键回填、版本自增回写都在 {@link JdbcPersistExecutor}。
 /// 参数值在这里就转成 JDBC 可直接绑定的形态（枚举按 [EnumStorage] 转 `name()` / `ordinal()`），
 /// 执行器只做 `setObject`。
+///
+/// 标识符：meta 标记为 quoted 的表名 / 列名过 `JdbcDialect#quote`，未标记保持裸名（现有实体零变化）。
 final class WriteSql {
 
     private WriteSql() {}
 
     /// `insert into t (a, b) values (?, ?)`：跳过自增主键列；关联属性为非 `null` 时拒绝，为 `null` 时该列不出现。
-    static SqlStatement insert(JdbcEntityType<?> entityType, Object entity) {
+    static SqlStatement insert(JdbcEntityType<?> entityType, Object entity, JdbcDialect dialect) {
         List<String> columns = new ArrayList<>();
         List<Object> parameters = new ArrayList<>();
         for (JdbcEntityAttribute attribute : entityType.attributes()) {
@@ -29,23 +32,24 @@ final class WriteSql {
             if (attribute.isGenerated()) {
                 continue;
             }
-            columns.add(attribute.column());
+            columns.add(identifier(attribute.column(), attribute.isColumnQuoted(), dialect));
             parameters.add(parameter(attribute, attribute.get(entity)));
         }
-        String sql = "insert into " + entityType.table() + " (" + String.join(", ", columns) + ") values ("
-                + placeholders(columns.size()) + ")";
+        String sql = "insert into " + identifier(entityType.table(), entityType.isTableQuoted(), dialect) + " ("
+                + String.join(", ", columns) + ") values (" + placeholders(columns.size()) + ")";
         return new SqlStatement(sql, immutable(parameters), List.of());
     }
 
     /// `update t set a=?, b=?, version=? where id=? [and version=?]`：`SET` 列 = 标量属性去掉主键与版本，
     /// 版本列固定排在最后并写「旧值 + 1」；版本列同时出现在 `WHERE` 里。
     /// 没有任何可写标量列且无版本列时显式拒绝（否则会渲染出 `set  where` 这种非法 SQL）。
-    static SqlStatement update(JdbcEntityType<?> entityType, Object entity) {
+    static SqlStatement update(JdbcEntityType<?> entityType, Object entity, JdbcDialect dialect) {
         List<Object> parameters = new ArrayList<>();
-        StringBuilder sql =
-                new StringBuilder("update ").append(entityType.table()).append(" set ");
+        StringBuilder sql = new StringBuilder("update ")
+                .append(identifier(entityType.table(), entityType.isTableQuoted(), dialect))
+                .append(" set ");
         JdbcEntityAttribute version = entityType.version();
-        boolean empty = appendScalars(entityType, entity, sql, parameters);
+        boolean empty = appendScalars(entityType, entity, sql, parameters, dialect);
         if (version == null) {
             if (empty) {
                 throw new UnsupportedOperationException(
@@ -55,13 +59,19 @@ final class WriteSql {
             if (!empty) {
                 sql.append(", ");
             }
-            sql.append(version.column()).append("=?");
+            sql.append(identifier(version.column(), version.isColumnQuoted(), dialect))
+                    .append("=?");
             parameters.add(nextVersion(version.get(entity)));
         }
-        sql.append(" where ").append(entityType.id().column()).append("=?");
-        parameters.add(entityType.id().get(entity));
+        JdbcEntityAttribute id = entityType.id();
+        sql.append(" where ")
+                .append(identifier(id.column(), id.isColumnQuoted(), dialect))
+                .append("=?");
+        parameters.add(id.get(entity));
         if (version != null) {
-            sql.append(" and ").append(version.column()).append("=?");
+            sql.append(" and ")
+                    .append(identifier(version.column(), version.isColumnQuoted(), dialect))
+                    .append("=?");
             parameters.add(version.get(entity));
         }
         return new SqlStatement(sql.toString(), immutable(parameters), List.of());
@@ -69,7 +79,11 @@ final class WriteSql {
 
     /// 追加 `SET` 的标量列（跳过主键、版本与关联），返回「一个都没追加」。
     private static boolean appendScalars(
-            JdbcEntityType<?> entityType, Object entity, StringBuilder sql, List<Object> parameters) {
+            JdbcEntityType<?> entityType,
+            Object entity,
+            StringBuilder sql,
+            List<Object> parameters,
+            JdbcDialect dialect) {
         boolean empty = true;
         for (JdbcEntityAttribute attribute : entityType.attributes()) {
             if (attribute.isAssociation()) {
@@ -82,11 +96,17 @@ final class WriteSql {
             if (!empty) {
                 sql.append(", ");
             }
-            sql.append(attribute.column()).append("=?");
+            sql.append(identifier(attribute.column(), attribute.isColumnQuoted(), dialect))
+                    .append("=?");
             parameters.add(parameter(attribute, attribute.get(entity)));
             empty = false;
         }
         return empty;
+    }
+
+    /// 标识符：quoted 时过方言引用，否则裸名。
+    private static String identifier(String name, boolean quoted, JdbcDialect dialect) {
+        return quoted ? dialect.quote(name) : name;
     }
 
     /// 版本列的下一个值：`null` 视作 0；只支持 `Integer` / `Long`（与 `JpaPersistExecutor` 同文案）。

@@ -17,6 +17,7 @@ final class JdbcEntityScan {
     record Scanned<T>(
             Class<T> type,
             String table,
+            boolean tableQuoted,
             List<JdbcEntityAttribute> attributes,
             Map<String, JdbcEntityAttribute> attributesByName,
             JdbcEntityAttribute id,
@@ -36,9 +37,11 @@ final class JdbcEntityScan {
         for (Field field : JdbcEntityRules.fields(type)) {
             attributes.add(field);
         }
+        TableName table = tableName(type, entity);
         return new Scanned<>(
                 type,
-                tableName(type, entity),
+                table.name(),
+                table.quoted(),
                 attributes.attributes(),
                 attributes.byName(),
                 attributes.id(),
@@ -46,14 +49,26 @@ final class JdbcEntityScan {
                 constructor(type));
     }
 
-    /// 表名：`@Table(name)` → `@Entity(name)` → 类简名（§3.0：标识符不加引号）。
-    private static String tableName(Class<?> type, Entity entity) {
+    /// 表名：`@Table(name)` → `@Entity(name)` → 类简名；反引号包裹的名字剥掉并记 quoted（§4.1 Phase F）。
+    private static TableName tableName(Class<?> type, Entity entity) {
         Table table = type.getAnnotation(Table.class);
-        if (table != null && !table.name().isEmpty()) {
-            return table.name();
+        if (table != null) {
+            TableName declared = declaredTableName(type, table.name());
+            if (declared != null) {
+                return declared;
+            }
         }
-        return entity.name().isEmpty() ? type.getSimpleName() : entity.name();
+        TableName declared = declaredTableName(type, entity.name());
+        return declared != null ? declared : new TableName(type.getSimpleName(), false);
     }
+
+    private static TableName declaredTableName(Class<?> type, String raw) {
+        String name = JdbcNames.bare(raw, type.getName());
+        return name.isEmpty() ? null : new TableName(name, JdbcNames.isQuoted(raw));
+    }
+
+    /// 表名 + quoted 标志。
+    private record TableName(String name, boolean quoted) {}
 
     /// 无参构造：protected / private 放行（`setAccessible`），缺失 → §4.3 #13。
     private static <T> Constructor<T> constructor(Class<T> type) {

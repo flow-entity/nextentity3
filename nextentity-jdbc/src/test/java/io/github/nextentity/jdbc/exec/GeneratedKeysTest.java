@@ -3,6 +3,7 @@ package io.github.nextentity.jdbc.exec;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
 import io.github.nextentity.jdbc.support.GeneratedItem;
 import jakarta.persistence.PersistenceException;
@@ -26,6 +27,7 @@ class GeneratedKeysTest {
     private static final String NAME = "name";
 
     private final JdbcMeta meta = new JdbcMeta();
+    private final JdbcDialect dialect = JdbcDialect.of("H2");
 
     @Test
     void readsSingleLongKey() {
@@ -84,7 +86,7 @@ class GeneratedKeysTest {
 
     private long insertedId(ResultSet keys) {
         JdbcPersistExecutor<GeneratedItem> persist =
-                new JdbcPersistExecutor<>(FakeKeys.dataSource(keys), meta.entityType(GeneratedItem.class));
+                new JdbcPersistExecutor<>(FakeKeys.dataSource(keys), meta.entityType(GeneratedItem.class), dialect);
         GeneratedItem item = new GeneratedItem("n");
         persist.insert(item);
         return item.id();

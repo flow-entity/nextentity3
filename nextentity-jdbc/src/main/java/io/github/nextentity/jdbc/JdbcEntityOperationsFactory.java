@@ -41,14 +41,15 @@ public final class JdbcEntityOperationsFactory implements EntityOperationsFactor
     /// @param dialect    方言
     public JdbcEntityOperationsFactory(DataSource dataSource, JdbcDialect dialect) {
         Objects.requireNonNull(dataSource, DATA_SOURCE);
-        this.dialect = Objects.requireNonNull(dialect, "dialect");
+        JdbcDialect selected = Objects.requireNonNull(dialect, "dialect");
+        this.dialect = selected;
         JdbcMeta meta = new JdbcMeta();
-        JdbcCompiler compiler = new JdbcCompiler(meta, dialect);
+        JdbcCompiler compiler = new JdbcCompiler(meta, selected);
         this.delegate = new SimpleEntityOperationsFactory<>(
                 meta::entityType,
                 compiler,
                 new JdbcExecutor(dataSource, meta, compiler),
-                type -> new JdbcPersistExecutor<>(dataSource, meta.entityType(type)));
+                type -> new JdbcPersistExecutor<>(dataSource, meta.entityType(type), selected));
     }
 
     @Override

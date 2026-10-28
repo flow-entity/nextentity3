@@ -913,4 +913,159 @@ class JdbcEntityRulesTest {
             return dbData;
         }
     }
+
+    @Test
+    void quotedNamesContainingReservedDelimitersAreRejected() {
+        for (Class<?> fixture : List.of(
+                DoubleQuoteTable.class, BacktickTable.class, OpeningBracketTable.class, ClosingBracketTable.class)) {
+            assertThatThrownBy(() -> meta.entityType(fixture))
+                    .as(fixture.getSimpleName())
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessageContaining("标识符名不能含引用定界符（\" ` [ ]）")
+                    .hasMessageContaining(fixture.getName());
+        }
+    }
+
+    @Test
+    void quotedColumnNameContainingDelimiterIsRejected() {
+        assertThatThrownBy(() -> meta.entityType(QuotedDelimiterColumn.class))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining("标识符名不能含引用定界符（\" ` [ ]）")
+                .hasMessageContaining(QuotedDelimiterColumn.class.getName() + ".desc");
+    }
+
+    @Entity
+    @Table(name = "`ord\"er`")
+    static class DoubleQuoteTable {
+        @Id
+        private Long id;
+    }
+
+    @Entity
+    @Table(name = "`ord`er`")
+    static class BacktickTable {
+        @Id
+        private Long id;
+    }
+
+    @Entity
+    @Table(name = "`ord[er`")
+    static class OpeningBracketTable {
+        @Id
+        private Long id;
+    }
+
+    @Entity
+    @Table(name = "`ord]er`")
+    static class ClosingBracketTable {
+        @Id
+        private Long id;
+    }
+
+    @Entity
+    @Table(name = "`order`")
+    static class QuotedDelimiterColumn {
+        @Id
+        private Long id;
+
+        @Column(name = "`de\"sc`")
+        private String desc;
+    }
+
+    @Test
+    void delimitersAtNameBoundariesAreRejected() {
+        assertThatThrownBy(() -> meta.entityType(DelimiterFirstTable.class))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining("标识符名不能含引用定界符（\" ` [ ]）")
+                .hasMessageContaining(DelimiterFirstTable.class.getName());
+
+        assertThatThrownBy(() -> meta.entityType(DelimiterLastTable.class))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining("标识符名不能含引用定界符（\" ` [ ]）")
+                .hasMessageContaining(DelimiterLastTable.class.getName());
+    }
+
+    @Entity
+    @Table(name = "`\"order`")
+    static class DelimiterFirstTable {
+        @Id
+        private Long id;
+    }
+
+    @Entity
+    @Table(name = "`order]`")
+    static class DelimiterLastTable {
+        @Id
+        private Long id;
+    }
+
+    @Test
+    void delimitersAtTheStartOfEveryNameAreRejected() {
+        for (Class<?> fixture : List.of(
+                DelimiterFirstTable.class,
+                BacktickFirstTable.class,
+                OpeningBracketFirstTable.class,
+                ClosingBracketFirstTable.class)) {
+            assertThatThrownBy(() -> meta.entityType(fixture))
+                    .as(fixture.getSimpleName())
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessageContaining("标识符名不能含引用定界符（\" ` [ ]）");
+        }
+    }
+
+    @Entity
+    @Table(name = "``order`")
+    static class BacktickFirstTable {
+        @Id
+        private Long id;
+    }
+
+    @Entity
+    @Table(name = "`[order`")
+    static class OpeningBracketFirstTable {
+        @Id
+        private Long id;
+    }
+
+    @Entity
+    @Table(name = "`]order`")
+    static class ClosingBracketFirstTable {
+        @Id
+        private Long id;
+    }
+
+    @Entity
+    @Table(name = "`order\"`")
+    static class QuoteLastTable {
+        @Id
+        private Long id;
+    }
+
+    @Entity
+    @Table(name = "`order``")
+    static class BacktickLastTable {
+        @Id
+        private Long id;
+    }
+
+    @Entity
+    @Table(name = "`order[`")
+    static class OpeningBracketLastTable {
+        @Id
+        private Long id;
+    }
+
+    @Test
+    void delimitersAtTheEndOfEveryNameAreRejected() {
+        for (Class<?> fixture : List.of(
+                DelimiterLastTable.class,
+                QuoteLastTable.class,
+                BacktickLastTable.class,
+                OpeningBracketLastTable.class)) {
+            assertThatThrownBy(() -> meta.entityType(fixture))
+                    .as(fixture.getSimpleName())
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessageContaining("标识符名不能含引用定界符（\" ` [ ]）");
+        }
+    }
 }

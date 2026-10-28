@@ -25,9 +25,9 @@ public class JdbcItemSupport implements ConsistencySupport<ItemEntity>, AutoClos
     private final SingleConnectionDataSource dataSource;
     private final EntityOperations<ItemEntity> operations;
 
-    /// H2：每个接线类一个独立库名（类名小写），建表幂等。
+    /// H2：每个接线类一个独立库名（类名小写），建表幂等；建表脚本用 H2 方言（保留字双引号）。
     public JdbcItemSupport(String databaseName) {
-        this(SingleConnectionDataSource.h2(databaseName));
+        this(SingleConnectionDataSource.h2(databaseName), JdbcSchema.H2);
     }
 
     protected JdbcItemSupport(SingleConnectionDataSource dataSource) {

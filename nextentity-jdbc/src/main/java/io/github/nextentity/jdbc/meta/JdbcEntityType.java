@@ -16,6 +16,7 @@ public final class JdbcEntityType<T> implements EntityType<T> {
 
     private final Class<T> type;
     private final String table;
+    private final boolean tableQuoted;
     private final List<JdbcEntityAttribute> attributes;
     private final Map<String, JdbcEntityAttribute> attributesByName;
     private final JdbcEntityAttribute id;
@@ -25,6 +26,7 @@ public final class JdbcEntityType<T> implements EntityType<T> {
     private JdbcEntityType(JdbcEntityScan.Scanned<T> scanned) {
         this.type = scanned.type();
         this.table = scanned.table();
+        this.tableQuoted = scanned.tableQuoted();
         this.attributes = scanned.attributes();
         this.attributesByName = scanned.attributesByName();
         this.id = scanned.id();
@@ -44,9 +46,14 @@ public final class JdbcEntityType<T> implements EntityType<T> {
         return type;
     }
 
-    /// 表名：`@Table(name)` → `@Entity(name)` → 类简名。
+    /// 表名：`@Table(name)` → `@Entity(name)` → 类简名；已剥反引号（裸名）。
     public String table() {
         return table;
+    }
+
+    /// 表名是否需要在 SQL 中引用（注解里用反引号包裹过）：引用形态由 `JdbcDialect#quote` 决定。
+    public boolean isTableQuoted() {
+        return tableQuoted;
     }
 
     /// 全部持久属性（声明序，标量 + `@ManyToOne`）：实体 SELECT 的列序与写侧 SET 列序都从这里取，

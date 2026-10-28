@@ -107,8 +107,10 @@ final class SqlRenderer {
     }
 
     private SqlStatement statement(String projection, String tableSuffix, String tail, boolean exists) {
+        JdbcEntityType<?> entityType = entityType();
+        String table = entityType.isTableQuoted() ? dialect.quote(entityType.table()) : entityType.table();
         String sql = dialect.selectHead(projection, exists)
-                + " from " + dialect.quote(entityType().table()) + " " + SqlPaths.ROOT_ALIAS
+                + " from " + table + " " + SqlPaths.ROOT_ALIAS
                 + tableSuffix + paths.joins() + tail;
         return new SqlStatement(sql, parameters, columnTypes);
     }

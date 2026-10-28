@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.jdbc.compile.SqlStatement;
+import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
 import io.github.nextentity.jdbc.support.IntegerVersionedItem;
 import io.github.nextentity.jdbc.support.ItemStatus;
@@ -21,22 +22,24 @@ import org.junit.jupiter.api.Test;
 class WriteSqlVersionTest {
 
     private final JdbcMeta meta = new JdbcMeta();
+    private final JdbcDialect dialect = JdbcDialect.of("H2");
 
     @Test
     void insertWritesZeroVersionForNullVersion() {
-        SqlStatement longVersion = WriteSql.insert(meta.entityType(VersionedItem.class), new VersionedItem(3L, "v"));
+        SqlStatement longVersion =
+                WriteSql.insert(meta.entityType(VersionedItem.class), new VersionedItem(3L, "v"), dialect);
         assertThat(longVersion.sql()).isEqualTo("insert into versioned_item (id, name, version) values (?, ?, ?)");
         assertThat(longVersion.parameters()).containsExactly(3L, "v", 0L);
 
-        SqlStatement integerVersion =
-                WriteSql.insert(meta.entityType(IntegerVersionedItem.class), new IntegerVersionedItem(4L, "v"));
+        SqlStatement integerVersion = WriteSql.insert(
+                meta.entityType(IntegerVersionedItem.class), new IntegerVersionedItem(4L, "v"), dialect);
         assertThat(integerVersion.parameters()).containsExactly(4L, "v", 0);
     }
 
     @Test
     void insertBindsOrdinalEnumAsNumber() {
         SqlStatement statement =
-                WriteSql.insert(meta.entityType(OrdinalItem.class), new OrdinalItem(5L, ItemStatus.DONE));
+                WriteSql.insert(meta.entityType(OrdinalItem.class), new OrdinalItem(5L, ItemStatus.DONE), dialect);
 
         assertThat(statement.sql()).isEqualTo("insert into ordinal_item (id, status) values (?, ?)");
         assertThat(statement.parameters()).containsExactly(5L, ItemStatus.DONE.ordinal());
@@ -47,7 +50,7 @@ class WriteSqlVersionTest {
         IntegerVersionedItem item = new IntegerVersionedItem(6L, "v");
         setVersion(item, 2);
 
-        SqlStatement statement = WriteSql.update(meta.entityType(IntegerVersionedItem.class), item);
+        SqlStatement statement = WriteSql.update(meta.entityType(IntegerVersionedItem.class), item, dialect);
 
         assertThat(statement.sql())
                 .isEqualTo("update integer_versioned_item set name=?, version=? where id=? and version=?");
@@ -57,7 +60,7 @@ class WriteSqlVersionTest {
     @Test
     void updateWithoutVersionMatchesOnlyId() {
         SqlStatement statement = WriteSql.update(
-                meta.entityType(SnapshotItem.class), new SnapshotItem(7L, "n", 1, 2, "note", ItemStatus.NEW));
+                meta.entityType(SnapshotItem.class), new SnapshotItem(7L, "n", 1, 2, "note", ItemStatus.NEW), dialect);
 
         assertThat(statement.sql()).isEqualTo("update item set name=?, score=?, score2=?, note=?, status=? where id=?");
         assertThat(statement.parameters()).containsExactly("n", 1, 2, "note", "NEW", 7L);
@@ -65,14 +68,14 @@ class WriteSqlVersionTest {
 
     @Test
     void updateOfIdOnlyEntityIsRejected() {
-        assertThatThrownBy(() -> WriteSql.update(meta.entityType(IdOnly.class), new IdOnly(8L)))
+        assertThatThrownBy(() -> WriteSql.update(meta.entityType(IdOnly.class), new IdOnly(8L), dialect))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessage("实体 " + IdOnly.class.getName() + " 没有可写标量列，update 无法生成 SET 子句");
     }
 
     @Test
     void versionedEntityWithoutScalarColumnsStillUpdatesVersion() {
-        SqlStatement statement = WriteSql.update(meta.entityType(VersionOnly.class), new VersionOnly(9L));
+        SqlStatement statement = WriteSql.update(meta.entityType(VersionOnly.class), new VersionOnly(9L), dialect);
 
         assertThat(statement.sql()).isEqualTo("update write_sql_version_only set version=? where id=? and version=?");
         assertThat(statement.parameters()).containsExactly(1L, 9L, 0L);

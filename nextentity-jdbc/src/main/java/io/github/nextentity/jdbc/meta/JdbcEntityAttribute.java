@@ -8,6 +8,10 @@ import java.util.Objects;
 ///
 /// 与 JPA 侧（`JpaEntityAttribute`）不同，这里不借元模型，值类型 / 列名 / 枚举存储都在解析期算好，
 /// 渲染与读出只读字段，不再碰注解。
+///
+/// 属性元数据按契约面平铺成读取方法（列名 / 主键 / 版本 / 枚举 / 关联 / quoted）；冲突只在于方法个数，
+/// 拆成多个对象反而把渲染与写侧 12 个调用点变成链式跳转，故按单对象保留。
+@SuppressWarnings("PMD.TooManyMethods")
 public final class JdbcEntityAttribute implements EntityAttribute {
 
     private static final String ENTITY = "entity";
@@ -58,6 +62,11 @@ public final class JdbcEntityAttribute implements EntityAttribute {
         return column == null ? null : column.name();
     }
 
+    /// 列名是否需要在 SQL 中引用（`@Column(name)` 用反引号包裹过）：引用形态由 `JdbcDialect#quote` 决定。
+    public boolean isColumnQuoted() {
+        return column != null && column.quoted();
+    }
+
     /// 是否主键。
     public boolean isId() {
         return column != null && column.id();
@@ -89,6 +98,16 @@ public final class JdbcEntityAttribute implements EntityAttribute {
         return association == null ? null : association.joinColumn();
     }
 
+    /// FK 列名是否需要在 SQL 中引用（`@JoinColumn(name)` 用反引号包裹过）。
+    public boolean isJoinColumnQuoted() {
+        return association != null && association.joinColumnQuoted();
+    }
+
+    /// `@JoinColumn(referencedColumnName)` 是否用反引号包裹过（R5 校验时已剥引号比较，这里只记录形态）。
+    public boolean isReferencedColumnQuoted() {
+        return association != null && association.referencedColumnQuoted();
+    }
+
     /// 枚举存储形态；非枚举列返回 [EnumStorage#NONE]。
     public EnumStorage enumStorage() {
         return column == null ? EnumStorage.NONE : column.storage();
@@ -96,16 +115,19 @@ public final class JdbcEntityAttribute implements EntityAttribute {
 
     /// 标量列的映射信息：列名已解析（`@Column(name)` → 字段名）。
     ///
-    /// @param name      列名
+    /// @param name      列名（已剥反引号）
     /// @param id        是否 `@Id`
     /// @param version   是否 `@Version`
     /// @param generated 是否 `@GeneratedValue(strategy = IDENTITY)`
     /// @param storage   枚举存储形态
-    record Column(String name, boolean id, boolean version, boolean generated, EnumStorage storage) {}
+    /// @param quoted    注解里是否用反引号标记过，渲染时是否需要 `JdbcDialect#quote`
+    record Column(String name, boolean id, boolean version, boolean generated, EnumStorage storage, boolean quoted) {}
 
     /// 关联列的映射信息：`joinColumn == null` 表示 §4.3 #9 被忽略的集合 / 一对一字段。
     ///
-    /// @param target     关联目标 Java 类型
-    /// @param joinColumn FK 列名；被忽略的关联为 `null`
-    record Association(Class<?> target, String joinColumn) {}
+    /// @param target            关联目标 Java 类型
+    /// @param joinColumn              FK 列名（已剥反引号）；被忽略的关联为 `null`
+    /// @param joinColumnQuoted       FK 列名注解里是否用反引号标记过
+    /// @param referencedColumnQuoted `referencedColumnName` 注解里是否用反引号标记过
+    record Association(Class<?> target, String joinColumn, boolean joinColumnQuoted, boolean referencedColumnQuoted) {}
 }
