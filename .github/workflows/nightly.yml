@@ -52,6 +52,11 @@ jobs:
           chmod +x tools/gate.sh
           tools/gate.sh night --require-clean
 
+      # publish profile 冒烟：只在发 tag 那天第一次跑 profile 的成本最高。这步不进凭证，
+      # 失败会让 nightly 红（run: 默认如此）——profile 坏在 tag 当天才发现代价更大。
+      - name: Publish profile smoke (no deploy)
+        run: ./mvnw -B -Ppublish -DskipTests -Dgpg.skip=true -Dcentral.publishing.skipPublishing=true package
+
       - name: Upload gate receipt
         if: always()
         uses: actions/upload-artifact@v7

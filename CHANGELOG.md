@@ -4,7 +4,7 @@
 
 破坏性变更必须在对应条目里写明「为什么必须破」与迁移方式（见 [AGENTS.md](AGENTS.md)「公开 API 是契约」）。
 
-## [3.0.0-SNAPSHOT] — 未发布
+## [3.0.0] — 2026-10-30
 
 ### Added
 
@@ -137,7 +137,7 @@
 - 改 2 行版本号 + 重写 1 个仓储基类实现文件即可切换；25 个引用 `io.github.nextentity` 的文件中 24 个零改动。
 - 版本号（`pom.xml` 两行）：
   ```xml
-  <nextentity.version>3.0.0-SNAPSHOT</nextentity.version>
+  <nextentity.version>3.0.0</nextentity.version>
   <id.generator.version>2.0.0-SNAPSHOT</id.generator.version>
   ```
 - 唯一需要改代码的地方：若曾像 point-mall 的 `AppRepositoryImpl` 那样直接 import 2.x 内部类（`DefaultMetamodel`、`EntityTemplateFactory`、`SimpleExpressionImpl`、`PathNode`、`Iterators`），改为通过 `core.EntityOperationsFactory` 取 `EntityOperations`：`query()` 查询、`insert/insertAll/update/updateAll` 写入、`entityType().version()` 取 `@Version` 属性回写。
