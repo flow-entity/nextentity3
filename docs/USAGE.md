@@ -570,7 +570,7 @@ orders.updateAll(List.of(order));
 | 写入不支持关联属性：关联值非 `null` 抛 UOE，`null` 则跳过该列 | `docs/DESIGN.md:496` |
 | 继承、复合主键、`@Access(PROPERTY)`、`@Embedded`、`@Convert` 拒绝 | `nextentity-jdbc/src/main/java/io/github/nextentity/jdbc/meta/JdbcEntityRules.java:63`/`:66`/`:70`/`:115`/`:118`/`:121` |
 | `@ManyToOne` 必须带 `@JoinColumn(name)` | 同上 `:174` |
-| 集合与一对一关联字段被静默忽略（不进 `attributes()`、不参与 SQL） | 同上 `:169-175` 附近的 `ignored(...)` |
+| 集合与一对一关联字段被静默忽略（不进 `attributes()`、不参与 SQL） | 同上 `:162-168` 的 `ignored(...)` |
 | 锁只映射 `PESSIMISTIC_WRITE → for update`；值选择/聚合规格带锁拒绝；SQL Server 不行锁 | `docs/DESIGN.md:497`/`:505`/`:512` |
 | 聚合规格与多列 distinct 的 `count`/`exists` 显式拒绝 | `docs/DESIGN.md:500` |
 | 分页 `limit = 0` 视为不限行 | `docs/DESIGN.md:498` |
