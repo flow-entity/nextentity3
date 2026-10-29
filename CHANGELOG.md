@@ -186,9 +186,9 @@ java -cp japicmp-0.23.1.jar:javassist-3.30.2-GA.jar:guava-33.7.1-jre.jar japicmp
   --include 'io.github.nextentity.api.*' --ignore-missing-classes
 ```
 
-实测（两种独立口径互相对齐：japicmp 的逐类条目，与两个 jar 内 `io/github/nextentity/api` 类名集合差）：**移除 39 个类型 = 25 个顶层 + 14 个嵌套类；新增 43 个类型 = 25 个顶层 + 18 个嵌套类；修改 23 个类**；顶层公开类型数量两边都是 **49**（嵌套类 16 → 20）。上表按**功能**归组，因此同一处破坏不会重复计数（原始报告里「返回类型所属接口被改名」会同时出现 `METHOD_REMOVED` + `METHOD_MODIFIED`，属工具口径）。
+实测（HEAD `83429f8`，两种独立口径互相对齐）：**移除 39 个类型 = 25 个顶层 + 14 个嵌套类**（与 japicmp 的 `REMOVED` 条目逐一相等）；**japicmp 报告新增 23 个类（全为顶层）**，而两个 jar 内 `io/github/nextentity/api` 的类名集合差是 **43 = 25 个顶层 + 18 个嵌套类**——差的 2 个是 `io.github.nextentity.api.Conditions` / `PathValues`（包级私有 `final class`，被 japicmp 默认的 PROTECTED 可见性阈值排除）；**修改 23 个类**，未变更 3 个（`PathRef`、`PathRef$NumberRef`、`PathRef$StringRef`）。顶层类型原始计数两边都是 **49**；按 japicmp 的可见性口径是 49 → 47（49 − 25 + 23）。嵌套类 16 → 20。上表按**功能**归组，因此同一处破坏不会重复计数（原始报告里「返回类型所属接口被改名」会同时出现 `METHOD_REMOVED` + `METHOD_MODIFIED`，属工具口径）。
 
-> 旧口径已废弃：本文件此前写的「移除 44 类 / 新增 14 类 / 修改 18 类」来自另一版比对脚本，用上面的命令无法在当前 HEAD 复现，请以上面的命令与数字为准。
+> 旧口径已废弃：本文件此前写的「移除 44 类 / 新增 14 类 / 修改 18 类」是 `84e9e0f`（2026-10-22）时点的真值，之后 api 从 53 个类长到 69 个类，已不适用于当前 HEAD；用上面的命令无法复现，请以本节的命令与数字为准。
 
 **5. 与 2.2.3 的有意差异（不影响存量调用点）**
 
