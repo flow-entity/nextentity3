@@ -19,6 +19,9 @@ final class Conditions {
     /// `and` / `or` 集合参数的参数名，用于空值与元素校验消息（同名字面量只留一处）。
     private static final String OTHERS = "others";
 
+    /// `and/or` 操作数为 `null` 时的统一文案（两条构建路径共用）。
+    private static final String NULL_OPERAND = OTHERS + " 元素不能为 null";
+
     private Conditions() {}
 
     /// 条件被短路时的返回值：**不实现 `Op`**，后端遇到它即视为"无附加条件"。
@@ -203,9 +206,12 @@ final class Conditions {
     /// 因此调用方必须先判空再决定要不要拼。
     private static <T> List<Object> operands(
             Expression<T, Boolean> head, Collection<? extends Expression<T, Boolean>> others) {
+        // 一次成型：不再借 `checked(...)` 的中间列表再 `addAll` 拷一遍（`Leaf` 的构造器会兜底复制）。
         List<Object> operands = new ArrayList<>(others.size() + 1);
         operands.add(head);
-        operands.addAll(checked(others));
+        for (Expression<T, Boolean> other : others) {
+            operands.add(Objects.requireNonNull(other, NULL_OPERAND));
+        }
         return operands;
     }
 
@@ -217,7 +223,7 @@ final class Conditions {
     private static List<Object> checked(Collection<? extends Expression<?, Boolean>> others) {
         List<Object> operands = new ArrayList<>(others.size());
         for (Expression<?, Boolean> other : others) {
-            operands.add(Objects.requireNonNull(other, "others 元素不能为 null"));
+            operands.add(Objects.requireNonNull(other, NULL_OPERAND));
         }
         return operands;
     }

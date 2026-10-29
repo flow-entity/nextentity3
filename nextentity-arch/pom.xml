@@ -40,6 +40,15 @@
             <scope>test</scope>
         </dependency>
         <!--
+          JDBC_IS_A_BACKEND_ONLY 与 MODULES_FREE_OF_CYCLES 的 jdbc 切片都要靠它才看得见
+          io.github.nextentity.jdbc 的类；缺这条依赖时规则匹配空集，门禁形同虚设（见下一条注释）。
+        -->
+        <dependency>
+            <groupId>io.github.flow-entity</groupId>
+            <artifactId>nextentity-jdbc</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!--
           TESTING_STAYS_BACKEND_FREE 要靠它才看得见 io.github.nextentity.testing 的类；
           缺这条依赖时规则一条类也匹配不到，allowEmptyShould(true) 会让它静默变绿。
         -->

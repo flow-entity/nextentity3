@@ -1,5 +1,6 @@
 package io.github.nextentity.core.spec;
 
+import io.github.nextentity.core.util.ImmutableList;
 import java.util.List;
 import java.util.Objects;
 
@@ -25,7 +26,7 @@ public record ValueSelection(List<Projection> items, boolean distinct, RowMapper
         if (items.isEmpty()) {
             throw new IllegalArgumentException("表达式查询至少需要一个投影项");
         }
-        items = List.copyOf(items);
+        items = ImmutableList.copyOf(items);
     }
 
     /// 列集与去重标志决定的相等性，映射器不参与。

@@ -5,7 +5,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.api.LockMode;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -64,7 +67,9 @@ class SpecStructureTest {
     @Test
     @DisplayName("路径入参被复制为不可变列表")
     void pathIsImmutable() {
-        assertThat(STATUS.names()).isUnmodifiable();
+        // `isUnmodifiable()` 只认 JDK/Guava 的那几种包装类，认不出本仓 `ImmutableList` 的实现，
+        // 所以直接钉行为：写入必被拒绝。
+        assertThatThrownBy(() -> STATUS.names().add("x")).isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test
@@ -106,6 +111,16 @@ class SpecStructureTest {
 
         assertThat(in.negated()).isTrue();
         assertThat(in.values()).containsExactly(1L, 2L);
+    }
+
+    @Test
+    @DisplayName("In#of：任意集合一次收成不可变列表（元素可为 null）")
+    void inOfTakesAnyCollection() {
+        Set<Object> values = new LinkedHashSet<>(Arrays.asList(null, 5L));
+        In in = In.of(STATUS, values, false);
+
+        assertThat(in.values()).containsExactly(null, 5L);
+        assertThatThrownBy(() -> in.values().add(6L)).isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test
@@ -348,7 +363,8 @@ class SpecStructureTest {
         orderBy.add(new Ordering(CREATED_AT, Ordering.Direction.DESC));
 
         assertThat(spec.orderBy()).hasSize(1);
-        assertThat(spec.orderBy()).isUnmodifiable();
+        assertThatThrownBy(() -> spec.orderBy().add(new Ordering(CREATED_AT, Ordering.Direction.ASC)))
+                .isInstanceOf(UnsupportedOperationException.class);
     }
 
     // ------------------------------------------- 构造期契约：必填字段与访问器

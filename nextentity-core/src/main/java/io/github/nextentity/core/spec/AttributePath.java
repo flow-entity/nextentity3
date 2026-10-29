@@ -1,5 +1,6 @@
 package io.github.nextentity.core.spec;
 
+import io.github.nextentity.core.util.ImmutableList;
 import java.util.List;
 import java.util.Objects;
 
@@ -19,7 +20,7 @@ public record AttributePath(Class<?> entityType, List<String> names) implements 
         if (names.isEmpty()) {
             throw new IllegalArgumentException("属性路径不能为空");
         }
-        names = List.copyOf(names);
+        names = ImmutableList.copyOf(names);
     }
 
     /// 由实体类型与属性名序列构造路径。

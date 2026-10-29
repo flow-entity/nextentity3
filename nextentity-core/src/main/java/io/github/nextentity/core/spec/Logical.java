@@ -1,5 +1,6 @@
 package io.github.nextentity.core.spec;
 
+import io.github.nextentity.core.util.ImmutableList;
 import java.util.List;
 import java.util.Objects;
 
@@ -22,7 +23,7 @@ public record Logical(LogicalOperator operator, List<Spec> operands) implements 
         if (operator == LogicalOperator.NOT && operands.size() != 1) {
             throw new IllegalArgumentException("NOT 只接受一个操作数");
         }
-        operands = List.copyOf(operands);
+        operands = ImmutableList.copyOf(operands);
     }
 
     /// 构造 AND 组合。

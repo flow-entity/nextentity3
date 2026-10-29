@@ -6,7 +6,7 @@
 
 - **公开 API 是契约**：`io.github.nextentity.api` 下的签名受兼容门禁保护。破坏性变更每版 ≤ 5 处，且必须同时具备三样：机械替换脚本（codemod 或编译错误驱动）、`japicmp` 影响面报告、CHANGELOG 写明"为什么必须破"。
 - **版本语义**：`api` 包遵循语义化版本，删除/收窄签名即主版本；`core`/`jpa`/`spring` 内部包标记 `@Internal`，不承诺兼容。
-- **依赖方向单向**：只允许 `api ← core ← jpa ← spring`。`api` 零三方依赖；`core` 不得 import `jakarta.persistence` / `hibernate` / `spring`。反向依赖与循环依赖由 enforcer + ArchUnit 拒绝。执法者：各模块 `bannedDependencies`（编译期）+ `nextentity-arch` 的 `MODULES_FREE_OF_CYCLES` / `CORE_PACKAGES_FREE_OF_CYCLES`。
+- **依赖方向单向**：只允许 `api ← core ← jpa ← spring`，以及 `api ← core ← jdbc`（第二后端，与 `jpa` 平行、互不依赖）。`api` 零三方依赖；`core` 不得 import `jakarta.persistence` / `hibernate` / `spring`。反向依赖与循环依赖由 enforcer + ArchUnit 拒绝。执法者：各模块 `bannedDependencies`（编译期）+ `nextentity-arch` 的 `MODULES_FREE_OF_CYCLES` / `CORE_PACKAGES_FREE_OF_CYCLES` / `JDBC_IS_A_BACKEND_ONLY`。
 - **新能力只落一处**：新谓词 = `spec` 加节点 + 编译器加分支；新终止符 = `exec` 加方法；不得在 builder 里拼 SQL 或拼 Criteria。新增节点必须让编译期穷尽性检查报错，以此逼出全部分支。
 - **接口要窄**：新增公开接口的方法数 ≤ 6；超过说明边界切错了。执法者：`nextentity-arch` 的 `API_INTERFACES_STAY_NARROW`。
 - **可测试性**：时间/随机必须经 `Clock` / `IdGenerator` 注入，禁止直调 `System.currentTimeMillis()` / `Instant.now()` / `new Random()`；禁止静态可变字段；禁止 catch 后返回默认值。执法者：`nextentity-arch` 的 `NO_AMBIENT_CLOCK_OR_RANDOM` / `NO_MUTABLE_STATIC_STATE`，以及 `rules/checkstyle.xml` 的 catch 规则。
@@ -23,6 +23,8 @@
 | 仅文档/注释（`*.md`、Javadoc） | 跳过构建 |
 | `api` / `core` / `spec` / `compile` / `exec` | `mvn -q spotless:apply` → `mvn -pl nextentity-core,nextentity-arch -am test` |
 | `jpa` / `spring` | `mvn -q spotless:apply` → `mvn -pl nextentity-arch -am test` → `mvn -pl nextentity-tests-jpa -am verify`（含 MySQL 容器通道；无 Docker 时自动跳过，见 DESIGN §5「通道拆分」） |
+| `jdbc` / `nextentity-tests-jdbc` | `mvn -q spotless:apply` → `mvn -pl nextentity-jdbc -am test` → `mvn -pl nextentity-arch -am test` → `mvn -pl nextentity-tests-jdbc -am verify`（H2 + MySQL 容器通道）→ `mvn -pl nextentity-tests-jdbc -am verify -Pjdbc-postgres` → `mvn -pl nextentity-tests-jdbc -am verify -Pjdbc-sqlserver`（PG / SQL Server 容器通道；三条容器通道都需 Docker，无 Docker 时自动跳过。CI 必须加 `-Dnextentity.requireContainer=true`——两个方言 profile 已把 requireContainer 固化在 profile 里，默认 MySQL 通道仍需显式带） |
+| `jdbc` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-jdbc test-compile pitest:mutationCoverage`（阈值 95）；**跑前先 `mvn install -DskipTests -Djacoco.check.skip=true`** 刷 `~/.m2`——PIT 不带 `-am`，且 `-DskipTests` 下没有 jacoco exec 数据会让 `jacoco:check` 判红 |
 | `nextentity-testing`（一致性基类、夹具、`ConsistencySupport`） | `mvn -q spotless:apply` → `mvn -pl nextentity-tests-jpa -am verify`（含 MySQL 容器通道；无 Docker 时自动跳过，见 DESIGN §5「通道拆分」） |
 | `nextentity-tests-legacy` | `mvn -pl nextentity-tests-legacy -am test`（默认 H2，无容器）；动到方言相关再跑 `-Ddbc=h2,mysql -Dnextentity.requireContainer=true`（**不带 require 时容器起不来会静默降级成只跑 H2**，见 DESIGN §5「通道拆分」） |
 | `core` / `jpa` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-<模块> pitest:mutationCoverage`，变异分数不得低于模块 pom 的阈值（**PIT 不带 `-am`**，跑前先 `mvn install -DskipTests` 刷 `~/.m2`，理由见下表 api 行） |
@@ -32,6 +34,7 @@
 | 发版前 | `./tools/gate.sh release`（档位构成见 [docs/DESIGN.md](docs/DESIGN.md) §5「执行凭证」），并更新 CHANGELOG |
 | 文档里的代码示例（`*.md` 的代码块） | 先把示例**原样**抄进 `tmp/scripts/probe/DocExamples.java`，`javac` 对相关模块真实 `target/classes` 编译通过后才写进文档；文档声称的能力必须能在源码里指到 `文件:行`，指不到就删掉或移入「不提供的能力」表 |
 
+- **`-DskipTests` 的 install 一律加 `-Djacoco.check.skip=true`**：跳过测试就没有 jacoco exec 数据，`jacoco:check` 会把 `install`/`verify` 判红（与代码无关的假红）。门禁脚本里所有 `install -DskipTests` 步骤都已带该属性。
 - **报「绿」三件套**：commit hash + `git status --short` 为空 + `receipt.json` 路径（`tools/gate.sh` 产出；手跑单点测试时用落盘日志路径）；跨模块存在未提交改动期间的口头/单点「绿」一律无效（本轮迁移里它抓出 3 次假绿：陈旧 `.m2` 产物、api 中间态编译错误、flaky 集成用例）。
 - **不读陈旧产物**：跨模块验证前先 `mvn install`（或一律 `-am` 反应堆构建）；`~/.m2` 里的 `-SNAPSHOT` 可能落后于当前 HEAD，用它跑出的结论只能证明"旧产物能跑"。
 - **构建要独占工作树**：并行跑多个 `mvn` 会共用同一个 `target/`，造出「jar/classes 里缺刚写好的类」这类假红，也会让下一次构建静默复用被写坏的产物（`-am` 与 `-Dmaven.repo.local` 都挡不住，冲突在 `target/` 不在本地仓库）。要并行就各开一个 `git worktree`，或串行排队；看到「明明存在的类找不到」先怀疑产物被覆盖，**不要改代码去凑绿**；日志里出现 `Nothing to compile - all classes are up to date` 时，要意识到本次复用的是前序产物。
@@ -72,6 +75,9 @@
 ./mvnw -pl nextentity-tests-jpa -am verify -Dnextentity.requireContainer=true   # CI 用：Docker 不可用时失败而不是静默跳过
 ./mvnw -pl nextentity-tests-legacy -am test  # 2.2.3 遗留语义回归：H2，无容器
 ./mvnw -pl nextentity-tests-legacy -am test -Ddbc=h2,mysql -Dnextentity.requireContainer=true   # 同上，加真 MySQL（需 Docker 或外部实例，见模块 README）；不带 require 时容器不可用会静默只跑 H2
+./mvnw -pl nextentity-jdbc -am test       # JDBC 后端单测 + SQL 快照（H2，无容器）
+./mvnw -pl nextentity-tests-jdbc -am verify   # JDBC 落库测试：H2 走 surefire + MySQL 容器走 failsafe（-DskipITs 只跳容器通道）
+./mvnw -pl nextentity-jdbc test-compile pitest:mutationCoverage   # 变异测试：jdbc，阈值 95%（跑前先 install -DskipTests -Djacoco.check.skip=true）
 ./mvnw -Papi-compat -Djapicmp.oldVersion=2.2.3 -pl nextentity-api -am verify   # API 兼容报告（基线是 nextentity-core:2.2.3；主版本跃迁下只产报告不判红，见验证规范）
 ./mvnw -pl nextentity-api test-compile pitest:mutationCoverage    # 变异测试：api，阈值 95%（门禁自足，用例在本模块）
 ./mvnw -pl nextentity-core test-compile pitest:mutationCoverage   # 变异测试：core，阈值 95%

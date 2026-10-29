@@ -352,6 +352,11 @@ def scan(root: str, since: float = 0.0) -> dict[str, dict]:
     # 必须当成**独立通道**而不是并进 surefire：并进去就成了「两个模式的失败数相加」，
     # 既看不出是哪个模式红的，也没法给 PG 模式单独挂预期失败基线。
     channels.update(_scan_xml_reports(root, "surefire-pg", since))
+    # JDBC 的 PG / SQL Server 容器通道：profile 把 failsafe 报告写到 `failsafe-pg-reports` /
+    # `failsafe-mssql-reports`，于是自动成为独立通道 `failsafe-pg:...` / `failsafe-mssql:...`。
+    # 不并进 failsafe：三种方言的失败要能分开归因，且 skip 预算/floor 得按方言单独挂。
+    channels.update(_scan_xml_reports(root, "failsafe-pg", since))
+    channels.update(_scan_xml_reports(root, "failsafe-mssql", since))
     channels.update(_scan_pit(root))
     # 静态检查通道：checkstyle / PMD / SpotBugs 的违规数必须由凭证自己数。
     # `mvn verify` 退出 0 在这件事上不是证据（见 `_static_violations` 的注释）。

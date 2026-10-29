@@ -28,5 +28,30 @@
         <Class name="io.github.nextentity.spring.AbstractRepository"/>
         <Bug pattern="CT_CONSTRUCTOR_THROW"/>
     </Match>
+    <!-- JDBC 执行器/写入器：SQL 一律来自自家 JdbcCompiler 生成的 SqlStatement.sql()（表名/列名由
+         JdbcMeta 反射注解得到，值与 LIMIT/OFFSET 全走 PreparedStatement 参数绑定），不存在用户拼接；
+         SpotBugs 的「非常量 SQL」在这条链路上是误报，因此只按方法放行（不按类、更不按规则全仓放行，
+         免得这两类以后真出现拼接 SQL 时静默通过）。方法名取自 spotbugsXml 里 bugInstance 的 method 属性。
+         这是静态分析排除，不是 @Disabled，无 expires。 -->
+    <Match>
+        <Class name="io.github.nextentity.jdbc.exec.JdbcExecutor"/>
+        <Method name="read"/>
+        <Bug pattern="SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING"/>
+    </Match>
+    <Match>
+        <Class name="io.github.nextentity.jdbc.exec.JdbcPersistExecutor"/>
+        <Method name="insertGenerated"/>
+        <Bug pattern="SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING"/>
+    </Match>
+    <Match>
+        <Class name="io.github.nextentity.jdbc.exec.JdbcPersistExecutor"/>
+        <Method name="insertBatch"/>
+        <Bug pattern="SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING"/>
+    </Match>
+    <Match>
+        <Class name="io.github.nextentity.jdbc.exec.JdbcPersistExecutor"/>
+        <Method name="executeUpdate"/>
+        <Bug pattern="SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING"/>
+    </Match>
 
 </FindBugsFilter>

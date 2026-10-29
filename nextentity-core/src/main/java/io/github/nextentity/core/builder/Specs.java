@@ -10,9 +10,7 @@ import io.github.nextentity.core.spec.Literal;
 import io.github.nextentity.core.spec.NullCheck;
 import io.github.nextentity.core.spec.Operand;
 import io.github.nextentity.core.spec.Spec;
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.List;
 
 /// 语义映射的唯一出口：把「路径 + 运算 + 参数」变成 `core.spec` 节点。
 ///
@@ -63,8 +61,8 @@ final class Specs {
         if (values.isEmpty()) {
             return Constant.of(negated);
         }
-        List<Object> copy = new ArrayList<>(values);
-        return new In(path, copy, negated);
+        // 本层不做 `Collection → List` 的转换：`In#of` 与构造器的 `copyOf` 一次成型。
+        return In.of(path, values, negated);
     }
 
     /// 闭区间。

@@ -1,6 +1,7 @@
 package io.github.nextentity.core.builder;
 
 import io.github.nextentity.api.model.Slice;
+import io.github.nextentity.core.util.ImmutableList;
 import java.util.List;
 import java.util.function.Function;
 
@@ -13,9 +14,9 @@ import java.util.function.Function;
 record SliceResult<T>(List<T> data, long total) implements Slice<T> {
 
     SliceResult {
-        // 投影列可以是 NULL，而 `List.copyOf` 遇到 null 元素抛 NPE（2.2.3 的 `SliceImpl` 允许 null）。
-        // `Stream.toList()` 同样不可变，但允许 null。
-        data = data.stream().toList();
+        // 投影列可以是 NULL（2.2.3 的 `SliceImpl` 允许 null），而 `List.copyOf` 遇到 null 抛 NPE。
+        // `ImmutableList.copyOf` 允许 null，且比 `Stream.toList()` 少一层 stream 机制。
+        data = ImmutableList.copyOf(data);
     }
 
     @Override
