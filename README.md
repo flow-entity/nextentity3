@@ -8,7 +8,7 @@ JPA 之上的小型类型安全查询层。把「动态条件 + 排序 + 分页 
 
 非目标：实体生命周期管理、懒加载代理、实体事件总线、多方言 SQL 生成、注解处理器生成实体类、JPA 静态元模型（`Order_`）。
 
-> 本文与 [docs/USAGE.md](docs/USAGE.md) 里的每段示例都对真实产物（`nextentity-api`/`core`/`jpa`/`jdbc`/`spring`）做过 javac 编译验证；验证脚本随本次迁移归档（`tmp/scripts/probe/DocExamples.java`，不入库）。
+> 本文与 [docs/USAGE.md](docs/USAGE.md) 里的每段示例都对真实产物（`nextentity-api`/`core`/`jpa`/`jdbc`/`spring`）做过 javac 编译验证；新增或修改示例时按 [AGENTS.md](AGENTS.md) 的要求抄进 `tmp/scripts/` 下的临时脚本复验，用完即删（不入库）。
 
 ## 30 秒
 
