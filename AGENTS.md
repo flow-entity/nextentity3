@@ -69,9 +69,9 @@
 # 各档的具体步骤见 DESIGN §5「执行凭证」；判定只认 tmp/gate/<commit>-<ts>/receipt.json，
 # 不以日志末行为准。
 
-# 发布：打 v* tag 触发 .github/workflows/release.yml（自动 gate + deploy）。
-# 手工发布命令以 release.yml 里实际写的那条为准（该文件由发版工程落地）；
-# 在它存在之前不要凭记忆敲 -Ppublish deploy。
+# 发布：打 v* tag 触发 .github/workflows/release.yml（自动 gate + deploy）；
+# 前置、步骤与判定见下方「发布 runbook」。上传命令就是 release.yml 里那条：
+./mvnw -B -Ppublish deploy -DskipTests -Djacoco.check.skip=true
 
 ./mvnw clean verify                      # 子模块自查（非权威）：格式 + 静态检查 + 单测 + 覆盖率；不含容器通道
 ./mvnw -q spotless:apply                 # 一键格式化（提交前必跑）
@@ -91,6 +91,44 @@
 ```
 
 从仓库根目录执行；单模块内工作时才 `cd`。首次克隆后执行 `git config core.hooksPath githooks` 启用提交前门禁。
+
+# 发布 runbook
+
+发布链路是「tag 触发 + 门禁先行」：人工只做一次性前置、版本收口和打 tag，剩下的由 `.github/workflows/release.yml` 自动完成。
+
+## 一次性前置（人工，只需做一次）
+
+- Central Portal 账号可用，且 namespace `io.github.flow-entity` 已通过验证（Portal 里该 namespace 处于可发布状态）。
+- 本机有签名用的 GPG key，公钥已上传到 keyserver（Central 校验签名要能查到公钥）：
+  ```bash
+  gpg --keyserver keyserver.ubuntu.com --send-keys <FPR>
+  gpg --keyserver keys.openpgp.org --send-keys <FPR>
+  gpg --list-secret-keys --keyid-format LONG   # 指纹要与 Portal 里登记的一致
+  ```
+- GitHub 仓库 secrets 配齐四项：`GPG_PRIVATE_KEY`（`gpg --armor --export-secret-keys <FPR>` 的全文）、`GPG_PASSPHRASE`、`CENTRAL_USERNAME`、`CENTRAL_PASSWORD`（后两项是 Portal 的 **User Token** 两段，不是登录密码）。
+
+## 步骤
+
+1. **版本收口**：根 `pom.xml` 的 `<version>` 由 `x.y.z-SNAPSHOT` 改成 `x.y.z`；`CHANGELOG.md` 顶部标题改成 `## [x.y.z] — 日期`（Migration 内容不动）。
+2. **合入发布分支**：改动合进 `release/<major>.<minor>`，等 CI（`pr` 档）绿。
+3. **在干净 HEAD 跑发布门禁**（40–70 分钟）：
+   ```bash
+   OLD_VERSION=2.2.3 ./tools/gate.sh release
+   ```
+   `OLD_VERSION` 必须是上一发布版（Central 上真实存在、能解析到的版本）。**判绿只认** `tmp/gate/<commit>-<ts>/receipt.json`，不以日志末行为准。
+4. **打 tag 并推送**（tag 名 = `v` + pom 版本）：
+   ```bash
+   git tag v3.0.0
+   git push origin v3.0.0
+   ```
+5. **等 `release.yml` 跑完**：它先复核「tag 名 = pom 版本 = 要发布的坐标」，再跑同一档门禁（带 `--require-clean`），最后执行 `./mvnw -B -Ppublish deploy -DskipTests -Djacoco.check.skip=true`。测试证据来自第 3 步的 receipt，deploy 只负责重新打包（sources / javadoc / 签名）与上传。
+6. **在 Portal 确认**：发布集是 6 个模块 `io.github.flow-entity:nextentity-{api,core,jpa,jdbc,spring,bom}`，插件配置 `waitUntil=published`，deploy 返回成功即全部已发布；`nextentity-arch` / `nextentity-testing` / `nextentity-tests-*` 不发布。
+
+## 判定与回滚
+
+- tag 与 pom 版本不一致、或 pom 版本带 `-SNAPSHOT`：`release.yml` 在第一步直接失败，不会上传。
+- `workflow_dispatch` 只有在 `release.yml` 已存在于**默认分支**时才可用；当前它只在 `release/*` 上 —— 手动触发前先把 `release.yml` 合到 `main`，或只用 tag 触发。
+- 未到 `published` 之前可重发：Portal 里 `failed` 的 deployment 可以 drop，然后重跑该 tag 的工作流。
 
 # 编码约定
 
