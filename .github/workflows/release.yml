@@ -77,7 +77,7 @@ jobs:
           fi
 
       # 只导入私钥；口令在签名时由 MAVEN_GPG_PASSPHRASE 注入（pom 里配了 loopback）。
-      # `gpg --list-secret-keys` 只打印指纹/uid，不含私钥材料，便于和 Central 上登记的指纹核对。
+      # `gpg --list-secret-keys` 只打印指纹/uid，不含私钥材料，便于确认签名私钥指纹。
       - name: Import GPG signing key
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
