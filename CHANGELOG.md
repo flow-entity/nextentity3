@@ -100,8 +100,8 @@
 ### Removed
 
 - `AbstractRepository<T, ID>` 的 `ID` 类型参数：本类从不使用它，Javadoc 里也写着「仅用于子类声明的可读性」。**为什么必须破**：未使用的类型参数会误导子类以为主键类型参与契约，且它让 `AbstractRepository` 的签名与 `EntityOperations` 的泛型面不一致。迁移是机械替换：`extends AbstractRepository<Order, Long>` → `extends AbstractRepository<Order>`（README、`docs/USAGE.md` 与本仓库示例已同步）。
-- 相对 nextentity 2.x 不再提供：自研元模型、实体事件总线、CGLIB 仓储代理、`Tuple5`~`Tuple10`（2.x 的 JDBC 第二引擎已由 3.0.0 的 `nextentity-jdbc` 以新形态重新提供）。
-- `api` 包 44 个类型整体移除（完整清单与逐条理由见下方 Migration 第 1 节）。
+- 相对 nextentity 2.x 不再提供：自研元模型、实体事件总线、CGLIB 仓储代理、`Tuple7`~`Tuple10`（2.2.3 的 7~10 列具名元组；2.2.3 的 JDBC 第二引擎已由 3.0.0 的 `nextentity-jdbc` 以新形态重新提供）。
+- `api` 包 39 个类型整体移除（25 个顶层类型 + 14 个嵌套类，完整清单与逐条理由见下方 Migration 第 1 节）。
 - `core.expression.*`、`core.meta.impl.DefaultMetamodel`、`core.util.Iterators`、`core.EntityTemplateFactory`、`spring.EntityFactoryBuilder` 等 2.x 内部符号不再提供。
 - `SelectStep.selectDistinct(PathRef)`：由 `distinct().select(ref)` 取代。**为什么必须破**：两者语义完全相同，留着就是两个入口；而补「多列 `selectDistinct` 重载」会让「投影形态 × 是否去重」变成笛卡尔积（4 × 2 = 8 个入口），并把 `SelectStep` 从 6 个方法推到 8 个、撞穿 `API_INTERFACES_STAY_NARROW` 的 ≤6。迁移是机械替换：`x.selectDistinct(f)` → `x.distinct().select(f)`，仓库内 5 处移植用例与 point-mall 2 个调用点（`DigitalCardRepository:85`、`OrderImportRecordRepository:71`）均已替换。
 - `core.TransactionOperations`：零实现、零调用的空接缝已删除（事务边界由调用方 `@Transactional` 持有）。需要第二后端时随它一起引入，不提前摆空接口。
@@ -126,7 +126,7 @@
 - 唯一需要改代码的地方：若曾像 point-mall 的 `AppRepositoryImpl` 那样直接 import 2.x 内部类（`DefaultMetamodel`、`EntityTemplateFactory`、`SimpleExpressionImpl`、`PathNode`、`Iterators`），改为通过 `core.EntityOperationsFactory` 取 `EntityOperations`：`query()` 查询、`insert/insertAll/update/updateAll` 写入、`entityType().version()` 取 `@Version` 属性回写。
 - 回滚只需把上面两行改回 `2.2.3` / `1.3.3`（无 schema 变更、无数据迁移）。
 
-**1. 整类移除（44 类，按原因归组）**
+**1. 整类移除（39 个类型 = 25 个顶层类型 + 14 个嵌套类，按原因归组）**
 
 | 移除的类型 | 为什么必须破 |
 |---|---|
@@ -139,7 +139,7 @@
 | `WhereStep` | 仅用于承载 8 个 `where` 重载的中间接口；3.x 由 `BaseWhereStep` + `Whereable` 承担 |
 | `BooleanPath` / `PathRef.BooleanRef` | 0 引用；布尔属性走 `where(..).eqIfNotNull(b)` |
 | `PathRef.BigDecimalRef`/`ByteRef`/`DoubleRef`/`FloatRef`/`IntegerRef`/`LongRef`/`ShortRef` / `PathRef.EntityPathRef` | 0 引用；数值统一由 `PathRef.NumberRef` 承载，关联统一走 `EntityPath` |
-| `model.Tuple3`~`Tuple10` | 不再提供具名元组（`get2()`…`get9()`）；3 列及以上统一返回 `model.Tuple`（`get(int)`/`size()`），`Tuple` 因此按新契约重建而非删除 |
+| `model.Tuple7`~`Tuple10` | 2.2.3 的 7~10 列具名元组（`get6()`…`get9()`）不再提供；`Tuple2`~`Tuple6` **保留**并改为 record（具名 `get0()`…`get5()` + 按位置 `get(int)`，见第 2 节）。3 列以内仍走 `select(...)`，四~六列走 `ProjectionMappers.select(...)`，七列以上自定义 `ProjectionMapper` 并以 `Tuple`（`get(int)`/`size()`）取值 |
 | `model.Order` / `SortOrder` | 0 引用；排序只保留 `orderBy(PathRef\|Path) → asc()/desc()` |
 
 **2. 方法移除 · 收窄（同类合并）**
@@ -171,7 +171,24 @@
 
 **4. japicmp 报告口径**
 
-`-Papi-compat -Djapicmp.oldVersion=2.2.3` 使用 `breakBuildBasedOnSemanticVersioning=true`：主版本升级内的二进制破坏不使构建失败，但报告仍会生成（`nextentity-api/target/japicmp/japicmp.{md,xml}`，254 KB）。原始报告统计为「移除 44 类 / 新增 14 类 / 修改 18 类」；上表按**功能**归组，因此同一处破坏不会重复计数（原始 xml 里「返回类型所属接口被改名」会同时出现 `METHOD_REMOVED` + `METHOD_MODIFIED`，属工具口径）。
+`-Papi-compat -Djapicmp.oldVersion=2.2.3` 使用 `breakBuildBasedOnSemanticVersioning=true`：主版本升级内的二进制破坏不使构建失败，但报告仍会生成（`nextentity-api/target/japicmp/japicmp.{md,xml}`）。
+
+本节的数字用 japicmp **0.23.1** 直接复现（基线必须是 `nextentity-core:2.2.3` 的 jar——2.2.3 没发布过 `nextentity-api`，`io.github.nextentity.api.*` 的类在 core 的 jar 里）：
+
+```bash
+# 1) 编出当前 HEAD 的 api 类（api 零三方依赖，javac 直编即可）
+javac -d tmp/api-classes $(find nextentity-api/src/main/java -name '*.java')
+jar cf tmp/nextentity-api-HEAD.jar -C tmp/api-classes .
+# 2) japicmp CLI 对比（javassist 3.30.2-GA / guava 33.7.1-jre 是其运行期依赖）
+java -cp japicmp-0.23.1.jar:javassist-3.30.2-GA.jar:guava-33.7.1-jre.jar japicmp.JApiCmp \
+  --old ~/.m2/repository/io/github/flow-entity/nextentity-core/2.2.3/nextentity-core-2.2.3.jar \
+  --new tmp/nextentity-api-HEAD.jar \
+  --include 'io.github.nextentity.api.*' --ignore-missing-classes
+```
+
+实测（两种独立口径互相对齐：japicmp 的逐类条目，与两个 jar 内 `io/github/nextentity/api` 类名集合差）：**移除 39 个类型 = 25 个顶层 + 14 个嵌套类；新增 43 个类型 = 25 个顶层 + 18 个嵌套类；修改 23 个类**；顶层公开类型数量两边都是 **49**（嵌套类 16 → 20）。上表按**功能**归组，因此同一处破坏不会重复计数（原始报告里「返回类型所属接口被改名」会同时出现 `METHOD_REMOVED` + `METHOD_MODIFIED`，属工具口径）。
+
+> 旧口径已废弃：本文件此前写的「移除 44 类 / 新增 14 类 / 修改 18 类」来自另一版比对脚本，用上面的命令无法在当前 HEAD 复现，请以上面的命令与数字为准。
 
 **5. 与 2.2.3 的有意差异（不影响存量调用点）**
 
