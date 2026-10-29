@@ -363,7 +363,7 @@ final class OrderTotalMapper implements ProjectionMapper<Order, BigDecimal> {
 BigDecimal total = query().project(new OrderTotalMapper()).single();
 ```
 
-本库不做反射/注解自动映射（`select(OrderRow.class)` 那类，见 §14）：映射代码由调用方手写，编译期可查、IDE 可跳转。
+本库不做反射/注解自动映射（`select(OrderRow.class)` 那类，见 §15）：映射代码由调用方手写，编译期可查、IDE 可跳转。
 
 ## 7. 聚合与分组
 
@@ -468,7 +468,7 @@ operations.update(order);       // 含 @Version 校验，并把新版本号回�
 operations.updateAll(orders);
 ```
 
-`@Version` 字段的实体走乐观锁：版本冲突抛 `OptimisticLockException`，由调用方决定重试策略。**不提供** `update().set().where()` / `delete().where()` 这类按条件写入（见 §14）。
+`@Version` 字段的实体走乐观锁：版本冲突抛 `OptimisticLockException`，由调用方决定重试策略。**不提供** `update().set().where()` / `delete().where()` 这类按条件写入（见 §15）。
 
 ## 11. 事务
 
@@ -492,13 +492,98 @@ nextentity:
 
 自动配置只注册一个 bean：`EntityOperationsFactory`。仓储自己继承 `AbstractRepository` 并用构造器注入它即可。
 
-## 13. 何时不用本库
+## 13. JDBC 第二后端
+
+3.0.0 新增 `nextentity-jdbc`：用纯 JDBC 实现同一套 `EntityOperations`，不装配 Hibernate。它替换的是 `core` 的后端接缝（`Compiler`/`Executor`），DSL 一行不改。
+
+### 13.1 装配
+
+```java
+EntityOperationsFactory factory = new JdbcEntityOperationsFactory(dataSource);
+EntityOperations<Order> orders = factory.operations(Order.class);
+```
+
+- 单参构造器在构造期取一条连接、读 `DatabaseMetaData.getDatabaseProductName()` 探测方言后立即关闭（`nextentity-jdbc/src/main/java/io/github/nextentity/jdbc/JdbcEntityOperationsFactory.java:34`）；`operations(Class)` 见同文件 `:56`。
+- 工厂**不持有连接、不开事务**：每次操作独立 `getConnection()`，事务边界归调用方（同文件类级 Javadoc；取连接点见 `exec/JdbcExecutor.java:59`、`exec/JdbcPersistExecutor.java:98`/`:131`/`:163`）。所以 `DataSource` 必须「每次返回可用连接」，或包装连接的 `close()` 是 no-op——「close 真关连接」的数据源上第二条 SQL 就会报 `The object is already closed`（`docs/DESIGN.md:469`）。
+- Spring 自动配置只注册 JPA 侧的 `EntityOperationsFactory`（`nextentity-spring` 不引用 `jdbc`）：用 JDBC 后端时自己 `new` 工厂，或自己注册 bean。
+
+### 13.2 方言
+
+方言是渲染钩子 `JdbcDialect`，8 个成员里只有 `name()` 必须实现（`nextentity-jdbc/src/main/java/io/github/nextentity/jdbc/dialect/JdbcDialect.java:18`），其余是 default 钩子（例如 `:53` `quote`、`:99` `lock`）。内置 H2 / MySQL / PostgreSQL / SQL Server 四种。
+
+两种选法——交给工厂探测，或显式指定（显式指定不探测）：
+
+```java
+JdbcDialect dialect = JdbcDialect.of("PostgreSQL 16.2");
+EntityOperationsFactory factory = new JdbcEntityOperationsFactory(dataSource, dialect);
+```
+
+`JdbcDialect.of(...)` 的匹配规则：MySQL/H2 全等、PostgreSQL 前缀、Microsoft SQL Server 前缀（忽略大小写）；认不出抛 `UnsupportedOperationException` 并提示自定义方言（`dialect/JdbcDialect.java:25`）。双参构造器见 `JdbcEntityOperationsFactory.java:42`。
+
+自研方言只实现 `name()`，需要时再覆写钩子：
+
+```java
+JdbcDialect custom = new JdbcDialect() {
+    @Override
+    public String name() {
+        return "Custom";
+    }
+
+    @Override
+    public String quote(String identifier) {
+        return "[" + identifier + "]";
+    }
+};
+```
+
+注意 `quote` 只对**被反引号标记**的标识符生效（注解名用反引号包裹 ⇒ 需要引用，渲染字符由方言决定；`docs/DESIGN.md:446`、`:464`）。
+
+### 13.3 同一套 DSL
+
+查询与写入和后端无关（API 在 `api`/`core`，JDBC 只提供渲染与执行）：
+
+```java
+List<Order> pending = orders.query()
+        .where(Order::getStatus)
+        .eq(OrderStatus.CREATED)
+        .where(Order::getAmount)
+        .ge(BigDecimal.ZERO)
+        .orderBy(Order::getId)
+        .asc()
+        .list();
+
+orders.insert(order);
+orders.update(order);
+orders.insertAll(List.of(order));
+orders.updateAll(List.of(order));
+```
+
+写入仍只有这四个方法（`nextentity-core/src/main/java/io/github/nextentity/core/exec/PersistExecutor.java:13`），事务语义同 §11：边界归调用方。
+
+### 13.4 JDBC 后端的支持边界
+
+下列限制是这一轮 JDBC 后端的显式契约（命中即抛 `UnsupportedOperationException`，不是静默降级）：
+
+| 限制 | 证据 |
+|---|---|
+| 时间类型（`LocalDate`/`LocalDateTime`/`Instant`/`java.sql.*`）本轮全部拒绝 | `docs/DESIGN.md:503` |
+| 写入不支持关联属性：关联值非 `null` 抛 UOE，`null` 则跳过该列 | `docs/DESIGN.md:496` |
+| 继承、复合主键、`@Access(PROPERTY)`、`@Embedded`、`@Convert` 拒绝 | `nextentity-jdbc/src/main/java/io/github/nextentity/jdbc/meta/JdbcEntityRules.java:63`/`:66`/`:70`/`:115`/`:118`/`:121` |
+| `@ManyToOne` 必须带 `@JoinColumn(name)` | 同上 `:174` |
+| 集合与一对一关联字段被静默忽略（不进 `attributes()`、不参与 SQL） | 同上 `:169-175` 附近的 `ignored(...)` |
+| 锁只映射 `PESSIMISTIC_WRITE → for update`；值选择/聚合规格带锁拒绝；SQL Server 不行锁 | `docs/DESIGN.md:497`/`:505`/`:512` |
+| 聚合规格与多列 distinct 的 `count`/`exists` 显式拒绝 | `docs/DESIGN.md:500` |
+| 分页 `limit = 0` 视为不限行 | `docs/DESIGN.md:498` |
+| 不生成 DDL：表结构自己建（测试按方言引号建表） | `docs/DESIGN.md:446`、`:464` |
+| `SQLException` 统一包成 `PersistenceException("SQL 执行失败: " + sql, e)` | `docs/DESIGN.md:504` |
+
+## 14. 何时不用本库
 
 - 纯 CRUD、无动态条件 → 直接用 Spring Data 派生查询。
 - 复杂报表 SQL（窗口函数、多表聚合、方言函数）→ 用 `@Query` 原生查询。
 - 需要实体图/级联策略深度控制 → 用 Hibernate 原生 API。
 
-## 14. 3.x 不提供的能力
+## 15. 3.x 不提供的能力
 
 下面这些在 2.2.3 存在但在 point-mall / id-generator 零调用点，3.x 一律不提供（逐条理由见 [CHANGELOG.md](../CHANGELOG.md)）：
 
