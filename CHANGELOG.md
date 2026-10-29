@@ -40,8 +40,8 @@
 - **L4（跨方言对拍）落地**：`nextentity-tests-jpa` 用 `testcontainers:mysql` 起一个 `mysql:8.0.18`（一个 JVM 一个容器，所有容器用例共享），把**同一批一致性基类**（14 个）加 4 类写路径场景接到真 MySQL 上，共 110 条。H2 用例走 surefire、`*IntegrationTest` 走 failsafe，两条通道按类名显式分流（failsafe 默认 includes 是 `**/IT*`/`**/*IT`/`**/*ITCase`，与项目约定的 `*IntegrationTest` 一个都不匹配，不显式配就会「surefire 全跑掉、failsafe 一条不收」）。实测 H2 与 MySQL 结果**零不一致**。
 - 容器通道的开关 `-Dnextentity.requireContainer=true`：默认没有 Docker 就跳过（本地开发宽进），加上后 Docker 缺失会直接构建失败。`@Testcontainers(disabledWithoutDocker = true)` 只会跳过，让 110 条真方言对拍在无 Docker 的 CI 上悄悄退化成 110 条 skip 而构建照绿——这个开关就是用来堵这条静默降级路径的。
 - **写侧维度覆盖（嵌入 / 列名覆盖 / 时间 / 自增主键）**：补上四条此前**一条用例都没有**的语义维度——非 legacy 的**持久化实体**里 `@GeneratedValue`、`Instant`/`LocalDate`、`@AttributeOverride` 零命中（唯一的 `Instant` 字段在 `core` 的 builder 单测里，不落库），`insert` 后的 id 回填、时间列的往返精度、嵌入字段写侧的摊平行为此前全靠读代码推断。新增**三份**契约基类覆盖这四个维度（`nextentity-tests-jpa`）：`EmbeddedOverrideWriteContract`（嵌入写侧 + `@AttributeOverride` 共用）、`TemporalWriteContract`、`GeneratedIdInsertContract`，每份只有一套断言、H2 与真 MySQL 子类只换接线，共 24 条 ×2 通道（其中 1 条是 PG 兼容模式专用用例，默认两通道各 skip 1 条，可数、不静默）。**结论：没有发现生产代码缺陷**——handoff 里怀疑的「`JpaPersistExecutor#setValues` 把 `@Embedded` 误当关联下发整块嵌入」实测不存在（Hibernate 7 会摊平成叶子列），但它依赖 Hibernate 实现，必须有常驻用例钉住；这四类都不需要新增生产代码，价值在于把「推断」换成「证据」。证据形态、变异注入验证与「注入必须带 `-am`」的坑见 [docs/DESIGN.md](docs/DESIGN.md) §5「写侧维度覆盖」。
-- 容器镜像改走 `docker.xuanyuan.run` 镜像源（`docker.xuanyuan.run/library/mysql:8.0.18` 与 `docker.xuanyuan.run/testcontainers/ryuk:0.11.0`）：直连 `registry-1.docker.io` 在受限网络下会 `EOF`，而容器用例是 L4 的唯一载体，拉不到镜像等于这层没跑。用镜像站前缀必须给 `MySQLContainer` 显式 `asCompatibleSubstituteFor("mysql")`（它校验镜像仓库名），Ryuk 是 Testcontainers 另起的回收容器、默认也从 Docker Hub 拉，因此单独用 `ryuk.container.image` 指到同一个源。换源/换版本用 `-Dnextentity.mysql.image=` / `-Dnextentity.ryuk.image=` 覆盖。
-- **CI 能在 GitHub 上真正跑起容器通道了**：`.github/workflows/{ci,nightly}.yml` 用 `GATE_EXTRA_MVN_ARGS` 把镜像源覆盖回 Docker Hub 原名（`library/mysql:8.0.18` / `testcontainers/ryuk:0.11.0`），因为根 pom 的默认源 `docker.xuanyuan.run` 在 GitHub runner 上不可达。`gate.sh` 新增该环境变量的解析（**只接受 `-D` 开头的属性**，防止 `-pl` / `-DskipITs` 这类会改变"跑了什么"的开关从环境里悄悄塞进来，绕过凭证的可核对性）。
+- 容器镜像改走 `docker.xuanyuan.run` 镜像源（`docker.xuanyuan.run/library/mysql:8.0.18` 与 `docker.xuanyuan.run/testcontainers/ryuk:0.11.0`）：直连 `registry-1.docker.io` 在受限网络下会 `EOF`，而容器用例是 L4 的唯一载体，拉不到镜像等于这层没跑。用镜像站前缀必须给 `MySQLContainer` 显式 `asCompatibleSubstituteFor("mysql")`（它校验镜像仓库名），Ryuk 是 Testcontainers 另起的回收容器、默认也从 Docker Hub 拉，因此单独用 `ryuk.container.image` 指到同一个源。换源/换版本用 `-Dnextentity.mysql.image=` / `-Dnextentity.postgres.image=` / `-Dnextentity.ryuk.image=` 覆盖（SQL Server 通道默认走 `mcr.microsoft.com`，另有 `-Dnextentity.sqlserver.image=`）。
+- **CI 能在 GitHub 上真正跑起容器通道了**：`.github/workflows/{ci,nightly}.yml` 用 `GATE_EXTRA_MVN_ARGS` 把镜像源覆盖回 Docker Hub 原名（`library/mysql:8.0.18` / `library/postgres:16` / `testcontainers/ryuk:0.11.0`），因为根 pom 的默认源 `docker.xuanyuan.run` 在 GitHub runner 上不可达。`nextentity.postgres.image` 不是可选项：`-Pjdbc-postgres` 通道（`gate.sh` 的 ci/night/release 档都跑）在 GitHub 上会沿用根 pom 的默认源而直接失败。`gate.sh` 新增该环境变量的解析（**只接受 `-D` 开头的属性**，防止 `-pl` / `-DskipITs` 这类会改变"跑了什么"的开关从环境里悄悄塞进来，绕过凭证的可核对性）。
 - **`gate.sh` 首次拿到「不改 pom 换环境相关属性」的入口**：此前的命令行是写死的数组，`-Dnextentity.mysql.image=` 无从注入，导致「换源不必改 pom」这条 DESIGN 里的说法在 CI 上无法兑现。
 
 ### Changed
@@ -100,8 +100,8 @@
 ### Removed
 
 - `AbstractRepository<T, ID>` 的 `ID` 类型参数：本类从不使用它，Javadoc 里也写着「仅用于子类声明的可读性」。**为什么必须破**：未使用的类型参数会误导子类以为主键类型参与契约，且它让 `AbstractRepository` 的签名与 `EntityOperations` 的泛型面不一致。迁移是机械替换：`extends AbstractRepository<Order, Long>` → `extends AbstractRepository<Order>`（README、`docs/USAGE.md` 与本仓库示例已同步）。
-- 相对 nextentity 2.x 不再提供：自研元模型、实体事件总线、CGLIB 仓储代理、`Tuple5`~`Tuple10`（2.x 的 JDBC 第二引擎已由 3.0.0 的 `nextentity-jdbc` 以新形态重新提供）。
-- `api` 包 44 个类型整体移除（完整清单与逐条理由见下方 Migration 第 1 节）。
+- 相对 nextentity 2.x 不再提供：自研元模型、实体事件总线、CGLIB 仓储代理、`Tuple7`~`Tuple10`（2.2.3 的 7~10 列具名元组；2.2.3 的 JDBC 第二引擎已由 3.0.0 的 `nextentity-jdbc` 以新形态重新提供）。
+- `api` 包 39 个类型整体移除（25 个顶层类型 + 14 个嵌套类，完整清单与逐条理由见下方 Migration 第 1 节）。
 - `core.expression.*`、`core.meta.impl.DefaultMetamodel`、`core.util.Iterators`、`core.EntityTemplateFactory`、`spring.EntityFactoryBuilder` 等 2.x 内部符号不再提供。
 - `SelectStep.selectDistinct(PathRef)`：由 `distinct().select(ref)` 取代。**为什么必须破**：两者语义完全相同，留着就是两个入口；而补「多列 `selectDistinct` 重载」会让「投影形态 × 是否去重」变成笛卡尔积（4 × 2 = 8 个入口），并把 `SelectStep` 从 6 个方法推到 8 个、撞穿 `API_INTERFACES_STAY_NARROW` 的 ≤6。迁移是机械替换：`x.selectDistinct(f)` → `x.distinct().select(f)`，仓库内 5 处移植用例与 point-mall 2 个调用点（`DigitalCardRepository:85`、`OrderImportRecordRepository:71`）均已替换。
 - `core.TransactionOperations`：零实现、零调用的空接缝已删除（事务边界由调用方 `@Transactional` 持有）。需要第二后端时随它一起引入，不提前摆空接口。
@@ -112,6 +112,23 @@
   INSERT/UPDATE 与建表 DDL 恒用裸名，`JdbcPersistExecutor` 不接方言、`WriteSql` 不调 `quote`。内置四种方言的 `quote`
   均为恒等，故对开箱用法无影响；需要引用型标识符（保留字/大小写敏感）时，DDL 与写侧裸名要能接受，或自行在列名/表名层规避。
   生成键回读用的列标签也不 quote（驱动返回原始 label）。
+
+- 相对 2.2.3 仍未提供、且**有移植证据**的能力（`porting/` 指 `nextentity-tests-legacy/porting/`；每条都给出了删除哪些用例、依据在 api 源码的哪一行）：
+
+| 能力 | 证据 |
+|---|---|
+| 显式 `fetch(...)` 预取 | `nextentity-tests-legacy/porting/REPORT.md:26`、`:68-71`（18 条改用会话内惰性加载） |
+| DTO/record/接口投影 `select(Class)` | `porting/REPORT.md:26`；`nextentity-api/src/main/java/io/github/nextentity/api/SelectStep.java:8-12`（注释声明不提供按类反射/注解自动映射） |
+| 按条件更新/删除 `update().set().where()` / `delete().where()` | `porting/REPORT.md:27`；`nextentity-core/src/main/java/io/github/nextentity/core/exec/PersistExecutor.java:13`（只有 `insert`/`insertAll`/`update`/`updateAll`） |
+| 子查询 `toSubQuery()` / `asSubQuery` | `porting/REPORT.md:27`；`porting/NOT-PORTED-port-a.md:60`、`:66` |
+| `startsWith` / `endsWith` / `notLike` / `lower` / `length` / `substring` | `porting/REPORT.md:27`、`:34-36`；`nextentity-api/src/main/java/io/github/nextentity/api/StringOps.java:12-44`（只有 `contains*` / `like*` / `eqIfNotEmpty`） |
+| 算术的 `*IfNotNull` 变体 | `porting/REPORT.md:28` |
+| `orderBy(Collection)` 与 `model.Order` / `SortOrder` 枚举 | `porting/REPORT.md:28`、`NOT-PORTED-port-a.md:88`；第 1 节「整类移除」 |
+| `Slice.offset()` / `limit()` | `porting/REPORT.md:28`、`:77-78`；`nextentity-api/src/main/java/io/github/nextentity/api/model/Slice.java:17`/`:25`/`:32`（只有 `data`/`total`/`to`） |
+| 锁 + 分页组合（`lock(...)` 与 `slice(...)` 同时用） | `porting/REPORT.md:28`、`:77-78`（`lock` 返回终止态 `Collector`，与 `slice()` 互斥） |
+| `EntityRoot.literal` | `porting/REPORT.md:29` |
+| 7 列及以上投影、`select(Collection)` | `porting/REPORT.md:29`、`:36`；`nextentity-api/src/main/java/io/github/nextentity/api/ProjectionMappers.java:10-19`（工厂封顶六列，七列起用自定义 `ProjectionMapper`） |
+| `having(...)` 之后的 `count()` / `exists()` / 分页 | `porting/NOT-PORTED-port-a.md:8` |
 
 ### Migration
 
@@ -126,7 +143,7 @@
 - 唯一需要改代码的地方：若曾像 point-mall 的 `AppRepositoryImpl` 那样直接 import 2.x 内部类（`DefaultMetamodel`、`EntityTemplateFactory`、`SimpleExpressionImpl`、`PathNode`、`Iterators`），改为通过 `core.EntityOperationsFactory` 取 `EntityOperations`：`query()` 查询、`insert/insertAll/update/updateAll` 写入、`entityType().version()` 取 `@Version` 属性回写。
 - 回滚只需把上面两行改回 `2.2.3` / `1.3.3`（无 schema 变更、无数据迁移）。
 
-**1. 整类移除（44 类，按原因归组）**
+**1. 整类移除（39 个类型 = 25 个顶层类型 + 14 个嵌套类，按原因归组）**
 
 | 移除的类型 | 为什么必须破 |
 |---|---|
@@ -139,7 +156,7 @@
 | `WhereStep` | 仅用于承载 8 个 `where` 重载的中间接口；3.x 由 `BaseWhereStep` + `Whereable` 承担 |
 | `BooleanPath` / `PathRef.BooleanRef` | 0 引用；布尔属性走 `where(..).eqIfNotNull(b)` |
 | `PathRef.BigDecimalRef`/`ByteRef`/`DoubleRef`/`FloatRef`/`IntegerRef`/`LongRef`/`ShortRef` / `PathRef.EntityPathRef` | 0 引用；数值统一由 `PathRef.NumberRef` 承载，关联统一走 `EntityPath` |
-| `model.Tuple3`~`Tuple10` | 不再提供具名元组（`get2()`…`get9()`）；3 列及以上统一返回 `model.Tuple`（`get(int)`/`size()`），`Tuple` 因此按新契约重建而非删除 |
+| `model.Tuple7`~`Tuple10` | 2.2.3 的 7~10 列具名元组（`get6()`…`get9()`）不再提供；`Tuple2`~`Tuple6` **保留**并改为 record（具名 `get0()`…`get5()` + 按位置 `get(int)`，见第 2 节）。3 列以内仍走 `select(...)`，四~六列走 `ProjectionMappers.select(...)`，七列以上自定义 `ProjectionMapper` 并以 `Tuple`（`get(int)`/`size()`）取值 |
 | `model.Order` / `SortOrder` | 0 引用；排序只保留 `orderBy(PathRef\|Path) → asc()/desc()` |
 
 **2. 方法移除 · 收窄（同类合并）**
@@ -171,7 +188,17 @@
 
 **4. japicmp 报告口径**
 
-`-Papi-compat -Djapicmp.oldVersion=2.2.3` 使用 `breakBuildBasedOnSemanticVersioning=true`：主版本升级内的二进制破坏不使构建失败，但报告仍会生成（`nextentity-api/target/japicmp/japicmp.{md,xml}`，254 KB）。原始报告统计为「移除 44 类 / 新增 14 类 / 修改 18 类」；上表按**功能**归组，因此同一处破坏不会重复计数（原始 xml 里「返回类型所属接口被改名」会同时出现 `METHOD_REMOVED` + `METHOD_MODIFIED`，属工具口径）。
+`-Papi-compat -Djapicmp.oldVersion=2.2.3` 使用 `breakBuildBasedOnSemanticVersioning=true`：主版本升级内的二进制破坏不使构建失败，但报告仍会生成，落在 `nextentity-api/target/japicmp/` 目录（具体文件名以实际跑出来的为准）。
+
+复现只需仓库里已有的一条命令（japicmp 版本由根 pom 的 `japicmp-maven-plugin.version` 固定；基线 artifact 是 `nextentity-core:2.2.3`——2.2.3 没发布过 `nextentity-api`，`io.github.nextentity.api.*` 的类在 core 的 jar 里；`oldVersion` 必须是中央仓库真能解析到的版本）：
+
+```bash
+./mvnw -Papi-compat -Djapicmp.oldVersion=2.2.3 -pl nextentity-api -am verify
+```
+
+实测（@ `83429f8`，2026-10-30，两种独立口径互相对齐）：**移除 39 个类型 = 25 个顶层 + 14 个嵌套类**（与 japicmp 的 `REMOVED` 条目逐一相等）；**japicmp 报告新增 23 个类（全为顶层）**，而两个 jar 内 `io/github/nextentity/api` 的类名集合差是 **43 = 25 个顶层 + 18 个嵌套类**——差的 2 个是 `io.github.nextentity.api.Conditions` / `PathValues`（包级私有 `final class`，被 japicmp 默认的 PROTECTED 可见性阈值排除）；**修改 23 个类**，未变更 3 个（`PathRef`、`PathRef$NumberRef`、`PathRef$StringRef`）。顶层类型原始计数两边都是 **49**；按 japicmp 的可见性口径是 49 → 47（49 − 25 + 23）。嵌套类 16 → 20。上表按**功能**归组，因此同一处破坏不会重复计数（原始报告里「返回类型所属接口被改名」会同时出现 `METHOD_REMOVED` + `METHOD_MODIFIED`，属工具口径）。
+
+> 旧口径已废弃：本文件此前写的「移除 44 类 / 新增 14 类 / 修改 18 类」是 `84e9e0f`（2026-10-22）时点的真值，之后 api 从 53 个类长到 69 个类，已不适用于当前 HEAD；请以本节 `83429f8` 时点的数字为准。
 
 **5. 与 2.2.3 的有意差异（不影响存量调用点）**
 

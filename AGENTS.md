@@ -5,6 +5,7 @@
 # 行为约束
 
 - **公开 API 是契约**：`io.github.nextentity.api` 下的签名受兼容门禁保护。破坏性变更每版 ≤ 5 处，且必须同时具备三样：机械替换脚本（codemod 或编译错误驱动）、`japicmp` 影响面报告、CHANGELOG 写明"为什么必须破"。
+- **主版本跃迁是上面那条红线的唯一例外**：`x.0.0`（如 `2.2.3 → 3.0.0`）允许超过 5 处破坏，因为「每版 ≤ 5 处」是**小版本演进**的约束，主版本本来就是重新划契约的窗口。代价是迁移指引必须完整，缺一条即视为违规：① CHANGELOG 的 Migration 节逐条写「为什么必须破」（按功能归组，不重复计数）；② 附 `japicmp` 影响面报告与**可复现命令**（基线 artifact + 构造命令本身，见 CHANGELOG §Migration「japicmp 报告口径」）；③ 破坏清单与报告数字必须能对上，对不上先修数字再发版。3.0.0 的实测口径是移除 39 个类型（25 顶层 + 14 嵌套）、japicmp 新增 23 类（两个 jar 的类集差为 43）、修改 23，远超 5 处——正是按这条例外走的。
 - **版本语义**：`api` 包遵循语义化版本，删除/收窄签名即主版本；`core`/`jpa`/`spring` 内部包标记 `@Internal`，不承诺兼容。
 - **依赖方向单向**：只允许 `api ← core ← jpa ← spring`，以及 `api ← core ← jdbc`（第二后端，与 `jpa` 平行、互不依赖）。`api` 零三方依赖；`core` 不得 import `jakarta.persistence` / `hibernate` / `spring`。反向依赖与循环依赖由 enforcer + ArchUnit 拒绝。执法者：各模块 `bannedDependencies`（编译期）+ `nextentity-arch` 的 `MODULES_FREE_OF_CYCLES` / `CORE_PACKAGES_FREE_OF_CYCLES` / `JDBC_IS_A_BACKEND_ONLY`。
 - **新能力只落一处**：新谓词 = `spec` 加节点 + 编译器加分支；新终止符 = `exec` 加方法；不得在 builder 里拼 SQL 或拼 Criteria。新增节点必须让编译期穷尽性检查报错，以此逼出全部分支。
@@ -30,7 +31,7 @@
 | `core` / `jpa` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-<模块> pitest:mutationCoverage`，变异分数不得低于模块 pom 的阈值（**PIT 不带 `-am`**，跑前先 `mvn install -DskipTests` 刷 `~/.m2`，理由见下表 api 行） |
 | `spring` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-spring pitest:mutationCoverage`（阈值 95，同样先 install）。注意 PIT 不变异注解，`@ConditionalOnProperty` 的开关语义由 `NextEntityAutoConfigurationTest` 的用例兜，不看分数 |
 | `api` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-api pitest:mutationCoverage`（api 有自己的线格式用例，门禁自足，阈值 95）。api 的语义同时被 `core` 的用例执行，所以 `core` 的 PIT 也要跑；**跑任何 PIT 之前必须先 `mvn install -DskipTests`**——`pitest:mutationCoverage` 不带 `-am`，它从 `~/.m2` 解析依赖模块，陈旧快照会让依赖新语义的用例集体报「未变异就不通过」，看着像测试坏了，其实是产物旧了 |
-| 公开签名变更 | 额外 `mvn -Papi-compat -Djapicmp.oldVersion=2.2.3 -pl nextentity-api -am verify`。两个坑：①基线 artifact 是 **`nextentity-core`**（2.2.3 没发布过 `nextentity-api`，`io.github.nextentity.api.*` 的类在 `nextentity-core-2.2.3.jar` 里）；②示例版本号必须是中央仓库**真能解析到**的（`3.0.0` 从未发布，抄下来只会报「artifact 无法解析」）。**当前这条只产报告、不判红**：`breakBuildBasedOnSemanticVersioning=true` 在 `3.0.0-SNAPSHOT ← 2.2.3` 这种主版本跃迁下允许一切破坏（实测 624 处不兼容仍 `BUILD SUCCESS`），所以「破坏性变更每版 ≤ 5 处」这条红线**现在没有执法者**，3.0.0 发布后基线挪到 `3.0.0` 才真正生效 |
+| 公开签名变更 | 额外 `mvn -Papi-compat -Djapicmp.oldVersion=2.2.3 -pl nextentity-api -am verify`。两个坑：①基线 artifact 是 **`nextentity-core`**（2.2.3 没发布过 `nextentity-api`，`io.github.nextentity.api.*` 的类在 `nextentity-core-2.2.3.jar` 里）；②示例版本号必须是中央仓库**真能解析到**的（`3.0.0` 从未发布，抄下来只会报「artifact 无法解析」）。**当前这条只产报告、不判红**：`breakBuildBasedOnSemanticVersioning=true` 在 `3.0.0-SNAPSHOT ← 2.2.3` 这种主版本跃迁下允许一切破坏（实测 624 处不兼容仍 `BUILD SUCCESS`），所以「破坏性变更每版 ≤ 5 处」这条红线**现在没有执法者**，3.0.0 发布后基线挪到 `3.0.0` 才真正生效（主版本跃迁的例外口径见「行为约束」的「主版本跃迁」一条） |
 | 发版前 | `./tools/gate.sh release`（档位构成见 [docs/DESIGN.md](docs/DESIGN.md) §5「执行凭证」），并更新 CHANGELOG |
 | 文档里的代码示例（`*.md` 的代码块） | 先把示例**原样**抄进 `tmp/scripts/probe/DocExamples.java`，`javac` 对相关模块真实 `target/classes` 编译通过后才写进文档；文档声称的能力必须能在源码里指到 `文件:行`，指不到就删掉或移入「不提供的能力」表 |
 
@@ -67,6 +68,10 @@
 ./tools/gate.sh release                  # 发版前（含 PIT + api 兼容，需 OLD_VERSION）
 # 各档的具体步骤见 DESIGN §5「执行凭证」；判定只认 tmp/gate/<commit>-<ts>/receipt.json，
 # 不以日志末行为准。
+
+# 发布：打 v* tag 触发 .github/workflows/release.yml（自动 gate + deploy）。
+# 手工发布命令以 release.yml 里实际写的那条为准（该文件由发版工程落地）；
+# 在它存在之前不要凭记忆敲 -Ppublish deploy。
 
 ./mvnw clean verify                      # 子模块自查（非权威）：格式 + 静态检查 + 单测 + 覆盖率；不含容器通道
 ./mvnw -q spotless:apply                 # 一键格式化（提交前必跑）
