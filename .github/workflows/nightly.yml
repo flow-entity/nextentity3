@@ -28,7 +28,7 @@ concurrency:
 # 镜像源：同 ci.yml。pom 默认走 docker.xuanyuan.run 镜像站，GitHub runner 拉不到；用
 # gate.sh 的 GATE_EXTRA_MVN_ARGS 换回 Docker Hub 原名（代价是匿名拉取限流，偶发 429）。
 env:
-  GATE_EXTRA_MVN_ARGS: "-Dnextentity.mysql.image=library/mysql:8.0.18 -Dnextentity.ryuk.image=testcontainers/ryuk:0.11.0"
+  GATE_EXTRA_MVN_ARGS: "-Dnextentity.mysql.image=library/mysql:8.0.18 -Dnextentity.postgres.image=library/postgres:16 -Dnextentity.ryuk.image=testcontainers/ryuk:0.11.0"
 
 jobs:
   night:
