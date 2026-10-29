@@ -103,7 +103,7 @@
   ```bash
   gpg --keyserver keyserver.ubuntu.com --send-keys <FPR>
   gpg --keyserver keys.openpgp.org --send-keys <FPR>
-  gpg --list-secret-keys --keyid-format LONG   # 指纹要与 Portal 里登记的一致
+  gpg --list-secret-keys --keyid-format LONG   # 确认私钥指纹/uid 与签名私钥一致，且公钥已上传到 keyserver（否则 Central 校验签名会拒）
   ```
 - GitHub 仓库 secrets 配齐四项：`GPG_PRIVATE_KEY`（`gpg --armor --export-secret-keys <FPR>` 的全文）、`GPG_PASSPHRASE`、`CENTRAL_USERNAME`、`CENTRAL_PASSWORD`（后两项是 Portal 的 **User Token** 两段，不是登录密码）。
 
@@ -128,7 +128,7 @@
 
 - tag 与 pom 版本不一致、或 pom 版本带 `-SNAPSHOT`：`release.yml` 在第一步直接失败，不会上传。
 - `workflow_dispatch` 只有在 `release.yml` 已存在于**默认分支**时才可用；当前它只在 `release/*` 上 —— 手动触发前先把 `release.yml` 合到 `main`，或只用 tag 触发。
-- 未到 `published` 之前可重发：Portal 里 `failed` 的 deployment 可以 drop，然后重跑该 tag 的工作流。
+- 未到 `published` 之前可重发：先 drop Portal 里 `failed` 的 deployment；要改代码则修完重建 tag（删远端同名 tag 再打）或 bump 补丁版本，再触发——直接重跑同一个 tag 不会换代码（tag 固定 commit）。
 
 # 编码约定
 
