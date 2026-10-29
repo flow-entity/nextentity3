@@ -29,7 +29,7 @@ public final class JdbcEntityOperationsFactory implements EntityOperationsFactor
     /// 创建工厂：构造期取一条连接读数据库产品名，探测完立即关闭。
     ///
     /// @param dataSource 数据源
-    /// @throws UnsupportedOperationException 产品名不在内置四方言（H2 / MySQL / PostgreSQL / SQL Server）内，需改用显式传 `JdbcDialect` 的构造器
+    /// @throws UnsupportedOperationException 产品名不在内置四方言内，需改用显式传 `JdbcDialect` 的构造器
     /// @throws PersistenceException          取连接或读产品名失败
     public JdbcEntityOperationsFactory(DataSource dataSource) {
         this(dataSource, detect(dataSource));
