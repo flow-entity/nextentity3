@@ -5,6 +5,7 @@
 # 行为约束
 
 - **公开 API 是契约**：`io.github.nextentity.api` 下的签名受兼容门禁保护。破坏性变更每版 ≤ 5 处，且必须同时具备三样：机械替换脚本（codemod 或编译错误驱动）、`japicmp` 影响面报告、CHANGELOG 写明"为什么必须破"。
+- **主版本跃迁是上面那条红线的唯一例外**：`x.0.0`（如 `2.2.3 → 3.0.0`）允许超过 5 处破坏，因为「每版 ≤ 5 处」是**小版本演进**的约束，主版本本来就是重新划契约的窗口。代价是迁移指引必须完整，缺一条即视为违规：① CHANGELOG 的 Migration 节逐条写「为什么必须破」（按功能归组，不重复计数）；② 附 `japicmp` 影响面报告与**可复现命令**（基线 artifact + 构造命令本身，见 CHANGELOG §Migration「japicmp 报告口径」）；③ 破坏清单与报告数字必须能对上，对不上先修数字再发版。3.0.0 的实测口径是移除 39 个类型（25 顶层 + 14 嵌套）、japicmp 新增 23 类（两个 jar 的类集差为 43）、修改 23，远超 5 处——正是按这条例外走的。
 - **版本语义**：`api` 包遵循语义化版本，删除/收窄签名即主版本；`core`/`jpa`/`spring` 内部包标记 `@Internal`，不承诺兼容。
 - **依赖方向单向**：只允许 `api ← core ← jpa ← spring`，以及 `api ← core ← jdbc`（第二后端，与 `jpa` 平行、互不依赖）。`api` 零三方依赖；`core` 不得 import `jakarta.persistence` / `hibernate` / `spring`。反向依赖与循环依赖由 enforcer + ArchUnit 拒绝。执法者：各模块 `bannedDependencies`（编译期）+ `nextentity-arch` 的 `MODULES_FREE_OF_CYCLES` / `CORE_PACKAGES_FREE_OF_CYCLES` / `JDBC_IS_A_BACKEND_ONLY`。
 - **新能力只落一处**：新谓词 = `spec` 加节点 + 编译器加分支；新终止符 = `exec` 加方法；不得在 builder 里拼 SQL 或拼 Criteria。新增节点必须让编译期穷尽性检查报错，以此逼出全部分支。
@@ -30,7 +31,7 @@
 | `core` / `jpa` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-<模块> pitest:mutationCoverage`，变异分数不得低于模块 pom 的阈值（**PIT 不带 `-am`**，跑前先 `mvn install -DskipTests` 刷 `~/.m2`，理由见下表 api 行） |
 | `spring` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-spring pitest:mutationCoverage`（阈值 95，同样先 install）。注意 PIT 不变异注解，`@ConditionalOnProperty` 的开关语义由 `NextEntityAutoConfigurationTest` 的用例兜，不看分数 |
 | `api` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-api pitest:mutationCoverage`（api 有自己的线格式用例，门禁自足，阈值 95）。api 的语义同时被 `core` 的用例执行，所以 `core` 的 PIT 也要跑；**跑任何 PIT 之前必须先 `mvn install -DskipTests`**——`pitest:mutationCoverage` 不带 `-am`，它从 `~/.m2` 解析依赖模块，陈旧快照会让依赖新语义的用例集体报「未变异就不通过」，看着像测试坏了，其实是产物旧了 |
-| 公开签名变更 | 额外 `mvn -Papi-compat -Djapicmp.oldVersion=2.2.3 -pl nextentity-api -am verify`。两个坑：①基线 artifact 是 **`nextentity-core`**（2.2.3 没发布过 `nextentity-api`，`io.github.nextentity.api.*` 的类在 `nextentity-core-2.2.3.jar` 里）；②示例版本号必须是中央仓库**真能解析到**的（`3.0.0` 从未发布，抄下来只会报「artifact 无法解析」）。**当前这条只产报告、不判红**：`breakBuildBasedOnSemanticVersioning=true` 在 `3.0.0-SNAPSHOT ← 2.2.3` 这种主版本跃迁下允许一切破坏（实测 624 处不兼容仍 `BUILD SUCCESS`），所以「破坏性变更每版 ≤ 5 处」这条红线**现在没有执法者**，3.0.0 发布后基线挪到 `3.0.0` 才真正生效 |
+| 公开签名变更 | 额外 `mvn -Papi-compat -Djapicmp.oldVersion=2.2.3 -pl nextentity-api -am verify`。两个坑：①基线 artifact 是 **`nextentity-core`**（2.2.3 没发布过 `nextentity-api`，`io.github.nextentity.api.*` 的类在 `nextentity-core-2.2.3.jar` 里）；②示例版本号必须是中央仓库**真能解析到**的（`3.0.0` 从未发布，抄下来只会报「artifact 无法解析」）。**当前这条只产报告、不判红**：`breakBuildBasedOnSemanticVersioning=true` 在 `3.0.0-SNAPSHOT ← 2.2.3` 这种主版本跃迁下允许一切破坏（实测 624 处不兼容仍 `BUILD SUCCESS`），所以「破坏性变更每版 ≤ 5 处」这条红线**现在没有执法者**，3.0.0 发布后基线挪到 `3.0.0` 才真正生效（主版本跃迁的例外口径见「行为约束」的「主版本跃迁」一条） |
 | 发版前 | `./tools/gate.sh release`（档位构成见 [docs/DESIGN.md](docs/DESIGN.md) §5「执行凭证」），并更新 CHANGELOG |
 | 文档里的代码示例（`*.md` 的代码块） | 先把示例**原样**抄进 `tmp/scripts/probe/DocExamples.java`，`javac` 对相关模块真实 `target/classes` 编译通过后才写进文档；文档声称的能力必须能在源码里指到 `文件:行`，指不到就删掉或移入「不提供的能力」表 |
 
@@ -68,6 +69,10 @@
 # 各档的具体步骤见 DESIGN §5「执行凭证」；判定只认 tmp/gate/<commit>-<ts>/receipt.json，
 # 不以日志末行为准。
 
+# 发布：打 v* tag 触发 .github/workflows/release.yml（自动 gate + deploy）；
+# 前置、步骤与判定见下方「发布 runbook」。上传命令就是 release.yml 里那条：
+./mvnw -B -Ppublish deploy -DskipTests -Djacoco.check.skip=true
+
 ./mvnw clean verify                      # 子模块自查（非权威）：格式 + 静态检查 + 单测 + 覆盖率；不含容器通道
 ./mvnw -q spotless:apply                 # 一键格式化（提交前必跑）
 ./mvnw -pl nextentity-core,nextentity-arch -am test   # 快速回归 + 架构门禁，无需容器
@@ -86,6 +91,44 @@
 ```
 
 从仓库根目录执行；单模块内工作时才 `cd`。首次克隆后执行 `git config core.hooksPath githooks` 启用提交前门禁。
+
+# 发布 runbook
+
+发布链路是「tag 触发 + 门禁先行」：人工只做一次性前置、版本收口和打 tag，剩下的由 `.github/workflows/release.yml` 自动完成。
+
+## 一次性前置（人工，只需做一次）
+
+- Central Portal 账号可用，且 namespace `io.github.flow-entity` 已通过验证（Portal 里该 namespace 处于可发布状态）。
+- 本机有签名用的 GPG key，公钥已上传到 keyserver（Central 校验签名要能查到公钥）：
+  ```bash
+  gpg --keyserver keyserver.ubuntu.com --send-keys <FPR>
+  gpg --keyserver keys.openpgp.org --send-keys <FPR>
+  gpg --list-secret-keys --keyid-format LONG   # 确认私钥指纹/uid 与签名私钥一致，且公钥已上传到 keyserver（否则 Central 校验签名会拒）
+  ```
+- GitHub 仓库 secrets 配齐四项：`GPG_PRIVATE_KEY`（`gpg --armor --export-secret-keys <FPR>` 的全文）、`GPG_PASSPHRASE`、`CENTRAL_USERNAME`、`CENTRAL_PASSWORD`（后两项是 Portal 的 **User Token** 两段，不是登录密码）。
+
+## 步骤
+
+1. **版本收口**：根 `pom.xml` 的 `<version>` 由 `x.y.z-SNAPSHOT` 改成 `x.y.z`；`CHANGELOG.md` 顶部标题改成 `## [x.y.z] — 日期`（Migration 内容不动）。
+2. **合入发布分支**：改动合进 `release/<major>.<minor>`，等 CI（`pr` 档）绿。
+3. **在干净 HEAD 跑发布门禁**（40–70 分钟）：
+   ```bash
+   OLD_VERSION=2.2.3 ./tools/gate.sh release
+   ```
+   `OLD_VERSION` 必须是上一发布版（Central 上真实存在、能解析到的版本）。**判绿只认** `tmp/gate/<commit>-<ts>/receipt.json`，不以日志末行为准。
+4. **打 tag 并推送**（tag 名 = `v` + pom 版本）：
+   ```bash
+   git tag v3.0.0
+   git push origin v3.0.0
+   ```
+5. **等 `release.yml` 跑完**：它先复核「tag 名 = pom 版本 = 要发布的坐标」，再跑同一档门禁（带 `--require-clean`），最后执行 `./mvnw -B -Ppublish deploy -DskipTests -Djacoco.check.skip=true`。测试证据来自第 3 步的 receipt，deploy 只负责重新打包（sources / javadoc / 签名）与上传。
+6. **在 Portal 确认**：发布集是 6 个模块 `io.github.flow-entity:nextentity-{api,core,jpa,jdbc,spring,bom}`，插件配置 `waitUntil=published`，deploy 返回成功即全部已发布；`nextentity-arch` / `nextentity-testing` / `nextentity-tests-*` 不发布。
+
+## 判定与回滚
+
+- tag 与 pom 版本不一致、或 pom 版本带 `-SNAPSHOT`：`release.yml` 在第一步直接失败，不会上传。
+- `workflow_dispatch` 只有在 `release.yml` 已存在于**默认分支**时才可用；当前它只在 `release/*` 上 —— 手动触发前先把 `release.yml` 合到 `main`，或只用 tag 触发。
+- 未到 `published` 之前可重发：先 drop Portal 里 `failed` 的 deployment；要改代码则修完重建 tag（删远端同名 tag 再打）或 bump 补丁版本，再触发——直接重跑同一个 tag 不会换代码（tag 固定 commit）。
 
 # 编码约定
 

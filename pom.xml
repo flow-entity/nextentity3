@@ -6,10 +6,40 @@
 
     <groupId>io.github.flow-entity</groupId>
     <artifactId>nextentity</artifactId>
-    <version>3.0.0-SNAPSHOT</version>
+    <version>3.0.0</version>
     <packaging>pom</packaging>
     <name>nextentity</name>
     <description>JPA 之上的小型类型安全查询层</description>
+
+    <url>https://github.com/flow-entity/nextentity3</url>
+    <inceptionYear>2024</inceptionYear>
+
+    <!-- Central Portal 在 bundle 校验阶段要求 POM 里带齐 url/licenses/developers/scm，
+         缺任何一项都会在 upload 之后才被拒（本地构建照样绿）。这些元素在 `-Ppublish` 时
+         由 flatten-maven-plugin 的 ossrh 模式带进部署 POM。 -->
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+    <developers>
+        <developer>
+            <id>flow-entity</id>
+            <name>HuangChengwei</name>
+            <email>huang.chengwei@icloud.com</email>
+            <url>https://github.com/flow-entity</url>
+            <organization>flow-entity</organization>
+        </developer>
+    </developers>
+    <scm>
+        <connection>scm:git:https://github.com/flow-entity/nextentity3.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/flow-entity/nextentity3.git</developerConnection>
+        <url>https://github.com/flow-entity/nextentity3</url>
+        <!-- 与 release.yml 的触发条件 `v*` 一致：tag 名 = v + pom 版本 -->
+        <tag>v${project.version}</tag>
+    </scm>
 
     <modules>
         <module>nextentity-api</module>
@@ -84,8 +114,29 @@
         <pitest-maven.version>1.20.3</pitest-maven.version>
         <pitest-junit5-plugin.version>1.2.3</pitest-junit5-plugin.version>
 
+        <!-- 发布插件版本（只在 -Ppublish 生效，选版理由见 -Ppublish profile 的注释） -->
+        <maven-source-plugin.version>3.4.0</maven-source-plugin.version>
+        <maven-javadoc-plugin.version>3.12.0</maven-javadoc-plugin.version>
+        <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
+        <flatten-maven-plugin.version>1.8.0</flatten-maven-plugin.version>
+        <central-publishing-maven-plugin.version>0.12.0</central-publishing-maven-plugin.version>
+        <!-- flatten 模式：普通 jar 模块用 ossrh（保留 Central 必需的 url/licenses/developers/scm），
+             nextentity-bom 在自己 pom 里覆盖成 bom（额外保留 dependencyManagement）。 -->
+        <flatten.mode>ossrh</flatten.mode>
+
         <!-- 门禁开关：仅当模块已有实现类时开启覆盖率校验 -->
         <jacoco.check.skip>true</jacoco.check.skip>
+
+        <!-- 发布集开关（-Ppublish 之外无副作用：对应的插件只在 publish profile 里声明）。
+             默认全部 true = 不发布：root aggregator、nextentity-arch、nextentity-testing、
+             nextentity-tests-* 都靠这个默认值排除；6 个对外模块在自己的 pom 里覆盖成 false。
+             默认拒绝而不是默认发布，是为了让「将来新加的模块」不会在没人注意时被发出去。 -->
+        <central.publishing.skipPublishing>true</central.publishing.skipPublishing>
+        <central.publishing.skipUpload>false</central.publishing.skipUpload>
+        <maven.source.skip>true</maven.source.skip>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+        <gpg.skip>true</gpg.skip>
+        <flatten.skip>true</flatten.skip>
     </properties>
 
     <dependencyManagement>
@@ -485,4 +536,143 @@
             </plugin>
         </plugins>
     </build>
+
+    <!--
+      发布 profile：`mvn -Ppublish deploy`。不激活时插件与属性都不参与构建。
+
+      目标仓库是 Central Publisher Portal（旧的 OSSRH 已于 2025-06 关停），用
+      org.sonatype.central:central-publishing-maven-plugin 0.12.0（2026-10 时点最新稳定版，
+      Apache-2.0 开源）。extensions=true 时它在运行期替换 maven-deploy-plugin 的绑定，所以不需要
+      distributionManagement；publishingServerId 对应 ~/.m2/settings.xml 里的 <server id="central">。
+
+      为什么还要 flatten-maven-plugin：root aggregator 本身不发布，而子模块 POM 的 parent
+      指向它，消费者会解析不到父 POM。flatten 在 process-resources 生成 .flattened-pom.xml：
+      剥掉 parent、解析 ${project.version} 等变量、去掉 test 依赖与 build 段；ossrh 模式保留
+      Central 必需的 url/licenses/developers/scm。该文件在模块根目录，已加入 .gitignore。
+
+      发布集由根 properties 的开关决定：6 个对外模块在自己的 pom 里把 skipPublishing /
+      source / javadoc / gpg / flatten 的 skip 覆盖成 false；其余模块靠默认 true 排除。
+      central 插件只在根 pom 声明一次（extensions=true），子模块继承配置。
+    -->
+    <profiles>
+        <profile>
+            <id>publish</id>
+            <build>
+                <plugins>
+                    <!-- 源码 jar：Central 要求每个 jar 产物都带 sources 与 javadoc -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>${maven-source-plugin.version}</version>
+                        <configuration>
+                            <skipSource>${maven.source.skip}</skipSource>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- javadoc jar：中文注释会撞 doclint，统一 doclint=none（只关检查，failOnError
+                         保持默认 true，真编译错误仍然红） -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>${maven-javadoc-plugin.version}</version>
+                        <configuration>
+                            <skip>${maven.javadoc.skip}</skip>
+                            <release>${java.version}</release>
+                            <doclint>none</doclint>
+                            <encoding>${project.build.sourceEncoding}</encoding>
+                            <docencoding>${project.build.sourceEncoding}</docencoding>
+                            <charset>${project.build.sourceEncoding}</charset>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- 签名：口令只从环境变量取（CI 由 secrets.GPG_PASSPHRASE 注入），pom 里不写凭据。
+                         无 key 的本地验证：-Dgpg.skip=true -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>${maven-gpg-plugin.version}</version>
+                        <configuration>
+                            <skip>${gpg.skip}</skip>
+                            <passphrase>${env.MAVEN_GPG_PASSPHRASE}</passphrase>
+                            <gpgArguments>
+                                <arg>--pinentry-mode</arg>
+                                <arg>loopback</arg>
+                            </gpgArguments>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- 剥离 parent、解析变量的部署 POM 生成器 -->
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>flatten-maven-plugin</artifactId>
+                        <version>${flatten-maven-plugin.version}</version>
+                        <configuration>
+                            <skip>${flatten.skip}</skip>
+                            <flattenMode>${flatten.mode}</flattenMode>
+                            <updatePomFile>true</updatePomFile>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>flatten</id>
+                                <phase>process-resources</phase>
+                                <goals>
+                                    <goal>flatten</goal>
+                                </goals>
+                            </execution>
+                            <execution>
+                                <id>flatten-clean</id>
+                                <phase>clean</phase>
+                                <goals>
+                                    <goal>clean</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- Central Portal 上传：bundle 落在第一个（root）模块的 target/central-publishing/。
+                         skipPublishing / skipUpload 是插件的 user property，这里用 central.publishing.*
+                         桥接，方便命令行 -Dcentral.publishing.skipPublishing=true 做无凭证验证。 -->
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>${central-publishing-maven-plugin.version}</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>true</autoPublish>
+                            <waitUntil>published</waitUntil>
+                            <deploymentName>nextentity ${project.version}</deploymentName>
+                            <skipPublishing>${central.publishing.skipPublishing}</skipPublishing>
+                            <skipUpload>${central.publishing.skipUpload}</skipUpload>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

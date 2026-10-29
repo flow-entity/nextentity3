@@ -31,15 +31,18 @@ concurrency:
   cancel-in-progress: true
 
 # 镜像源：根 pom 的默认是 `docker.xuanyuan.run/...`（受限网络下的镜像站），GitHub runner
-# 拉不到，容器通道会整条卡死。这里用 gate.sh 的 GATE_EXTRA_MVN_ARGS 换回 Docker Hub 原名
-# ——runner 能直连，代价是吃匿名拉取限流（每 IP 每 6 小时 100 次），偶发 429 会让容器步
-# 随机红。要彻底摆脱这个外部依赖，得换成 `services:` 起 MySQL + 外部实例模式（见
-# nextentity-tests-jpa 的 MySqlL4Container）。
+# 拉不到，容器通道会整条卡死（实测：PG 通道 33 个类全部 `ContainerFetchException`，2 分钟
+# 拉取超时，见 run 40907903603）。这里用 gate.sh 的 GATE_EXTRA_MVN_ARGS 把 mysql / postgres
+# / ryuk 换回 Docker Hub 原名——runner 能直连，代价是吃匿名拉取限流（每 IP 每 6 小时 100 次），
+# 偶发 429 会让容器步随机红。要彻底摆脱这个外部依赖，得换成 `services:` 起 MySQL + 外部
+# 实例模式（见 nextentity-tests-jpa 的 MySqlL4Container）。
+# SQL Server 不用覆盖：它的默认值本来就是 `mcr.microsoft.com`，runner 能直连。
 #
-# 为什么不用 env：这两个值是 pom 的 `<properties>`，只在 Maven 侧解析，环境变量覆盖不了；
-# 而 gate.sh 的命令行是写死的数组，只能从 GATE_EXTRA_MVN_ARGS 注入 -D。
+# 为什么不用 env：这三个值是 pom 的 `<properties>`（`nextentity.postgres.image` 在
+# `nextentity-tests-jdbc/pom.xml` 的 `jdbc-postgres` profile 里传给 failsafe），只在 Maven
+# 侧解析，环境变量覆盖不了；而 gate.sh 的命令行是写死的数组，只能从 GATE_EXTRA_MVN_ARGS 注入 -D。
 env:
-  GATE_EXTRA_MVN_ARGS: "-Dnextentity.mysql.image=library/mysql:8.0.18 -Dnextentity.ryuk.image=testcontainers/ryuk:0.11.0"
+  GATE_EXTRA_MVN_ARGS: "-Dnextentity.mysql.image=library/mysql:8.0.18 -Dnextentity.postgres.image=library/postgres:16 -Dnextentity.ryuk.image=testcontainers/ryuk:0.11.0"
 
 jobs:
   gate:

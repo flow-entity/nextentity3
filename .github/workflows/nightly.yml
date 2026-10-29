@@ -28,7 +28,7 @@ concurrency:
 # 镜像源：同 ci.yml。pom 默认走 docker.xuanyuan.run 镜像站，GitHub runner 拉不到；用
 # gate.sh 的 GATE_EXTRA_MVN_ARGS 换回 Docker Hub 原名（代价是匿名拉取限流，偶发 429）。
 env:
-  GATE_EXTRA_MVN_ARGS: "-Dnextentity.mysql.image=library/mysql:8.0.18 -Dnextentity.ryuk.image=testcontainers/ryuk:0.11.0"
+  GATE_EXTRA_MVN_ARGS: "-Dnextentity.mysql.image=library/mysql:8.0.18 -Dnextentity.postgres.image=library/postgres:16 -Dnextentity.ryuk.image=testcontainers/ryuk:0.11.0"
 
 jobs:
   night:
@@ -51,6 +51,11 @@ jobs:
         run: |
           chmod +x tools/gate.sh
           tools/gate.sh night --require-clean
+
+      # publish profile 冒烟：只在发 tag 那天第一次跑 profile 的成本最高。这步不进凭证，
+      # 失败会让 nightly 红（run: 默认如此）——profile 坏在 tag 当天才发现代价更大。
+      - name: Publish profile smoke (no deploy)
+        run: ./mvnw -B -Ppublish -DskipTests -Dgpg.skip=true -Dcentral.publishing.skipPublishing=true package
 
       - name: Upload gate receipt
         if: always()

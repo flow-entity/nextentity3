@@ -7,13 +7,24 @@
     <parent>
         <groupId>io.github.flow-entity</groupId>
         <artifactId>nextentity</artifactId>
-        <version>3.0.0-SNAPSHOT</version>
+        <version>3.0.0</version>
     </parent>
 
     <artifactId>nextentity-bom</artifactId>
     <packaging>pom</packaging>
     <name>nextentity-bom</name>
     <description>依赖版本对齐</description>
+    <properties>
+        <!-- 发布集：本模块与 nextentity-{api,core,jpa,jdbc,spring,bom} 一起发到 Central，
+             覆盖根 pom 的默认 true（默认不发布），仅 -Ppublish 生效。 -->
+        <central.publishing.skipPublishing>false</central.publishing.skipPublishing>
+        <maven.source.skip>false</maven.source.skip>
+        <maven.javadoc.skip>false</maven.javadoc.skip>
+        <gpg.skip>false</gpg.skip>
+        <flatten.skip>false</flatten.skip>
+        <!-- BOM 要保留 dependencyManagement（ossrh 模式会剥掉它） -->
+        <flatten.mode>bom</flatten.mode>
+    </properties>
 
     <dependencyManagement>
         <dependencies>
@@ -40,11 +51,6 @@
             <dependency>
                 <groupId>io.github.flow-entity</groupId>
                 <artifactId>nextentity-spring</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.github.flow-entity</groupId>
-                <artifactId>nextentity-testing</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>
