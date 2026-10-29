@@ -24,3 +24,6 @@ Thumbs.db
 .mvn/lock.d/
 # gate-receipt.py 被 gate.sh 以子进程调用，Python 会顺手生成字节码缓存。
 __pycache__/
+
+# flatten-maven-plugin 的部署 POM（-Ppublish 时生成，不入库）
+.flattened-pom.xml

@@ -138,6 +138,12 @@
     <properties>
         <japicmp.skip>true</japicmp.skip>
         <japicmp.oldVersion>2.2.3</japicmp.oldVersion>
+        <!-- 发布集：本模块发到 Central，覆盖根 pom 的默认 true，仅 -Ppublish 生效 -->
+        <central.publishing.skipPublishing>false</central.publishing.skipPublishing>
+        <maven.source.skip>false</maven.source.skip>
+        <maven.javadoc.skip>false</maven.javadoc.skip>
+        <gpg.skip>false</gpg.skip>
+        <flatten.skip>false</flatten.skip>
     </properties>
 </project>
 

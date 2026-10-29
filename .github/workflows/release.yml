@@ -1,0 +1,156 @@
+# 发布载体：tag `v3.0.0` 推上去就自动发 Central，人工只负责打 tag。
+#
+# 为什么不是「本地 mvn deploy 一把梭」：发版前门禁（`./tools/gate.sh release`）要先跑 40-70
+# 分钟——容器通道、PIT、api 兼容都要真跑；把这些和签名/上传塞进同一条本地命令，失败时没人
+# 说得清是「代码红」还是「凭证/网络红」。所以这里先门禁、拿到 receipt，再单独 deploy。
+#
+# 为什么 deploy 前非要把 gate 再跑一遍：gate 的 release 档已包含 `clean verify`、容器通道、
+# PIT，deploy 只负责重新打包（sources/javadoc/签名）与上传，`-DskipTests` 是刻意的——测试
+# 证据来自上一步的 receipt，不来自 deploy。
+#
+# 凭据全部走 secrets + 环境变量：settings.xml 在 runner 上临时生成，pom 里只有
+# `${env.MAVEN_GPG_PASSPHRASE}` 这类占位符，任何私钥/口令都不进仓库。
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+# 与 ci.yml 同一组镜像源覆盖：根 pom 默认 `docker.xuanyuan.run/...`，GitHub runner 拉不到，
+# 容器通道会整条卡死（详见 ci.yml 文件头）。release 档同样跑容器，所以同样要覆盖。
+env:
+  GATE_EXTRA_MVN_ARGS: "-Dnextentity.mysql.image=library/mysql:8.0.18 -Dnextentity.postgres.image=library/postgres:16 -Dnextentity.ryuk.image=testcontainers/ryuk:0.11.0"
+  MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    # gate 40-70 分钟 + deploy 5-10 分钟；留足余量，超时比失败更难查。
+    timeout-minutes: 180
+    steps:
+      # fetch-depth 0：tag 校验要 `git tag --points-at HEAD`，浅克隆拿不到 tag。
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      # 版本三元一致：tag 名 = `v` + pom 版本 = 实际要发的坐标。SNAPSHOT 直接在门口拒掉，
+      # 否则 Central 会把它当成正式版提交（Portal 不接受 SNAPSHOT，报错要等上传完才出现）。
+      # workflow_dispatch 没有 tag 时，要求 HEAD 上有一个指向它的 v* tag，避免「在 main 上随手
+      # 点一下发布」把分支快照发出去。
+      - name: Verify tag matches pom version
+        run: |
+          set -euo pipefail
+          POM_VERSION="$(./mvnw -B -q help:evaluate -Dexpression=project.version -DforceStdout)"
+          echo "pom 版本：$POM_VERSION"
+          case "$POM_VERSION" in
+            *-SNAPSHOT) echo "::error::pom 版本是 SNAPSHOT，拒绝发布：$POM_VERSION" >&2; exit 1 ;;
+          esac
+          TAG_NAME=""
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            TAG_NAME="$GITHUB_REF_NAME"
+          else
+            TAG_NAME="$(git tag --points-at HEAD | grep -E '^v[0-9]' | head -n1 || true)"
+            [ -n "$TAG_NAME" ] || { echo "::error::workflow_dispatch 需要 HEAD 上有 v* tag（或在 tag 上触发）" >&2; exit 1; }
+          fi
+          echo "tag：$TAG_NAME"
+          TAG_VERSION="${TAG_NAME#v}"
+          if ! printf '%s' "$TAG_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::tag 不是 v<主>.<次>.<修> 形式：$TAG_NAME" >&2; exit 1
+          fi
+          if [ "$TAG_VERSION" != "$POM_VERSION" ]; then
+            echo "::error::tag 版本（$TAG_VERSION）与 pom 版本（$POM_VERSION）不一致" >&2; exit 1
+          fi
+
+      # 只导入私钥；口令在签名时由 MAVEN_GPG_PASSPHRASE 注入（pom 里配了 loopback）。
+      # `gpg --list-secret-keys` 只打印指纹/uid，不含私钥材料，便于和 Central 上登记的指纹核对。
+      - name: Import GPG signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "$GPG_PRIVATE_KEY" ] || { echo "::error::secrets.GPG_PRIVATE_KEY 未配置" >&2; exit 1; }
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --list-secret-keys --keyid-format LONG | sed -n '1,8p'
+
+      # Central Portal 用 User Token（不是旧的 OSSRH 账号密码）：username/password 两段都从
+      # secrets 注入，文件只在 runner 上存在，job 结束随容器销毁。
+      - name: Write Maven settings for Central Portal
+        env:
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
+        run: |
+          set -euo pipefail
+          [ -n "$CENTRAL_USERNAME" ] || { echo "::error::secrets.CENTRAL_USERNAME 未配置" >&2; exit 1; }
+          [ -n "$CENTRAL_PASSWORD" ] || { echo "::error::secrets.CENTRAL_PASSWORD 未配置" >&2; exit 1; }
+          mkdir -p "$HOME/.m2"
+          cat > "$HOME/.m2/settings.xml" <<EOF
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.2.0">
+            <!-- id 必须与根 pom 的 publishingServerId（central）一致 -->
+            <servers>
+              <server>
+                <id>central</id>
+                <username>${CENTRAL_USERNAME}</username>
+                <password>${CENTRAL_PASSWORD}</password>
+              </server>
+            </servers>
+          </settings>
+          EOF
+          chmod 600 "$HOME/.m2/settings.xml"
+
+      # 门禁先行：release 档 = clean verify（容器强制）+ JDBC 方言通道 + 遗留回归 + install
+      # + 5 个 PIT 通道 + api 兼容。判据只认它落盘的 receipt.json，不以日志末行为准。
+      # OLD_VERSION 是 api 兼容基线的版本号（2.2.3，Central 上真实存在的那版）。
+      - name: Gate (release tier + receipt)
+        timeout-minutes: 120
+        env:
+          OLD_VERSION: "2.2.3"
+        run: |
+          GATE_ROOT="$PWD" tools/gate.sh release --require-clean
+
+      # 门禁过了才上传。`-DskipTests`：测试证据来自上一步 receipt；
+      # `-Djacoco.check.skip=true`：跳过测试就没有 jacoco exec 数据，core 的 jacoco:check 会假红
+      # （AGENTS.md「验证规范」的固定配套）。
+      - name: Publish to Maven Central
+        timeout-minutes: 60
+        run: |
+          ./mvnw -B -Ppublish deploy -DskipTests -Djacoco.check.skip=true
+
+      # 凭证与 bundle 都是构建产物：红的时候更需要它们来解释「为什么红」。
+      - name: Upload gate receipt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gate-receipt
+          path: tmp/gate/**/receipt.json
+          if-no-files-found: warn
+
+      - name: Upload Central bundle
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: central-bundle
+          path: target/central-publishing/**
+          if-no-files-found: warn
+
+      - name: Upload gate logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gate-logs
+          path: tmp/gate/
+          if-no-files-found: ignore
