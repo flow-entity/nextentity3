@@ -113,6 +113,23 @@
   均为恒等，故对开箱用法无影响；需要引用型标识符（保留字/大小写敏感）时，DDL 与写侧裸名要能接受，或自行在列名/表名层规避。
   生成键回读用的列标签也不 quote（驱动返回原始 label）。
 
+- 相对 2.2.3 仍未提供、且**有移植证据**的能力（`porting/` 指 `nextentity-tests-legacy/porting/`；每条都给出了删除哪些用例、依据在 api 源码的哪一行）：
+
+| 能力 | 证据 |
+|---|---|
+| 显式 `fetch(...)` 预取 | `nextentity-tests-legacy/porting/REPORT.md:26`、`:68-71`（18 条改用会话内惰性加载） |
+| DTO/record/接口投影 `select(Class)` | `porting/REPORT.md:26`；`nextentity-api/src/main/java/io/github/nextentity/api/SelectStep.java:8-12`（注释声明不提供按类反射/注解自动映射） |
+| 按条件更新/删除 `update().set().where()` / `delete().where()` | `porting/REPORT.md:27`；`nextentity-core/src/main/java/io/github/nextentity/core/exec/PersistExecutor.java:13`（只有 `insert`/`insertAll`/`update`/`updateAll`） |
+| 子查询 `toSubQuery()` / `asSubQuery` | `porting/REPORT.md:27`；`porting/NOT-PORTED-port-a.md:60`、`:66` |
+| `startsWith` / `endsWith` / `notLike` / `lower` / `length` / `substring` | `porting/REPORT.md:27`、`:34-36`；`nextentity-api/src/main/java/io/github/nextentity/api/StringOps.java:12-44`（只有 `contains*` / `like*` / `eqIfNotEmpty`） |
+| 算术的 `*IfNotNull` 变体 | `porting/REPORT.md:28` |
+| `orderBy(Collection)` 与 `model.Order` / `SortOrder` 枚举 | `porting/REPORT.md:28`、`NOT-PORTED-port-a.md:88`；第 1 节「整类移除」 |
+| `Slice.offset()` / `limit()` | `porting/REPORT.md:28`、`:77-78`；`nextentity-api/src/main/java/io/github/nextentity/api/model/Slice.java:17`/`:25`/`:32`（只有 `data`/`total`/`to`） |
+| 锁 + 分页组合（`lock(...)` 与 `slice(...)` 同时用） | `porting/REPORT.md:28`、`:77-78`（`lock` 返回终止态 `Collector`，与 `slice()` 互斥） |
+| `EntityRoot.literal` | `porting/REPORT.md:29` |
+| 7 列及以上投影、`select(Collection)` | `porting/REPORT.md:29`、`:36`；`nextentity-api/src/main/java/io/github/nextentity/api/ProjectionMappers.java:10-19`（工厂封顶六列，七列起用自定义 `ProjectionMapper`） |
+| `having(...)` 之后的 `count()` / `exists()` / 分页 | `porting/NOT-PORTED-port-a.md:8` |
+
 ### Migration
 
 **0. 消费方实测结论（point-mall 2.2.3 → 3.0.0）**
