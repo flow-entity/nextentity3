@@ -1,6 +1,7 @@
 package io.github.nextentity.jdbc.compile;
 
 import io.github.nextentity.core.spec.AttributePath;
+import io.github.nextentity.core.util.ImmutableList;
 import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.EnumStorage;
 import io.github.nextentity.jdbc.meta.JdbcEntityAttribute;
@@ -76,11 +77,11 @@ final class SqlPaths {
 
     /// 本次 SELECT 实际出现的表别名，根表在前（锁方言用）。
     List<String> aliases() {
-        return List.copyOf(aliasOrder);
+        return ImmutableList.copyOf(aliasOrder);
     }
 
     private String join(String ownerAlias, JdbcEntityAttribute attribute, List<String> prefix) {
-        List<String> key = List.copyOf(prefix);
+        List<String> key = ImmutableList.copyOf(prefix);
         String cached = aliases.get(key);
         if (cached != null) {
             return cached;

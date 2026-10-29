@@ -1,6 +1,7 @@
 package io.github.nextentity.core.spec;
 
 import io.github.nextentity.api.LockMode;
+import io.github.nextentity.core.util.ImmutableList;
 import java.util.List;
 import java.util.Objects;
 
@@ -35,8 +36,8 @@ public record QuerySpec(
         Objects.requireNonNull(groupBy, "groupBy");
         Objects.requireNonNull(orderBy, "orderBy");
         Objects.requireNonNull(window, "window");
-        groupBy = List.copyOf(groupBy);
-        orderBy = List.copyOf(orderBy);
+        groupBy = ImmutableList.copyOf(groupBy);
+        orderBy = ImmutableList.copyOf(orderBy);
     }
 
     /// 构造"查实体、无任何条件"的初始规格。

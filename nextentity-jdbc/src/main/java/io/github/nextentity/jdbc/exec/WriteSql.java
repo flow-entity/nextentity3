@@ -37,7 +37,7 @@ final class WriteSql {
         }
         String sql = "insert into " + identifier(entityType.table(), entityType.isTableQuoted(), dialect) + " ("
                 + String.join(", ", columns) + ") values (" + placeholders(columns.size()) + ")";
-        return new SqlStatement(sql, immutable(parameters), List.of());
+        return new SqlStatement(sql, parameters, List.of());
     }
 
     /// `update t set a=?, b=?, version=? where id=? [and version=?]`：`SET` 列 = 标量属性去掉主键与版本，
@@ -74,7 +74,7 @@ final class WriteSql {
                     .append("=?");
             parameters.add(version.get(entity));
         }
-        return new SqlStatement(sql.toString(), immutable(parameters), List.of());
+        return new SqlStatement(sql.toString(), parameters, List.of());
     }
 
     /// 追加 `SET` 的标量列（跳过主键、版本与关联），返回「一个都没追加」。
@@ -142,11 +142,6 @@ final class WriteSql {
             return ((Enum<?>) value).ordinal();
         }
         return value;
-    }
-
-    private static List<Object> immutable(List<Object> parameters) {
-        // 参数里允许 null（未赋值列绑 null），所以不能用 List.copyOf。
-        return Collections.unmodifiableList(new ArrayList<>(parameters));
     }
 
     private static String placeholders(int count) {

@@ -1,5 +1,6 @@
 package io.github.nextentity.jdbc.meta;
 
+import io.github.nextentity.core.util.ImmutableList;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -41,7 +42,7 @@ final class JdbcAttributes {
 
     /// 持久属性（标量 + 可渲染的 `@ManyToOne`），声明序；§4.3 #9 被忽略的关联不在其中。
     List<JdbcEntityAttribute> attributes() {
-        return List.copyOf(attributes);
+        return ImmutableList.copyOf(attributes);
     }
 
     Map<String, JdbcEntityAttribute> byName() {

@@ -1,7 +1,7 @@
 package io.github.nextentity.core.spec;
 
-import java.util.ArrayList;
-import java.util.Collections;
+import io.github.nextentity.core.util.ImmutableList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 
@@ -16,12 +16,22 @@ import java.util.Objects;
 public record In(AttributePath path, List<Object> values, boolean negated) implements Spec {
 
     /// 紧凑构造器：校验并复制为不可变列表（元素允许为 null，与 2.2.3 的字面量一致）。
+    ///
+    /// **本节点是 `IN` 值列表的契约边界**：构造器复制一次即与来源脱钩，
+    /// 因此 `In#of` 与 builder 层都不再另拷。
     public In {
         Objects.requireNonNull(path, "path");
         Objects.requireNonNull(values, "values");
         if (values.isEmpty()) {
             throw new IllegalArgumentException("空集合必须在 builder 层折成 Constant，不能构造空 IN 节点");
         }
-        values = Collections.unmodifiableList(new ArrayList<>(values));
+        values = ImmutableList.copyOf(values);
+    }
+
+    /// 从任意集合构造：`Collection → List` 的转换与不可变复制一次完成（`copyOf` 对已是本类产物幂等）。
+    ///
+    /// builder 层用它，避免先 `new ArrayList<>(values)` 再让构造器复制第二遍。
+    public static In of(AttributePath path, Collection<?> values, boolean negated) {
+        return new In(path, ImmutableList.copyOf(values), negated);
     }
 }
