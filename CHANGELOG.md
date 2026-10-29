@@ -188,24 +188,17 @@
 
 **4. japicmp 报告口径**
 
-`-Papi-compat -Djapicmp.oldVersion=2.2.3` 使用 `breakBuildBasedOnSemanticVersioning=true`：主版本升级内的二进制破坏不使构建失败，但报告仍会生成（`nextentity-api/target/japicmp/japicmp.{md,xml}`）。
+`-Papi-compat -Djapicmp.oldVersion=2.2.3` 使用 `breakBuildBasedOnSemanticVersioning=true`：主版本升级内的二进制破坏不使构建失败，但报告仍会生成，落在 `nextentity-api/target/japicmp/` 目录（具体文件名以实际跑出来的为准）。
 
-本节的数字用 japicmp **0.23.1** 直接复现（基线必须是 `nextentity-core:2.2.3` 的 jar——2.2.3 没发布过 `nextentity-api`，`io.github.nextentity.api.*` 的类在 core 的 jar 里）：
+复现只需仓库里已有的一条命令（japicmp 版本由根 pom 的 `japicmp-maven-plugin.version` 固定；基线 artifact 是 `nextentity-core:2.2.3`——2.2.3 没发布过 `nextentity-api`，`io.github.nextentity.api.*` 的类在 core 的 jar 里；`oldVersion` 必须是中央仓库真能解析到的版本）：
 
 ```bash
-# 1) 编出当前 HEAD 的 api 类（api 零三方依赖，javac 直编即可）
-javac -d tmp/api-classes $(find nextentity-api/src/main/java -name '*.java')
-jar cf tmp/nextentity-api-HEAD.jar -C tmp/api-classes .
-# 2) japicmp CLI 对比（javassist 3.30.2-GA / guava 33.7.1-jre 是其运行期依赖）
-java -cp japicmp-0.23.1.jar:javassist-3.30.2-GA.jar:guava-33.7.1-jre.jar japicmp.JApiCmp \
-  --old ~/.m2/repository/io/github/flow-entity/nextentity-core/2.2.3/nextentity-core-2.2.3.jar \
-  --new tmp/nextentity-api-HEAD.jar \
-  --include 'io.github.nextentity.api.*' --ignore-missing-classes
+./mvnw -Papi-compat -Djapicmp.oldVersion=2.2.3 -pl nextentity-api -am verify
 ```
 
-实测（HEAD `83429f8`，两种独立口径互相对齐）：**移除 39 个类型 = 25 个顶层 + 14 个嵌套类**（与 japicmp 的 `REMOVED` 条目逐一相等）；**japicmp 报告新增 23 个类（全为顶层）**，而两个 jar 内 `io/github/nextentity/api` 的类名集合差是 **43 = 25 个顶层 + 18 个嵌套类**——差的 2 个是 `io.github.nextentity.api.Conditions` / `PathValues`（包级私有 `final class`，被 japicmp 默认的 PROTECTED 可见性阈值排除）；**修改 23 个类**，未变更 3 个（`PathRef`、`PathRef$NumberRef`、`PathRef$StringRef`）。顶层类型原始计数两边都是 **49**；按 japicmp 的可见性口径是 49 → 47（49 − 25 + 23）。嵌套类 16 → 20。上表按**功能**归组，因此同一处破坏不会重复计数（原始报告里「返回类型所属接口被改名」会同时出现 `METHOD_REMOVED` + `METHOD_MODIFIED`，属工具口径）。
+实测（@ `83429f8`，2026-10-30，两种独立口径互相对齐）：**移除 39 个类型 = 25 个顶层 + 14 个嵌套类**（与 japicmp 的 `REMOVED` 条目逐一相等）；**japicmp 报告新增 23 个类（全为顶层）**，而两个 jar 内 `io/github/nextentity/api` 的类名集合差是 **43 = 25 个顶层 + 18 个嵌套类**——差的 2 个是 `io.github.nextentity.api.Conditions` / `PathValues`（包级私有 `final class`，被 japicmp 默认的 PROTECTED 可见性阈值排除）；**修改 23 个类**，未变更 3 个（`PathRef`、`PathRef$NumberRef`、`PathRef$StringRef`）。顶层类型原始计数两边都是 **49**；按 japicmp 的可见性口径是 49 → 47（49 − 25 + 23）。嵌套类 16 → 20。上表按**功能**归组，因此同一处破坏不会重复计数（原始报告里「返回类型所属接口被改名」会同时出现 `METHOD_REMOVED` + `METHOD_MODIFIED`，属工具口径）。
 
-> 旧口径已废弃：本文件此前写的「移除 44 类 / 新增 14 类 / 修改 18 类」是 `84e9e0f`（2026-10-22）时点的真值，之后 api 从 53 个类长到 69 个类，已不适用于当前 HEAD；用上面的命令无法复现，请以本节的命令与数字为准。
+> 旧口径已废弃：本文件此前写的「移除 44 类 / 新增 14 类 / 修改 18 类」是 `84e9e0f`（2026-10-22）时点的真值，之后 api 从 53 个类长到 69 个类，已不适用于当前 HEAD；请以本节 `83429f8` 时点的数字为准。
 
 **5. 与 2.2.3 的有意差异（不影响存量调用点）**
 

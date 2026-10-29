@@ -5,7 +5,7 @@
 # 行为约束
 
 - **公开 API 是契约**：`io.github.nextentity.api` 下的签名受兼容门禁保护。破坏性变更每版 ≤ 5 处，且必须同时具备三样：机械替换脚本（codemod 或编译错误驱动）、`japicmp` 影响面报告、CHANGELOG 写明"为什么必须破"。
-- **主版本跃迁是上面那条红线的唯一例外**：`x.0.0`（如 `2.2.3 → 3.0.0`）允许超过 5 处破坏，因为「每版 ≤ 5 处」是**小版本演进**的约束，主版本本来就是重新划契约的窗口。代价是迁移指引必须完整，缺一条即视为违规：① CHANGELOG 的 Migration 节逐条写「为什么必须破」（按功能归组，不重复计数）；② 附 `japicmp` 影响面报告与**可复现命令**（含工具版本、`--include`、基线 artifact，见 CHANGELOG §Migration「japicmp 报告口径」）；③ 破坏清单与报告数字必须能对上，对不上先修数字再发版。3.0.0 的实测口径是移除 39 个类型（25 顶层 + 14 嵌套）、japicmp 新增 23 类（两个 jar 的类集差为 43）、修改 23，远超 5 处——正是按这条例外走的。
+- **主版本跃迁是上面那条红线的唯一例外**：`x.0.0`（如 `2.2.3 → 3.0.0`）允许超过 5 处破坏，因为「每版 ≤ 5 处」是**小版本演进**的约束，主版本本来就是重新划契约的窗口。代价是迁移指引必须完整，缺一条即视为违规：① CHANGELOG 的 Migration 节逐条写「为什么必须破」（按功能归组，不重复计数）；② 附 `japicmp` 影响面报告与**可复现命令**（基线 artifact + 构造命令本身，见 CHANGELOG §Migration「japicmp 报告口径」）；③ 破坏清单与报告数字必须能对上，对不上先修数字再发版。3.0.0 的实测口径是移除 39 个类型（25 顶层 + 14 嵌套）、japicmp 新增 23 类（两个 jar 的类集差为 43）、修改 23，远超 5 处——正是按这条例外走的。
 - **版本语义**：`api` 包遵循语义化版本，删除/收窄签名即主版本；`core`/`jpa`/`spring` 内部包标记 `@Internal`，不承诺兼容。
 - **依赖方向单向**：只允许 `api ← core ← jpa ← spring`，以及 `api ← core ← jdbc`（第二后端，与 `jpa` 平行、互不依赖）。`api` 零三方依赖；`core` 不得 import `jakarta.persistence` / `hibernate` / `spring`。反向依赖与循环依赖由 enforcer + ArchUnit 拒绝。执法者：各模块 `bannedDependencies`（编译期）+ `nextentity-arch` 的 `MODULES_FREE_OF_CYCLES` / `CORE_PACKAGES_FREE_OF_CYCLES` / `JDBC_IS_A_BACKEND_ONLY`。
 - **新能力只落一处**：新谓词 = `spec` 加节点 + 编译器加分支；新终止符 = `exec` 加方法；不得在 builder 里拼 SQL 或拼 Criteria。新增节点必须让编译期穷尽性检查报错，以此逼出全部分支。
