@@ -14,7 +14,7 @@ import java.util.List;
 ///
 /// 子句顺序冻结：`select [distinct] … from … [join …] [where …] [group by …] [having …]
 /// [order by …] [limit ? [offset ?]] [for update]`；参数顺序 = 渲染顺序
-/// （SELECT 里的字面量 → WHERE → HAVING → 窗口）。方言差异只经设计 §6.1 的六个渲染点注入。
+/// （SELECT 里的字面量 → WHERE → HAVING → 窗口）。方言差异只经设计 §6.1 的方言钩子注入。
 @SuppressWarnings("PMD.TooManyMethods") // 渲染点由 QuerySpec / Selection / Operand 的节点集合决定，拆开要把同一段子句顺序散成多段
 final class SqlRenderer {
 
@@ -82,7 +82,7 @@ final class SqlRenderer {
         }
         SqlClauses clauses = new SqlClauses(this);
         String expression = countExpression(query);
-        // 计数结果列类型固定 Long（设计 §3.9）：执行器 getLong(1)，不按列类型推断。
+        // 计数结果列类型固定 Long：执行器 getLong(1)，不按列类型推断。
         columnTypes.add(Long.class);
         return statement(expression, "", clauses.where(query.where()));
     }
@@ -105,7 +105,7 @@ final class SqlRenderer {
         return new SqlStatement("select count(*) from (" + inner + ") grouped", parameters, columnTypes);
     }
 
-    /// 存在性语句：`select 1 ... limit 1`（单行上限由方言决定，见设计 §3.9）。
+    /// 存在性语句：`select 1 ... limit 1`（单行上限由方言决定）。
     ///
     /// @return 渲染结果
     SqlStatement exists() {
@@ -130,7 +130,7 @@ final class SqlRenderer {
         return statement("1", "", clauses.where(query.where()) + window(true), true);
     }
 
-    /// 窗口尾缀：片段由方言拼、参数经 sink 追加；两者数量不符说明方言实现有 bug，直接失败（§6.1）。
+    /// 窗口尾缀：片段由方言拼、参数经 sink 追加；两者数量不符说明方言实现有 bug，直接失败（见 DESIGN §6.1）。
     ///
     /// @param exists 是否是 exists 查询（上限在方言手里）
     /// @return 尾片段

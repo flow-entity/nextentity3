@@ -30,7 +30,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import org.junit.jupiter.api.Test;
 
-/// meta 期拒绝矩阵（§4.3 #1-#14）：非法映射在「用到该类型时」拒绝，消息是契约的一部分。
+/// meta 期拒绝矩阵（拒绝口径见 USAGE §13.4.3）：非法映射在「用到该类型时」拒绝，消息是契约的一部分。
 ///
 /// 3.1.0 起 AUTO 生成键、宽松列类型、`@Embedded`、`@Convert`、`@Column(insertable/updatable=false)`
 /// 由拒绝转为支持，正向用例与拒绝用例同文件成对出现，避免旧断言被静默删除。

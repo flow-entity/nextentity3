@@ -27,9 +27,9 @@ import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/// 写入层（H2，§5.4）：生成键回填、`@Version` 自增回写、行数 ≠ 1 时的异常族，以及 §4.3 #22 的空主键拒绝。
+/// 写入层（H2，写入层）：生成键回填、`@Version` 自增回写、行数 ≠ 1 时的异常族，以及空主键拒绝。
 ///
-/// 写入器不管理事务（设计 §9.2 决策 3）：每个 `insert`/`update` 自己取连接、自动提交。
+/// 写入器不管理事务（事务归调用方）：每个 `insert`/`update` 自己取连接、自动提交。
 class JdbcPersistExecutorTest {
 
     private final JdbcMeta meta = new JdbcMeta();

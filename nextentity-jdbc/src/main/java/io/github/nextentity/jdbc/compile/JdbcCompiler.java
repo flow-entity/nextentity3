@@ -13,7 +13,7 @@ import java.util.Objects;
 
 /// `core.compile.Compiler` 的 JDBC 实现：把 `QuerySpec` 渲染成后端可执行的 SQL。
 ///
-/// 方言在构造期固定，只经设计 §6.1 的六个渲染点参与渲染（selectHead / limitClause / lock /
+/// 方言在构造期固定，只经设计 §6.1 的方言钩子参与渲染（selectHead / limitClause / lock /
 /// quote / averageOf / likeEscape）；其余子句四方言同形。
 public final class JdbcCompiler implements Compiler<JdbcQuery> {
 
@@ -36,7 +36,7 @@ public final class JdbcCompiler implements Compiler<JdbcQuery> {
         return new JdbcQuery(valid, new SqlRenderer(meta, dialect, valid).render());
     }
 
-    /// 计数语句，见设计 §3.9。
+    /// 计数语句。
     ///
     /// @param spec 计数规格（core 已清排序/窗口/锁）
     /// @return 计数 SQL
@@ -44,7 +44,7 @@ public final class JdbcCompiler implements Compiler<JdbcQuery> {
         return new SqlRenderer(meta, dialect, requireSpec(spec)).count();
     }
 
-    /// 存在性语句，见设计 §3.9。
+    /// 存在性语句。
     ///
     /// @param spec 存在性规格（core 已清排序/窗口/锁）
     /// @return `select 1 ... limit 1`

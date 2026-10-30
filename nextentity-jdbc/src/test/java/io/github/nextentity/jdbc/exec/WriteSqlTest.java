@@ -34,11 +34,11 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import org.junit.jupiter.api.Test;
 
-/// 写入语句快照（§7.5 写入 3 条 + §3.11）：直接断言包内 `WriteSql` 的整句与绑定值——
+/// 写入语句快照（3 条写入语句）：直接断言包内 `WriteSql` 的整句与绑定值——
 /// 这条用例在本包（`io.github.nextentity.jdbc.exec`）里，`WriteSql` 不进 public 面。
 ///
 /// 列序/SET 列序/`where` 片段都是契约：`GeneratedIdInsertContract` 的 `rowCount` 分支和
-/// tests-jpa 的写回契约都依赖「`set` 与 `where` 之间是 `name=?`」这种无空格形态（§3.11 冻结）。
+/// tests-jpa 的写回契约都依赖「`set` 与 `where` 之间是 `name=?`」这种无空格形态（已冻结）。
 class WriteSqlTest {
 
     private final JdbcMeta meta = new JdbcMeta();

@@ -19,7 +19,7 @@ import io.github.nextentity.jdbc.support.SnapshotOwner;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/// PostgreSQL 端到端渲染（设计 §6.1/§6.3）：`quote` 与 H2/MySQL 同为恒等（不走双引号）、
+/// PostgreSQL 端到端渲染（设计 §6.1）：`quote` 与 H2/MySQL 同为恒等（不走双引号）、
 /// `limit ? offset ?`、exists 的字面量 `limit 1`、`for update of <根表别名>`、`avg` 不转型。
 class PostgresDialectRenderingTest {
 

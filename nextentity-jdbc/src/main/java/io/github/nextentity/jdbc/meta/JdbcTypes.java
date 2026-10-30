@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 
-/// 列类型接缝（§4.3 #12）：白名单与两个方向的值转换绑在同一个类里——[#SUPPORTED] 是唯一清单，
+/// 列类型接缝：白名单与两个方向的值转换绑在同一个类里——[#SUPPORTED] 是唯一清单，
 /// `supports` 与读写分支都从它派生，新增类型不会出现「白名单放行、读写没接」的漂移。
 ///
 /// 公开原因同 [EnumStorage]：`meta`（列校验）、`compile`（谓词字面量绑定）、`exec`（写入绑定与行读取）三处共用。

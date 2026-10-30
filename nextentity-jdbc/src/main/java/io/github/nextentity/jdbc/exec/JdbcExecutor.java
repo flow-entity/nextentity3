@@ -68,7 +68,7 @@ public final class JdbcExecutor implements Executor<JdbcQuery> {
         }
     }
 
-    /// 按参数顺序绑定 `setObject`；`null` 也走 `setObject`（两方言实测可，见设计 §5.1）。
+    /// 按参数顺序绑定 `setObject`；`null` 也走 `setObject`（H2 与 MySQL 实测可用）。
     static void bind(PreparedStatement prepared, List<Object> parameters) throws SQLException {
         for (int i = 0; i < parameters.size(); i++) {
             prepared.setObject(i + 1, parameters.get(i));

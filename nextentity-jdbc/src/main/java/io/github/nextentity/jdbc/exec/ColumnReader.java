@@ -11,7 +11,7 @@ import java.util.Arrays;
 /// 单列读取：按 `columnTypes` 里登记的静态 Java 类型从 `ResultSet` 收窄。
 ///
 /// 类型收窄统一走 [JdbcTypes#read(ResultSet, int, Class)]（与写侧的类型绑定共用同一张类型清单）；
-/// 枚举列的越界 ORDINAL / 脏 name 属于行数据问题，按设计 §3.12 / #24 包成 `PersistenceException`，
+/// 枚举列的越界 ORDINAL / 脏 name 属于行数据问题，按行数据错误包成 `PersistenceException`（语义差异见 USAGE §13.4.4），
 /// 文案带列名、原始值、枚举类型与项数（泄漏原生 `ArrayIndexOutOfBoundsException` 不算契约）。
 final class ColumnReader {
 

@@ -29,7 +29,7 @@ import javax.sql.DataSource;
 /// JDBC 写入器：`INSERT` / `UPDATE` 的语句来自 {@link WriteSql}，这里只负责执行与副作用。
 ///
 /// 副作用有三件：自增主键回填到入参实体、`@Version` 自增回写、行数不等于 1 时抛 JPA 异常族。
-/// 不管理事务——`DataSource` 自动提交，事务边界由调用方持有（设计 §9.2 决策 3）。
+/// 不管理事务——`DataSource` 自动提交，事务边界由调用方持有（与 JPA 后端一致：事务归调用方）。
 ///
 /// 与 JPA 侧的差异只在实现手段：没有 identity map，`update` 总是发语句，不做 `contains` 短路。
 @SuppressWarnings("PMD.TooManyMethods") // PersistExecutor 契约面 + 条件改删 builder 连接 + 内部步骤，拆类只会把同一份连接状态搬运

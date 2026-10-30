@@ -20,7 +20,7 @@ import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/// Phase F 端到端：注解用反引号标记的保留字表 / 列，经工厂 + 自定义「双引号」方言在 H2 上
+/// 标识符引用端到端：注解用反引号标记的保留字表 / 列，经工厂 + 自定义「双引号」方言在 H2 上
 /// 完成 insert / insertAll / update / select / count。
 ///
 /// 约束：H2 里建的是双引号小写标识符，注入的方言 `quote` 也产双引号 —— 与内置 H2 方言的引用字符

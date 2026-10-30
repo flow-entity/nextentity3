@@ -18,7 +18,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/// §4.3 #7 `@Embedded`：把嵌入类型的标量字段扁平化成列属性。
+/// `@Embedded`：把嵌入类型的标量字段扁平化成列属性（支持边界见 USAGE §13.4.1）。
 ///
 /// 列名默认 `<@Embedded 字段名>_<嵌套字段名>`（与 JPA 默认命名一致、无表前缀），`@AttributeOverride` 覆盖；
 /// 嵌套 `@Embedded`、嵌入内的 `@Id` / `@Version` / `@GeneratedValue` / 关联本轮显式拒绝——扁平化层面

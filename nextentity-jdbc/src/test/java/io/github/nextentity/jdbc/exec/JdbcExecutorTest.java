@@ -35,7 +35,7 @@ import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/// 执行层（H2，§4.2「执行层」）：把 `JdbcExecutor` 交回的**原始行**钉住——实体装配、单列裸值、
+/// 执行层（H2，执行层）：把 `JdbcExecutor` 交回的**原始行**钉住——实体装配、单列裸值、
 /// 多列 `Object[]`、枚举按存储类型回读、`count`/`exists`、以及拒绝分支（#23）与 SQL 失败包装（#24）。
 ///
 /// 每个用例一个独立库名（`jdbc_executor_<n>`），表由 `schema.sql` 幂等建出，种子行用普通 JDBC 直插。

@@ -16,10 +16,10 @@ import io.github.nextentity.jdbc.support.SnapshotOwner;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/// 查询 SQL 整句快照（§7.5，不连库）：`JdbcCompiler` 渲染出的 `sql()` 与 `parameters()` 逐字钉住。
+/// 查询 SQL 整句快照（不连库）：`JdbcCompiler` 渲染出的 `sql()` 与 `parameters()` 逐字钉住。
 ///
 /// 驱动方式：`JdbcMeta` + `H2Dialect` + 捕获式 `Executor`，查什么由 core 的 `QueryBuilder` 生成规格；
-/// 本类只断言编译产物，后续接线类（tests-jdbc）用同一 compiler 打真库。渲染口径见设计 §3.0：
+/// 本类只断言编译产物，后续接线类（tests-jdbc）用同一 compiler 打真库。渲染口径见 [SqlStatement] 与 [SqlRenderer]：
 /// 全小写关键字、裸标识符（无引号）、根表 `t0`、join 目标 `t1`、参数按渲染顺序绑定。
 class JdbcSqlSnapshotTest {
 

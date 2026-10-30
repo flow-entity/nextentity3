@@ -6,7 +6,7 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import java.util.List;
 
-/// §4.3 #9 的「静默忽略」样本：集合关联不进 `attributes()`，但 `attribute(name)` 仍可解析到它
+/// 「静默忽略」样本（USAGE §13.4.2）：集合关联不进 `attributes()`，但 `attribute(name)` 仍可解析到它
 /// （`joinColumn()` 为 `null`），好让路径渲染层在 `#15 集合关联路径未支持` 处拒绝。
 @Entity
 @Table(name = "ignored_association_item")

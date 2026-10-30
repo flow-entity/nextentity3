@@ -10,7 +10,7 @@ import java.util.List;
 /// `lock` / `averageOf` / `likeEscape` / `lengthOf` / `substring`）。除 [JdbcDialect#name()] 外全部实例钩子
 /// 有默认实现，默认形态 = H2 / MySQL / PostgreSQL；SQL Server 覆写 `selectHead` / `limitClause` / `lock` /
 /// `averageOf` / `likeEscape` / `lengthOf` / `substring`。钩子语义与绑定契约见设计 §6.1，
-/// 允许的渲染点见 §6.3——不在那列的差异不得加钩子。
+/// 允许的渲染点见各钩子的说明——不在那列的差异不得加钩子。
 public interface JdbcDialect {
 
     /// 内置名：`"h2"` / `"mysql"` / `"postgresql"` / `"sqlserver"`；自定义方言返回自己的名（仅用于日志/错误）。
@@ -46,7 +46,7 @@ public interface JdbcDialect {
     /// MySQL 反引号、SQL Server 方括号，内部同字符双写转义。
     ///
     /// 只有 meta 标记为 quoted 的名字（注解名用反引号包裹过）才会调用本方法，未 quoted 一律裸名，
-    /// 因此默认方言下既有 SQL 零变化。调用点（设计 §6.3）：SELECT 列 / FROM 表 / JOIN 目标表与 ON
+    /// 因此默认方言下既有 SQL 零变化。调用点：SELECT 列 / FROM 表 / JOIN 目标表与 ON
     /// 两侧列 / WHERE·GROUP BY·HAVING·ORDER BY 的列引用。
     ///
     /// @param identifier 裸标识符（表名 / 列名）

@@ -17,7 +17,7 @@ import jakarta.persistence.Version;
 import java.sql.Timestamp;
 import org.junit.jupiter.api.Test;
 
-/// `WriteSql` 的版本零值填充与版本自增类型分派（设计 §3.11 / §5.4）。
+/// `WriteSql` 的版本零值填充与版本自增类型分派（写入 SQL 契约）。
 class WriteSqlMutationTest {
 
     private final JdbcMeta meta = new JdbcMeta();

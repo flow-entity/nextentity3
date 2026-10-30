@@ -22,7 +22,7 @@ import jakarta.persistence.Transient;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/// `@Embedded` 的扁平化规则与拒绝分支（§4.3 #7）：嵌套 / 主键 / 版本 / 生成键 / 关联在扁平化层面表达不了。
+/// `@Embedded` 的扁平化规则与拒绝分支（见 USAGE §13.4.1）：嵌套 / 主键 / 版本 / 生成键 / 关联在扁平化层面表达不了。
 class JdbcEmbeddedTest {
 
     private final JdbcMeta meta = new JdbcMeta();

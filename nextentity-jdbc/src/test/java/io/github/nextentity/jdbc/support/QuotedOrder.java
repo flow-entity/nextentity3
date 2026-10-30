@@ -7,7 +7,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
-/// 保留字表名 / 列名的查询实体（Phase F）：`order` / `desc` / `key` 都用反引号标记为 quoted。
+/// 保留字表名 / 列名的查询实体（quoted 标识符）：`order` / `desc` / `key` 都用反引号标记为 quoted。
 @Entity
 @Table(name = "`order`")
 public class QuotedOrder {

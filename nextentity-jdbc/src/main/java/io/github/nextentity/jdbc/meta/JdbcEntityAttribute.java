@@ -174,7 +174,7 @@ public final class JdbcEntityAttribute implements EntityAttribute {
         return null;
     }
 
-    /// 是否 `@ManyToOne` / `@OneToOne` 关联属性。§4.3 #9 被忽略的关联也返回 `true`，靠 [joinColumn()]
+    /// 是否 `@ManyToOne` / `@OneToOne` 关联属性。被静默忽略的关联也返回 `true`，靠 [joinColumn()]
     /// 是否为 `null` 区分。
     public boolean isAssociation() {
         return association != null;
@@ -265,7 +265,7 @@ public final class JdbcEntityAttribute implements EntityAttribute {
             AttributeConverter<Object, Object> converter,
             Class<?> databaseType) {}
 
-    /// 关联列的映射信息：`joinColumn == null` 表示 §4.3 #9 被忽略的集合 / `mappedBy` 反侧字段。
+    /// 关联列的映射信息：`joinColumn == null` 表示被静默忽略的集合 / `mappedBy` 反侧字段（见 USAGE §13.4.2）。
     ///
     /// @param target               关联目标 Java 类型
     /// @param idField              目标 `@Id` 字段句柄（写关联时取 FK 值）；被忽略的关联为 `null`

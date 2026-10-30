@@ -25,7 +25,7 @@ import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 
 /// B4：生成键读取必须兼容「单列键」与「驱动返回整行」两种形态（PG 返回 name, id；MSSQL/H2 单列）。
-/// 设计 §5.4：统一 `RETURN_GENERATED_KEYS`，不按方言分支；整行时按 id 列名大小写不敏感定位。
+/// 写入契约：统一 `RETURN_GENERATED_KEYS`，不按方言分支；整行时按 id 列名大小写不敏感定位。
 class GeneratedKeysTest {
 
     private static final String ID = "id";

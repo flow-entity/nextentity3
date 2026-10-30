@@ -7,7 +7,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 /// `@JoinColumn(insertable/updatable=false)` 只裁剪写侧列集：`skipped` 不进 INSERT，`locked` 不进 UPDATE SET；
-/// 读回仍按完整列集（§7.1 CUT-15）。
+/// 读回仍按完整列集（DESIGN §7.1 CUT-15）。
 @Entity
 @Table(name = "flagged_association")
 public class FlaggedAssociationEntity {

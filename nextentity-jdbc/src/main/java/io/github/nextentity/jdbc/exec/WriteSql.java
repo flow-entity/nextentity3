@@ -9,13 +9,13 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/// `INSERT` / `UPDATE` 语句构造（包内可见，见设计 §7.5：同包测试直接断言 SQL 与绑定值）。
+/// `INSERT` / `UPDATE` 语句构造（包内可见：同包测试直接断言 SQL 与绑定值）。
 ///
 /// 只产出 `{sql, parameters}`；执行、生成键回填、版本自增回写都在 {@link JdbcPersistExecutor}。
 /// 参数值在这里就统一成 JDBC 可直接绑定的形态（枚举按存储形态转 `name()` / `ordinal()`，
 /// `java.time` 转 `java.sql`，见 [JdbcTypes#toJdbc(Object, JdbcEntityAttribute)]），执行器只做 `setObject`。
 ///
-/// 列集规则（3.1.0，设计 §7.1）：`@Column(insertable/updatable=false)` 与
+/// 列集规则（3.1.0）：`@Column(insertable/updatable=false)` 与
 /// `@JoinColumn(insertable/updatable=false)` 只跳过写侧，读回不受影响；
 /// 关联属性非 `null` 时从关联对象的 `@Id` 取 FK 值写入，`null` 时跳过该列（`update` 不能置空，已披露）。
 ///

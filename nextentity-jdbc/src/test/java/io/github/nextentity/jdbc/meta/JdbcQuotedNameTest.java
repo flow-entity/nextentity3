@@ -15,9 +15,9 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import org.junit.jupiter.api.Test;
 
-/// Phase F：注解里用反引号标记的保留字 / 存量标识符，meta 扫描期剥引号并记录 quoted 标志。
+/// 标识符引用：注解里用反引号标记的保留字 / 存量标识符，meta 扫描期剥引号并记录 quoted 标志。
 ///
-/// 依据：设计 §4.1（`@Table` / `@Column` / `@JoinColumn` 名字反引号包裹 = quoted；比较一律裸名）。
+/// 依据：（`@Table` / `@Column` / `@JoinColumn` 名字反引号包裹 = quoted；比较一律裸名）。
 class JdbcQuotedNameTest {
 
     private final JdbcMeta meta = new JdbcMeta();

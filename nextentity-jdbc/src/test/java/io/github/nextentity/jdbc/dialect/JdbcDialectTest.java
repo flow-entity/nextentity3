@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/// 方言探测与 10 成员默认形态（设计 §6.1–§6.3）：内置四方言、前缀容错、unknown UOE、
+/// 方言探测与 10 成员默认形态（设计 §6.1）：内置四方言、前缀容错、unknown UOE、
 /// 默认窗口五形态、默认锁/字符串函数、PG 锁、MSSQL 的 head/分页/锁/avg/LIKE/len 覆写，
 /// 以及自定义方言只实现 `name()` 时的默认输出。
 class JdbcDialectTest {

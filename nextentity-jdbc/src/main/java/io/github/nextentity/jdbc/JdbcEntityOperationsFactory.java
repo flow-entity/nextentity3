@@ -17,7 +17,7 @@ import javax.sql.DataSource;
 
 /// JDBC 后端的 `EntityOperationsFactory`：探测方言，然后把四个零件交给 core 的装配器。
 ///
-/// 不持有连接、不开事务：每次操作独立 `getConnection()`，事务边界由调用方持有（设计 §9.2 决策 3）。
+/// 不持有连接、不开事务：每次操作独立 `getConnection()`，事务边界由调用方持有（与 JPA 后端一致：事务归调用方）。
 /// 元数据是应用级的，`JdbcMeta` 只建一次并缓存。
 public final class JdbcEntityOperationsFactory implements EntityOperationsFactory {
 

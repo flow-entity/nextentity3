@@ -17,7 +17,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import org.junit.jupiter.api.Test;
 
-/// 写入 SQL 的版本列/枚举绑定与「没有可写标量列」拒绝（§3.11、§4.3 #25）：
+/// 写入 SQL 的版本列/枚举绑定与「没有可写标量列」拒绝（写入 SQL 契约）：
 /// SET 列序、`where id=? [and version=?]`、参数顺序、版本旧值 +1、ORDINAL 绑定序号。
 class WriteSqlVersionTest {
 

@@ -15,7 +15,7 @@ import io.github.nextentity.jdbc.support.SnapshotItem;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/// SQL Server 端到端渲染（设计 §6.2）：exists 的 `top (1)` 进 SELECT 头、分页必须带 ORDER BY
+/// SQL Server 端到端渲染（设计 §6.1）：exists 的 `top (1)` 进 SELECT 头、分页必须带 ORDER BY
 /// （无用户排序时补 `order by 1`）、`offset ? rows`、`fetch next ? rows only`、LIKE 显式 ESCAPE、
 /// `avg` 转 float、行锁显式拒绝。
 class SqlServerDialectRenderingTest {

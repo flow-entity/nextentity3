@@ -89,7 +89,7 @@ final class JdbcColumns {
                         updatable));
     }
 
-    /// §4.3 #9 被忽略的集合 / `mappedBy` 反侧关联：可被 `attribute(name)` 解析，但不进 `attributes()`。
+    /// 被静默忽略的集合 / `mappedBy` 反侧关联：可被 `attribute(name)` 解析，但不进 `attributes()`（见 USAGE §13.4.2）。
     static JdbcEntityAttribute ignoredAssociation(Field field) {
         return new JdbcEntityAttribute(
                 field,
@@ -140,7 +140,7 @@ final class JdbcColumns {
                 || field.isAnnotationPresent(Transient.class);
     }
 
-    /// §4.3 #4/#5：`IDENTITY` 与 `AUTO` 都按自增列落库（本后端方言集合都不做序列，AUTO 统一落 IDENTITY）；
+    /// 生成键：`IDENTITY` 与 `AUTO` 都按自增列落库（四种内置方言都不做序列，AUTO 统一落 IDENTITY）；
     /// 生成键类型放宽到 JPA 允许的数值型 `short` / `int` / `long` / `BigInteger`（含包装）。
     private static void rejectGenerated(Field field, String path) {
         GeneratedValue generated = field.getAnnotation(GeneratedValue.class);
@@ -152,7 +152,7 @@ final class JdbcColumns {
         }
     }
 
-    /// §4.3 #12：列类型白名单的唯一出处是 [JdbcTypes#supports(Class)]，拒绝文案给出转换器出路。
+    /// 列类型白名单的唯一出处是 [JdbcTypes#supports(Class)]，拒绝文案给出转换器出路。
     private static void rejectColumnType(Field field, String path) {
         Class<?> columnType = field.getType();
         if (!JdbcTypes.supports(columnType)) {
@@ -175,7 +175,7 @@ final class JdbcColumns {
         return GENERATED_KEY_TYPES.contains(type);
     }
 
-    /// §4.3 #6 `@Convert`：实例化 `AttributeConverter`，从泛型实参取数据库类型并要求落在列类型白名单里。
+    /// `@Convert`：实例化 `AttributeConverter`，从泛型实参取数据库类型并要求落在列类型白名单里。
     /// `@Convert(disableConversion = true)` 按 JPA 语义整体关闭转换（本轮不实现 `autoApply`），按无转换器处理。
     @SuppressWarnings("PMD.CyclomaticComplexity") // 分支覆盖 @Convert 的四种声明形态（关闭转换 / 缺转换器 / attributeName / 正常）
     private static Converter converter(Field field, String path) {

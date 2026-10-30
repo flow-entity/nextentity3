@@ -10,7 +10,7 @@ import java.util.Objects;
 
 /// 注解扫描入口：把实体类解析成表名 + 属性表 + id/version + 无参构造器（`JdbcEntityType` 的数据来源）。
 ///
-/// 规则见设计 §4.1，拒绝清单见 §4.3 #1–#14；细节分散在 [JdbcEntityRules] / [JdbcColumns] / [JdbcAttributes]。
+/// 映射规则与拒绝清单见 USAGE §13.4.3；实现细节分散在 [JdbcEntityRules] / [JdbcColumns] / [JdbcAttributes]。
 final class JdbcEntityScan {
 
     /// 扫描结果：后续查询直接读这些字段，不再解析注解。
@@ -49,7 +49,7 @@ final class JdbcEntityScan {
                 constructor(type));
     }
 
-    /// 表名：`@Table(name)` → `@Entity(name)` → 类简名；反引号包裹的名字剥掉并记 quoted（§4.1 Phase F）。
+    /// 表名：`@Table(name)` → `@Entity(name)` → 类简名；反引号包裹的名字剥掉并记 quoted（标识符引用口径见 USAGE §13.4.5）。
     private static TableName tableName(Class<?> type, Entity entity) {
         Table table = type.getAnnotation(Table.class);
         if (table != null) {
@@ -70,7 +70,7 @@ final class JdbcEntityScan {
     /// 表名 + quoted 标志。
     private record TableName(String name, boolean quoted) {}
 
-    /// 无参构造：protected / private 放行（`setAccessible`），缺失 → §4.3 #13。
+    /// 无参构造：protected / private 放行（`setAccessible`），缺失则拒绝（见 USAGE §13.4.3）。
     private static <T> Constructor<T> constructor(Class<T> type) {
         try {
             Constructor<T> constructor = type.getDeclaredConstructor();

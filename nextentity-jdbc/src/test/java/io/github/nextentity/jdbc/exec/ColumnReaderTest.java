@@ -19,7 +19,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import org.junit.jupiter.api.Test;
 
-/// `ColumnReader` 的静态类型收窄（设计 §5.1 / §5.2）：Integer / int / Long / long / Double / double / String /
+/// `ColumnReader` 的静态类型收窄（见 USAGE §13.4.1）：Integer / int / Long / long / Double / double / String /
 /// `getObject` 回退、NULL 走 `wasNull`、枚举两种存储形态与两种脏数据（#26）。
 class ColumnReaderTest {
 

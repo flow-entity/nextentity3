@@ -8,7 +8,7 @@ import java.util.Objects;
 ///
 /// @param sql         SQL 文本
 /// @param parameters  绑定值，顺序与 SQL 里的 `?` 一致
-/// @param columnTypes 结果列静态类型，读法见设计 §3.0
+/// @param columnTypes 结果列静态类型，读法见 `JdbcTypes.read(ResultSet, int, Class)`
 public record SqlStatement(String sql, List<Object> parameters, List<Class<?>> columnTypes) {
 
     /// 紧凑构造器：校验非空并复制为不可变列表。
