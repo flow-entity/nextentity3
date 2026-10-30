@@ -35,10 +35,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           distribution: temurin
           java-version: "25"
@@ -54,12 +54,14 @@ jobs:
 
       # publish profile 冒烟：只在发 tag 那天第一次跑 profile 的成本最高。这步不进凭证，
       # 失败会让 nightly 红（run: 默认如此）——profile 坏在 tag 当天才发现代价更大。
-      - name: Publish profile smoke (no deploy)
-        run: ./mvnw -B -Ppublish -DskipTests -Dgpg.skip=true -Dcentral.publishing.skipPublishing=true package
+      # 走 deploy（不上传）而不是 package：cover 到 deploy 生命周期、flatten 后的 POM、sources/javadoc
+      # 打包与签名管道，tag 当天 release.yml 调的就是这一条。
+      - name: Publish profile smoke (deploy without upload)
+        run: ./mvnw -B -Ppublish -DskipTests -Dgpg.skip=true -Dcentral.publishing.skipPublishing=true deploy
 
       - name: Upload gate receipt
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: nightly-receipt
           path: tmp/gate/**/receipt.json
@@ -68,7 +70,7 @@ jobs:
       # PIT 的 survived 明细在 HTML/XML 报告里，凭证只存计数；要看「哪一行没被杀死」得留报告。
       - name: Upload PIT reports
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: pit-reports
           path: nextentity-*/target/pit-reports/

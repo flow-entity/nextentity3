@@ -64,17 +64,26 @@
                 </executions>
             </plugin>
 
-            <!-- API 兼容门禁：-Papi-compat -Djapicmp.oldVersion=2.2.3
-                 基线必须是 nextentity-core：2.2.3 没有发布过 nextentity-api，
-                 io.github.nextentity.api.* 的类在 nextentity-core-2.2.3.jar 里。 -->
+            <!-- API 兼容门禁：-Papi-compat -Djapicmp.oldVersion=<上一发布版>
+                 3.0.0 起基线 artifact 是 nextentity-api（api 独立成模块发布）；
+                 对照 2.2.3 的历史报告要显式传 -Djapicmp.oldArtifactId=nextentity-core，
+                 因为 2.2.3 没发布过 nextentity-api，io.github.nextentity.api.* 的类在
+                 nextentity-core-2.2.3.jar 里。
+
+                 默认基线是「上一发布版」，所以本门禁只在项目版本 > 基线时才有意义：
+                 pom 版本与基线相同时（刚发版的 HEAD），japicmp 会拿本模块 target 里的
+                 jar 与自身比较，然后报 "Versions of archives indicate no API changes but
+                 found API changes"。发下一版前先 bump 版本（如 3.0.1-SNAPSHOT）再跑。 -->
             <plugin>
                 <groupId>com.github.siom79.japicmp</groupId>
                 <artifactId>japicmp-maven-plugin</artifactId>
                 <configuration>
+                    <!-- 只有显式 -Papi-compat 才跑；普通 verify 不为一次报告多花十几秒 -->
+                    <skip>${japicmp.skip}</skip>
                     <oldVersion>
                         <dependency>
                             <groupId>io.github.flow-entity</groupId>
-                            <artifactId>nextentity-core</artifactId>
+                            <artifactId>${japicmp.oldArtifactId}</artifactId>
                             <version>${japicmp.oldVersion}</version>
                         </dependency>
                     </oldVersion>
@@ -137,7 +146,10 @@
 
     <properties>
         <japicmp.skip>true</japicmp.skip>
-        <japicmp.oldVersion>2.2.3</japicmp.oldVersion>
+        <!-- 基线 = 上一发布版（3.0.0 已发 Central，api 有独立 artifact）。
+             对照 2.2.3 需显式 -Djapicmp.oldArtifactId=nextentity-core。 -->
+        <japicmp.oldVersion>3.0.0</japicmp.oldVersion>
+        <japicmp.oldArtifactId>nextentity-api</japicmp.oldArtifactId>
         <!-- 发布集：本模块发到 Central，覆盖根 pom 的默认 true，仅 -Ppublish 生效 -->
         <central.publishing.skipPublishing>false</central.publishing.skipPublishing>
         <maven.source.skip>false</maven.source.skip>
