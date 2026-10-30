@@ -658,7 +658,7 @@ int clearedFk = operations.update()
 本库不自己开事务，边界由调用方的 `@Transactional` 决定。**两个后端对「没有事务」的约定不同，写路径必须按目标后端选边界**：
 
 - **JPA 后端**：写操作必须在调用方事务里执行。没有事务时 `update(...)` 抛 `TransactionRequiredException`（JPA 对 `executeUpdate` 的契约），而 `insertAll(...)` 既不落库也不报错、读回是 0 行——它会静默丢数据，写路径务必挂在 `@Transactional` 上。证据：`ItemNoTransactionContextTest` 与 `MySqlItemNoTransactionIntegrationTest`（均在 `nextentity-tests-jpa`）。
-- **JDBC 后端**：写入建立在 JDBC 自动提交之上，**没有事务时 `update` 也会立即生效、不抛异常**（不经过 `TransactionRequiredException`）；`insertAll` 同走自动提交（tester 波正在补一条「无事务 `insertAll` 落库」用例，落地后把证据补到这里）。需要「多条写原子提交/回滚」时必须由调用方显式开事务（`TransactionTemplate` 或 Spring `@Transactional`）。证据：`nextentity-tests-jdbc/.../NoTransactionContextTest.java#updateSucceedsWithoutExplicitTransaction`（该类 Javadoc 明写「JDBC 写入建立在自动提交之上，与 tests-jpa 相反」）。
+- **JDBC 后端**：写入建立在 JDBC 自动提交之上，**没有事务时 `update` 也会立即生效、不抛异常**（不经过 `TransactionRequiredException`）；`insertAll` 同走自动提交（`insertAll` 同样立即落库，证据 `nextentity-tests-jdbc/.../NoTransactionContextTest.java#insertAllSucceedsWithoutExplicitTransaction`）。需要「多条写原子提交/回滚」时必须由调用方显式开事务（`TransactionTemplate` 或 Spring `@Transactional`）。证据：`nextentity-tests-jdbc/.../NoTransactionContextTest.java#updateSucceedsWithoutExplicitTransaction`（该类 Javadoc 明写「JDBC 写入建立在自动提交之上，与 tests-jpa 相反」）。
 
 这不是缺陷，而是「边界归调用方」在两个后端上的不同落点：JPA 用 fail-fast 提醒没挂事务，JDBC 按驱动默认自动提交直接生效。下面示例是推荐写法（显式事务边界，两个后端都成立）：
 
@@ -810,7 +810,7 @@ orders.updateAll(List.of(order));
 | 分组 `count()`（`groupBy` + `count()`） | 派生表原生支持（子查询计数） | JPA 侧依赖 Hibernate 6+ 的 `createCountQuery()`（单条 SQL）；其它 provider 抛 `UOE`（文案指名 provider），见 §7.4 |
 | `fetch(...)` 预取 | 显式拒绝：`UOE`（JDBC 不组装实体图、无懒加载代理，没有可兑现的语义；不静默 no-op） | JPA 渲染为 `LEFT JOIN FETCH`（同一条 SQL 载入关联），消除 N+1；JDBC 侧要读关联列请用 `project(...)` 投影或原生 SQL |
 | 分页 `limit = 0` | 视为不限行 | 与 JPA 一致（api 契约），单列在此说明避免误读 |
-| 事务 | 写入建立在 JDBC 自动提交上：无事务时 `update` 立即生效、不抛异常；`insertAll` 同走自动提交（tester 波补无事务 `insertAll` 落库用例后补证据，见 §11） | **不同约定**（理由类型=外部约束：自动提交是 JDBC 连接层的默认行为）：JPA 侧无事务 `update` 抛 `TransactionRequiredException`、`insertAll` 静默不落库（证据在 `nextentity-tests-jpa`）。需要原子性时两个后端都用 `TransactionTemplate` 或 Spring `@Transactional` 包住（§11） |
+| 事务 | 写入建立在 JDBC 自动提交上：无事务时 `update` 立即生效、不抛异常；`insertAll` 同走自动提交（`insertAll` 证据同上，见 §11） | **不同约定**（理由类型=外部约束：自动提交是 JDBC 连接层的默认行为）：JPA 侧无事务 `update` 抛 `TransactionRequiredException`、`insertAll` 静默不落库（证据在 `nextentity-tests-jpa`）。需要原子性时两个后端都用 `TransactionTemplate` 或 Spring `@Transactional` 包住（§11） |
 | DDL | 不生成，表结构自己建（测试按方言引号建表） | 不生成 |
 | 异常 | `SQLException` 包成 `PersistenceException("SQL 执行失败: " + sql, e)` | 同 JPA 顶层异常族 |
 

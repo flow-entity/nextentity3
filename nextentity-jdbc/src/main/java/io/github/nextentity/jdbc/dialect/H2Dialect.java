@@ -18,7 +18,7 @@ public final class H2Dialect implements JdbcDialect {
     }
 
     /// H2 没有 `FOR SHARE`：读锁退化为更强的 `for update`（写锁），语义安全但会阻塞并发读，
-    /// **不是** MySQL / PostgreSQL 共享锁的等价形态（设计 §6.1 方言差异，已报 architect 写进 USAGE §13.4）。
+    /// **不是** MySQL / PostgreSQL 共享锁的等价形态（差异已披露：USAGE §13.4.5）。
     @Override
     public LockClause lock(LockMode mode, List<String> aliases) {
         return new LockClause("", " for update");

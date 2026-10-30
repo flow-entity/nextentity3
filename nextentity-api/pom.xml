@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.github.flow-entity</groupId>
         <artifactId>nextentity</artifactId>
-        <version>3.1.0-SNAPSHOT</version>
+        <version>3.1.0</version>
     </parent>
 
     <artifactId>nextentity-api</artifactId>
@@ -73,7 +73,7 @@
                  默认基线是「上一发布版」，所以本门禁只在项目版本 > 基线时才有意义：
                  pom 版本与基线相同时（刚发版的 HEAD），japicmp 会拿本模块 target 里的
                  jar 与自身比较，然后报 "Versions of archives indicate no API changes but
-                 found API changes"。发下一版前先 bump 版本（如 3.1.0-SNAPSHOT）再跑。 -->
+                 found API changes"。发下一版前先 bump 到下一个开发版（如 3.2.0-SNAPSHOT）再跑。 -->
             <plugin>
                 <groupId>com.github.siom79.japicmp</groupId>
                 <artifactId>japicmp-maven-plugin</artifactId>
