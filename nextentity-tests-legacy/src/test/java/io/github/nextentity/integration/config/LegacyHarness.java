@@ -255,5 +255,18 @@ public final class LegacyHarness implements AutoCloseable {
                 return null;
             });
         }
+
+        /// 条件更新 / 条件删除：3.x 给 `PersistExecutor` 新加的两个入口。移植语料不覆盖这两条路径
+        /// （2.2.3 的 29 条条件改删用例按已披露差异未移植），所以这里只做形状委托、不额外包事务；
+        /// 真被调用时由 3.x 实现自己要求事务，不会静默成功。
+        @Override
+        public io.github.nextentity.api.UpdateSetStep<T> update() {
+            return delegate.update();
+        }
+
+        @Override
+        public io.github.nextentity.api.DeleteWhereStep<T> delete() {
+            return delegate.delete();
+        }
     }
 }
