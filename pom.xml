@@ -6,7 +6,7 @@
 
     <groupId>io.github.flow-entity</groupId>
     <artifactId>nextentity</artifactId>
-    <version>3.0.0</version>
+    <version>3.0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>nextentity</name>
     <description>JPA 之上的小型类型安全查询层</description>
