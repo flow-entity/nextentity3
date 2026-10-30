@@ -11,6 +11,7 @@ import io.github.nextentity.tests.jpa.support.HibernateHarness;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 /// 关联嵌套用例的 JPA 接线：建 owner + asset 两张表，按夹具描述落库，并给出两段嵌套路径。
 final class JpaAssetSupport implements AutoCloseable {
@@ -56,6 +57,16 @@ final class JpaAssetSupport implements AutoCloseable {
             }
         });
         harness.entityManager().clear();
+    }
+
+    /// 执行器本身：写关联 / 条件 update 的语句快照要用到写路径（`update()`）。
+    EntityOperations<AssetEntity> operations() {
+        return operations;
+    }
+
+    /// 在事务里跑一段写入并提交（Hibernate 的批量写与 flush 必须在事务内）。
+    <R> R inTransaction(Supplier<R> work) {
+        return harness.inTransaction(work);
     }
 
     /// 取走已抓到的 SQL（关联用例的整句快照用得到）。

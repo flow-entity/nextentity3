@@ -71,6 +71,36 @@ class AssetSqlSnapshotTest {
                                 + " order by ae1_0.id offset ? rows fetch first ? rows only");
     }
 
+    /// `fetch(owner)` 预取：一条 LEFT JOIN 带出关联列，且读了关联名字之后也**不再**发语句
+    /// （N+1 被消除的直接证据：条数断言在读完关联之后）。
+    @Test
+    void fetchPrefetchesAssociationWithoutExtraStatements() {
+        support.clearSql();
+        List<AssetEntity> assets = support.query().fetch(AssetEntity::owner).list();
+        for (AssetEntity asset : assets) {
+            if (asset.owner() != null) {
+                asset.owner().name();
+            }
+        }
+
+        List<String> statements = normalized(support.drainSql());
+        assertThat(statements)
+                .containsExactly("select ae1_0.id,ae1_0.name,o1_0.id,o1_0.name from asset ae1_0"
+                        + " left join owner o1_0 on o1_0.id=ae1_0.owner_id");
+        assertThat(assets).as("fetch 是 LEFT JOIN：没有关联的 bandage 不能被丢掉").hasSize(4);
+    }
+
+    /// 写关联：`update` 的 SET 必须带上外键列，值为关联对象的主键。
+    @Test
+    void writeStatementCarriesForeignKeyColumn() {
+        String statement = sqlOf(() -> support.inTransaction(() -> {
+            support.operations().update(new AssetEntity(1L, "renamed", new OwnerEntity(2L, "beta")));
+            return null;
+        }));
+
+        assertThat(statement).isEqualTo("update asset ae1_0 set name=?,owner_id=? where ae1_0.id=?");
+    }
+
     /// 跑一条查询、取走它下发的语句，返回归一化后的单条 SQL。
     private String sqlOf(Runnable query) {
         List<String> sql = sqlsOf(query);

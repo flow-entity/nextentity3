@@ -97,6 +97,13 @@ public final class MySqlItemSupport implements ConsistencySupport<ItemEntity>, A
         return ItemEntity::status;
     }
 
+    /// 条件写入的入口（`update()` / `delete()` 需要装配层，一致性基类只拿得到 `ConsistencySupport`）。
+    ///
+    /// @return 该实体的写操作入口，与 `query()` 共用同一套装配
+    public EntityOperations<ItemEntity> operations() {
+        return operations;
+    }
+
     @Override
     public void close() {
         harness.close();

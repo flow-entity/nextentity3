@@ -17,3 +17,16 @@ create table versioned_item (id bigint primary key, name varchar(255), version b
 create table ordinal_item (id bigint primary key, status int);
 create table managed_association (id bigint primary key, owner_id bigint);
 create table [order] ([id] bigint primary key, [name] varchar(255), [desc] varchar(255), [key] int);
+
+drop table if exists extended_item;
+drop table if exists embedded_profile;
+drop table if exists converted_item;
+drop table if exists flag_column_item;
+drop table if exists short_versioned_item;
+drop table if exists short_generated_item;
+create table extended_item (id bigint primary key, flag_col bit, ratio_col float, weight_col real, count_col smallint, price_col decimal(18,2), serial_col bigint, birth_date date, created_at datetime2(3), wake_time time, synced_at datetime2(3), sql_date date, sql_time time, sql_timestamp datetime2(3));
+create table embedded_profile (id bigint primary key, town varchar(64), address_street varchar(128), label varchar(64));
+create table converted_item (id bigint primary key, status varchar(32), note varchar(64));
+create table flag_column_item (id bigint primary key, name varchar(64), created_by varchar(64));
+create table short_versioned_item (id bigint primary key, name varchar(255), version smallint not null default 0);
+create table short_generated_item (id smallint identity(1,1) primary key, name varchar(255));
