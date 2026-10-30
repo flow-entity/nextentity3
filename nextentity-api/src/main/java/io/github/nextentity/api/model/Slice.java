@@ -24,6 +24,20 @@ public interface Slice<T> {
     /// @return 满足条件的总行数
     long total();
 
+    /// 本页请求的行偏移（0 基），即 `slice(offset, limit)` 的 `offset` 原值。
+    ///
+    /// @return 请求的偏移；未实现该方法的实现返回 `0`
+    default int offset() {
+        return 0;
+    }
+
+    /// 本页请求的页大小，即 `slice(offset, limit)` 的 `limit` 原值；`0` 表示不限行数。
+    ///
+    /// @return 请求的页大小；未实现该方法的实现返回 `data().size()`
+    default int limit() {
+        return data().size();
+    }
+
     /// 把整个分页结果映射成另一种类型（例如消费方自己的 `Page`）。
     ///
     /// @param mapper 映射函数，入参就是本对象，非 `null`

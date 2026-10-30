@@ -2,8 +2,12 @@ package io.github.nextentity.core.repo;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.nextentity.api.DeleteWhereStep;
 import io.github.nextentity.api.EntityQuery;
 import io.github.nextentity.api.Path;
+import io.github.nextentity.api.UpdateSetStep;
+import io.github.nextentity.core.builder.DeleteWhereStepBuilder;
+import io.github.nextentity.core.builder.UpdateSetStepBuilder;
 import io.github.nextentity.core.compile.Compiler;
 import io.github.nextentity.core.exec.Executor;
 import io.github.nextentity.core.exec.PersistExecutor;
@@ -89,6 +93,18 @@ class SimpleEntityOperationsFactoryTest {
         assertThat(writes).containsExactly("insert", "insertAll", "update", "updateAll");
     }
 
+    @Test
+    @DisplayName("条件更新/删除入口转给后端写入执行器")
+    void conditionalWritesDelegate() {
+        EntityOperations<Order> operations = factory().operations(Order.class);
+
+        assertThat(operations.update().set(Order::getStatus, "A").execute()).isEqualTo(1);
+        assertThat(operations.delete().where(Order::getStatus).eq("A").execute())
+                .isEqualTo(1);
+
+        assertThat(writes).containsExactly("update()", "delete()");
+    }
+
     // 聚合链（`max().sum()`）由 api 的类型拒绝：聚合方法返回 `Expression`，其上没有聚合方法，
     // 所以本文件不需要"聚合再聚合"的运行期用例。
 
@@ -154,6 +170,22 @@ class SimpleEntityOperationsFactoryTest {
             @Override
             public void updateAll(Iterable<Order> entities) {
                 writes.add("updateAll");
+            }
+
+            @Override
+            public UpdateSetStep<Order> update() {
+                return new UpdateSetStepBuilder<>(Order.class, spec -> {
+                    writes.add("update()");
+                    return 1;
+                });
+            }
+
+            @Override
+            public DeleteWhereStep<Order> delete() {
+                return new DeleteWhereStepBuilder<>(Order.class, spec -> {
+                    writes.add("delete()");
+                    return 1;
+                });
             }
         };
     }

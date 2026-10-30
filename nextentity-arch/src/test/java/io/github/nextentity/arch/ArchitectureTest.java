@@ -14,6 +14,7 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
+import io.github.nextentity.api.Collector;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
@@ -26,6 +27,7 @@ import java.time.Year;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.Map;
 import java.util.Random;
 import java.util.SplittableRandom;
 import java.util.UUID;
@@ -43,6 +45,19 @@ class ArchitectureTest {
 
     /// `api` 接口的公开方法数上限（AGENTS「接口要窄」）。
     private static final int API_MAX_PUBLIC_METHODS = 6;
+
+    /// 允许超过上限的既有接口：类型全名 → **该接口自己的**声明数上限（精确值，不是「放宽到 N」）。
+    ///
+    /// 条目只能用于「既有公开接口恢复 2.2.3 就有、3.0.0 丢掉的成员」这一类场景，
+    /// 因为拆接口会改 builder / `lock(...)` 的返回类型，属主版本动作，MINOR 里做不了。
+    /// 规则：**只许持平、不许增长**（数值就是精确上限，多一个方法立刻红），
+    /// 每条必须在 [docs/DESIGN.md](../../../../../../../docs/DESIGN.md) §7 的决策表里有对应条目，
+    /// 并写明 revisit 触发器（下一次主版本按注释里的拆分口径落地）。
+    ///
+    /// `Collector`：2.2.3 的 7 个终止符（`list()` / `list(int)` / `list(int,int)` / `first()` /
+    /// `single()` / `count()` / `exists()`）是同一个契约面；3.0.0 丢掉了 `list(int,int)`，
+    /// 3.1.0 恢复它导致声明数回到 7。拆分点（取行 vs 聚合）只有在主版本才能重新划。
+    private static final Map<String, Integer> WIDE_INTERFACE_ALLOWLIST = Map.of(Collector.class.getName(), 7);
 
     /// 模块之间不得出现循环依赖。
     @ArchTest
@@ -349,12 +364,14 @@ class ArchitectureTest {
 
     /// 公开方法（不含 static）不超过 `API_MAX_PUBLIC_METHODS` 个。
     ///
+    /// 例外只走 `WIDE_INTERFACE_ALLOWLIST`，且上限是精确值：`Collector` 允许 7，第 8 个方法照样红。
+    ///
     /// @return 条件
     private static ArchCondition<JavaClass> haveAtMostPublicMethods() {
-        int max = API_MAX_PUBLIC_METHODS;
-        return new ArchCondition<>("声明不超过 " + max + " 个公开方法") {
+        return new ArchCondition<>("声明不超过 " + API_MAX_PUBLIC_METHODS + " 个公开方法（例外见 WIDE_INTERFACE_ALLOWLIST）") {
             @Override
             public void check(JavaClass item, ConditionEvents events) {
+                int max = WIDE_INTERFACE_ALLOWLIST.getOrDefault(item.getName(), API_MAX_PUBLIC_METHODS);
                 long count = item.getMethods().stream()
                         .filter(method -> method.getModifiers().contains(JavaModifier.PUBLIC))
                         .filter(method -> !method.getModifiers().contains(JavaModifier.STATIC))
