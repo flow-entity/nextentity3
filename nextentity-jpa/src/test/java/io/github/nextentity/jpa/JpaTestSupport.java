@@ -4,9 +4,11 @@ import io.github.nextentity.api.model.Tuple;
 import io.github.nextentity.core.builder.TupleValue;
 import io.github.nextentity.core.spec.RowMapper;
 import io.github.nextentity.jpa.entity.Article;
+import io.github.nextentity.jpa.entity.Branch;
 import io.github.nextentity.jpa.entity.Customer;
 import io.github.nextentity.jpa.entity.DerivedRecord;
 import io.github.nextentity.jpa.entity.ElementCollectionHolder;
+import io.github.nextentity.jpa.entity.FetchChain;
 import io.github.nextentity.jpa.entity.Note;
 import io.github.nextentity.jpa.entity.OrderStatus;
 import io.github.nextentity.jpa.entity.Organization;
@@ -79,6 +81,8 @@ abstract class JpaTestSupport {
         configuration.addAnnotatedClass(Seal.class);
         configuration.addAnnotatedClass(SealHolder.class);
         configuration.addAnnotatedClass(ElementCollectionHolder.class);
+        configuration.addAnnotatedClass(Branch.class);
+        configuration.addAnnotatedClass(FetchChain.class);
         this.sessionFactory = configuration.buildSessionFactory();
         this.meta = new JpaMeta(sessionFactory);
     }
