@@ -499,6 +499,19 @@ class SpecStructureTest {
                                 null),
                         "countScope"),
                 Arguments.of(
+                        "QuerySpec.fetch",
+                        (Executable) () -> new QuerySpec(
+                                String.class,
+                                new EntitySelection(),
+                                null,
+                                List.of(),
+                                null,
+                                List.of(),
+                                Window.NONE,
+                                null,
+                                null),
+                        "fetch"),
+                Arguments.of(
                         "QuerySpec.window",
                         (Executable) () -> new QuerySpec(
                                 String.class, new EntitySelection(), null, List.of(), null, List.of(), null, null),

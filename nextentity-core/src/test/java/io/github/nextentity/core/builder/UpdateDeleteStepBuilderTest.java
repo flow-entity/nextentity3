@@ -62,6 +62,10 @@ class UpdateDeleteStepBuilderTest {
         assertThat(spec.entityType()).isEqualTo(Order.class);
         assertThat(spec.assignments()).containsExactly(new Assignment(path("status"), "ARCHIVED"));
         assertThat(spec.where()).isNull();
+        // 另读一遍访问器：equals 只比合成字段，读不到「访问器被改成返回 null」这类变异
+        Assignment assignment = spec.assignments().getFirst();
+        assertThat(assignment.path()).isEqualTo(path("status"));
+        assertThat(assignment.value()).isEqualTo("ARCHIVED");
     }
 
     @Test
@@ -82,6 +86,10 @@ class UpdateDeleteStepBuilderTest {
                 .execute();
 
         assertThat(updates.getFirst().assignments()).containsExactly(new Assignment(path("customer", "id"), null));
+        // 置空是「值就是 null」，不是「这一列没被赋值」：访问器必须原样给出 null
+        Assignment assignment = updates.getFirst().assignments().getFirst();
+        assertThat(assignment.path()).isEqualTo(path("customer", "id"));
+        assertThat(assignment.value()).isNull();
     }
 
     @Test
@@ -107,6 +115,15 @@ class UpdateDeleteStepBuilderTest {
 
         assertThat(updates.getFirst().where())
                 .isEqualTo(new Comparison(path("status"), ComparisonOperator.EQ, Literal.of("OLD")));
+    }
+
+    @Test
+    @DisplayName("where(方法引用)：非字符串属性走 PathOperator 重载（字符串属性走 StringOperator 重载）")
+    void wherePathRefNumericOperator() {
+        update(1).set(Order::getStatus, "A").where(Order::getQuantity).gt(0).execute();
+
+        assertThat(updates.getFirst().where())
+                .isEqualTo(new Comparison(path("quantity"), ComparisonOperator.GT, Literal.of(0)));
     }
 
     @Test

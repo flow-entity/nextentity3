@@ -42,9 +42,12 @@ class FetchStepDefaultsTest {
         Path<Employee, String> status = Path.of(Employee::getStatus);
         Path<Employee, Integer> age = Path.of(Employee::getAge);
 
-        step.proxy.fetch(name, status);
-        step.proxy.fetch(name, status, age);
+        BaseWhereStep<Employee, Employee> pair = step.proxy.fetch(name, status);
+        BaseWhereStep<Employee, Employee> triple = step.proxy.fetch(name, status, age);
 
+        // 返回 null 也算"多参传"，链式写法会当场炸；两条重载都要钉住返回自身。
+        assertThat(pair).isSameAs(step.proxy);
+        assertThat(triple).isSameAs(step.proxy);
         assertThat(step.batches).containsExactly(List.of(name, status), List.of(name, status, age));
     }
 

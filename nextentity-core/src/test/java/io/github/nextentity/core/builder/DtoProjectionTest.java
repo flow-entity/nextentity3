@@ -105,6 +105,16 @@ class DtoProjectionTest {
     }
 
     @Test
+    @DisplayName("普通类：只认单参 setXxx——0 参与多参的 setXxx 都不算属性")
+    void beanIgnoresSettersWithoutSingleParameter() {
+        query().select(SetterShapes.class).list();
+
+        assertThat(selection().items()).containsExactly(new PathProjection(path("name")));
+        Object row = assemble(new Object[] {"ann"}).getFirst();
+        assertThat(((SetterShapes) row).name()).isEqualTo("ann");
+    }
+
+    @Test
     @DisplayName("普通类无 setter：拒绝")
     void beanWithoutSettersRejected() {
         assertThatThrownBy(() -> query().select(GetterOnly.class))
@@ -252,7 +262,8 @@ class DtoProjectionTest {
         assertThatThrownBy(() -> assemble(new Object[] {3}))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("ThrowingSetter")
-                .hasMessageContaining("setAge");
+                .hasMessageContaining("setAge")
+                .hasCauseInstanceOf(IllegalStateException.class);
     }
 
     // ---------------------------------------------------------------- fixture
@@ -460,10 +471,32 @@ class DtoProjectionTest {
     /// 单字母与全大写属性名：`setA` → `a`，`setAB` → `AB`。
     @SuppressWarnings("unused")
     private static final class ShortNames {
-
         public void setA(String a) {}
 
         public void setAB(String ab) {}
+    }
+
+    /// 只有 `setName` 是合法的单参 setter；`setPair`（两参）与 `setFresh`（零参）都不是属性。
+    @SuppressWarnings("unused")
+    private static final class SetterShapes {
+
+        private String name;
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public void setPair(String first, String second) {
+            this.name = first + second;
+        }
+
+        public void setFresh() {
+            this.name = null;
+        }
+
+        String name() {
+            return name;
+        }
     }
 
     @SuppressWarnings("unused")
