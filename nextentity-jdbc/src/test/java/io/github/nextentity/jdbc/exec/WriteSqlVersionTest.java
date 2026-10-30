@@ -70,7 +70,8 @@ class WriteSqlVersionTest {
     void updateOfIdOnlyEntityIsRejected() {
         assertThatThrownBy(() -> WriteSql.update(meta.entityType(IdOnly.class), new IdOnly(8L), dialect))
                 .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessage("实体 " + IdOnly.class.getName() + " 没有可写标量列，update 无法生成 SET 子句");
+                .hasMessageStartingWith("实体 " + IdOnly.class.getName() + " 没有可写标量列，update 无法生成 SET 子句")
+                .hasMessageContaining("请至少保留一个可更新列");
     }
 
     @Test

@@ -404,6 +404,19 @@ class JdbcSqlSnapshotTest {
         assertThat(executor.last.parameters()).containsExactly(3);
     }
 
+    @Test
+    void h2RendersReadLockAsForUpdateFallback() {
+        items().where(Path.of(SnapshotItem::score))
+                .gt(10)
+                .lock(LockMode.PESSIMISTIC_READ)
+                .list();
+
+        assertThat(executor.last.sql())
+                .isEqualTo("select t0.id, t0.name, t0.score, t0.score2, t0.note, t0.status from item t0"
+                        + " where t0.score > ? for update");
+        assertThat(executor.last.parameters()).containsExactly(10);
+    }
+
     /// 捕获式执行器：`QueryBuilder` 只把编译产物交给它，不连库。
     private static final class CapturingExecutor implements Executor<JdbcQuery> {
 

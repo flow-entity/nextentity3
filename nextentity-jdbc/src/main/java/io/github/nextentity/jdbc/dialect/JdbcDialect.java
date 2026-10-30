@@ -6,10 +6,11 @@ import java.util.List;
 
 /// 对外可实现的方言接缝：实现本接口并 `new JdbcEntityOperationsFactory(dataSource, dialect)` 即完成自定义方言接入。
 ///
-/// 共 8 个成员：静态 `of(String)` + 7 个实例钩子（`name` / `quote` / `selectHead` / `limitClause` /
-/// `lock` / `averageOf` / `likeEscape`）。除 [JdbcDialect#name()] 外全部实例钩子有默认实现，
-/// 默认形态 = H2 / MySQL / PostgreSQL；SQL Server 覆写 `selectHead` / `limitClause` / `lock` / `averageOf` / `likeEscape`。
-/// 钩子语义与绑定契约见设计 §6.1，允许的渲染点见 §6.3——不在那列的差异不得加钩子。
+/// 共 10 个成员：静态 `of(String)` + 9 个实例钩子（`name` / `quote` / `selectHead` / `limitClause` /
+/// `lock` / `averageOf` / `likeEscape` / `lengthOf` / `substring`）。除 [JdbcDialect#name()] 外全部实例钩子
+/// 有默认实现，默认形态 = H2 / MySQL / PostgreSQL；SQL Server 覆写 `selectHead` / `limitClause` / `lock` /
+/// `averageOf` / `likeEscape` / `lengthOf` / `substring`。钩子语义与绑定契约见设计 §6.1，
+/// 允许的渲染点见 §6.3——不在那列的差异不得加钩子。
 public interface JdbcDialect {
 
     /// 内置名：`"h2"` / `"mysql"` / `"postgresql"` / `"sqlserver"`；自定义方言返回自己的名（仅用于日志/错误）。
@@ -93,11 +94,20 @@ public interface JdbcDialect {
 
     /// 锁片段；aliases = 本次 SELECT 实际出现的表别名，根表在前。
     ///
-    /// @param mode    锁模式（renderer 已保证只传 `PESSIMISTIC_WRITE`）
+    /// 默认按模式分派：`PESSIMISTIC_WRITE` → `for update`，`PESSIMISTIC_READ` → `for share`
+    /// （MySQL / PostgreSQL 的共享锁形态）。H2 无 `FOR SHARE`，覆写为更强的 `for update` 兜底；
+    /// SQL Server 无等价行锁，覆写为拒绝。
+    ///
+    /// @param mode    锁模式（renderer 已保证只传 `PESSIMISTIC_WRITE` / `PESSIMISTIC_READ`）
     /// @param aliases 表别名列表（根别名在前）
     /// @return 锁片段；不支持锁的方言必须抛 [UnsupportedOperationException]
     default LockClause lock(LockMode mode, List<String> aliases) {
-        return new LockClause("", " for update");
+        return switch (mode) {
+            case PESSIMISTIC_WRITE -> new LockClause("", " for update");
+            case PESSIMISTIC_READ -> new LockClause("", " for share");
+            case OPTIMISTIC, OPTIMISTIC_FORCE_INCREMENT, PESSIMISTIC_FORCE_INCREMENT ->
+                throw new UnsupportedOperationException("方言 " + name() + " 不支持锁模式: " + mode);
+        };
     }
 
     /// 聚合表达式：入参是已渲染的列表达式（含别名与 quote）。默认 `avg(x)`。
@@ -113,6 +123,28 @@ public interface JdbcDialect {
     /// @return 追加在 `like ?` 之后的片段
     default String likeEscape() {
         return "";
+    }
+
+    /// `length` 函数形态：默认 `length(x)`（H2 / MySQL / PostgreSQL 同形）。
+    ///
+    /// @param operand 已渲染的字符串操作数
+    /// @return LENGTH 表达式
+    default String lengthOf(String operand) {
+        return "length(" + operand + ")";
+    }
+
+    /// `substring` 形态：`position` 从 1 起算（调用方已把 API 的 0 起算偏移 +1），
+    /// `length == null` 表示「截到结尾」。
+    ///
+    /// 默认渲染 `substring(x, pos)` / `substring(x, pos, len)`（H2 / MySQL / PostgreSQL 同形）。
+    ///
+    /// @param operand  已渲染的字符串操作数
+    /// @param position 1 起算的起始位置
+    /// @param length   截取长度；`null` = 到结尾
+    /// @return SUBSTRING 表达式
+    default String substring(String operand, int position, Integer length) {
+        String tail = length == null ? ")" : ", " + length + ")";
+        return "substring(" + operand + ", " + position + tail;
     }
 
     private static boolean startsWithIgnoreCase(String value, String prefix) {

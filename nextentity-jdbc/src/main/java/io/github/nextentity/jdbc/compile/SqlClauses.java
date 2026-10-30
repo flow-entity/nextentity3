@@ -56,6 +56,7 @@ final class SqlClauses {
     }
 
     String window(Window window) {
+        // QuerySpec 的 window 分量不可为 null（Window.NONE 表示「不分页」），null 分支只是防御，正常路径不可达。
         return window == null ? "" : renderer.window(false);
     }
 
@@ -64,8 +65,8 @@ final class SqlClauses {
         if (lock == null) {
             return NO_LOCK;
         }
-        if (lock != LockMode.PESSIMISTIC_WRITE) {
-            throw new UnsupportedOperationException("JDBC 后端只支持 PESSIMISTIC_WRITE: " + lock);
+        if (lock != LockMode.PESSIMISTIC_WRITE && lock != LockMode.PESSIMISTIC_READ) {
+            throw new UnsupportedOperationException("JDBC 后端只支持 PESSIMISTIC_WRITE / PESSIMISTIC_READ: " + lock);
         }
         if (!(spec.selection() instanceof EntitySelection)) {
             throw new UnsupportedOperationException(

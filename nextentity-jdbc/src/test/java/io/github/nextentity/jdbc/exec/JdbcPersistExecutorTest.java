@@ -45,6 +45,33 @@ class JdbcPersistExecutorTest {
         execute("delete from versioned_item");
     }
 
+    @Test
+    void updateWithNullEntityIsRejected() {
+        JdbcPersistExecutor<SnapshotItem> persist = executor(SnapshotItem.class);
+
+        assertThatThrownBy(() -> persist.update(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("entity");
+    }
+
+    @Test
+    void updateAllWithNullEntitiesIsRejected() {
+        JdbcPersistExecutor<SnapshotItem> persist = executor(SnapshotItem.class);
+
+        assertThatThrownBy(() -> persist.updateAll(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("entities");
+    }
+
+    @Test
+    void insertAllWithNullEntitiesIsRejected() {
+        JdbcPersistExecutor<SnapshotItem> persist = executor(SnapshotItem.class);
+
+        assertThatThrownBy(() -> persist.insertAll(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("entities");
+    }
+
     private <T> JdbcPersistExecutor<T> executor(Class<T> type) {
         return new JdbcPersistExecutor<>(dataSource, meta.entityType(type), dialect);
     }
@@ -156,12 +183,94 @@ class JdbcPersistExecutorTest {
                 .hasMessage("实体 " + VersionedItem.class.getName() + " 不存在: id=7, version=5");
     }
 
+    @Test
+    void conditionalUpdateSetsMatchingRowsAndReturnsAffectedCount() throws SQLException {
+        executor(SnapshotItem.class)
+                .insertAll(List.of(
+                        new SnapshotItem(1L, "banana", 10, 20, "n1", null),
+                        new SnapshotItem(2L, "cherry", 30, 40, "n2", null)));
+
+        int affected = executor(SnapshotItem.class)
+                .update()
+                .set(SnapshotItem::name, "apple")
+                .where(SnapshotItem::id)
+                .eq(1L)
+                .execute();
+
+        assertThat(affected).isEqualTo(1);
+        assertThat(itemName(1L)).isEqualTo("apple");
+        assertThat(itemName(2L)).isEqualTo("cherry");
+    }
+
+    @Test
+    void conditionalUpdateWithoutWhereAffectsWholeTable() throws SQLException {
+        executor(SnapshotItem.class)
+                .insertAll(List.of(
+                        new SnapshotItem(1L, "banana", 10, 20, "n1", null),
+                        new SnapshotItem(2L, "cherry", 30, 40, "n2", null)));
+
+        int affected = executor(SnapshotItem.class)
+                .update()
+                .set(SnapshotItem::note, null)
+                .execute();
+
+        assertThat(affected).isEqualTo(2);
+        assertThat(itemNote(1L)).isNull();
+        assertThat(itemNote(2L)).isNull();
+    }
+
+    @Test
+    void conditionalDeleteWithWhereRemovesOnlyMatchingRows() throws SQLException {
+        executor(SnapshotItem.class)
+                .insertAll(List.of(
+                        new SnapshotItem(1L, "banana", 10, 20, "n1", null),
+                        new SnapshotItem(2L, "cherry", 30, 40, "n2", null)));
+
+        int affected = executor(SnapshotItem.class)
+                .delete()
+                .where(SnapshotItem::score)
+                .gt(20)
+                .execute();
+
+        assertThat(affected).isEqualTo(1);
+        assertThat(count("item")).isEqualTo(1);
+    }
+
+    @Test
+    void conditionalDeleteWithoutWhereClearsTable() throws SQLException {
+        executor(SnapshotItem.class)
+                .insertAll(List.of(
+                        new SnapshotItem(1L, "banana", 10, 20, "n1", null),
+                        new SnapshotItem(2L, "cherry", 30, 40, "n2", null)));
+
+        assertThat(executor(SnapshotItem.class).delete().execute()).isEqualTo(2);
+        assertThat(count("item")).isZero();
+    }
+
     private Object storedVersion(long id) throws SQLException {
         try (Connection connection = dataSource.getConnection();
                 Statement statement = connection.createStatement();
                 ResultSet rows = statement.executeQuery("select version from versioned_item where id = " + id)) {
             assertThat(rows.next()).isTrue();
             return rows.getLong(1);
+        }
+    }
+
+    private String itemName(long id) throws SQLException {
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement();
+                ResultSet rows = statement.executeQuery("select name from item where id = " + id)) {
+            assertThat(rows.next()).isTrue();
+            return rows.getString(1);
+        }
+    }
+
+    private String itemNote(long id) throws SQLException {
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement();
+                ResultSet rows = statement.executeQuery("select note from item where id = " + id)) {
+            assertThat(rows.next()).isTrue();
+            return rows.getString(1);
         }
     }
 

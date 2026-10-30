@@ -15,8 +15,11 @@ import io.github.nextentity.jdbc.support.ItemStatus;
 import io.github.nextentity.jdbc.support.SnapshotAsset;
 import io.github.nextentity.jdbc.support.SnapshotItem;
 import io.github.nextentity.jdbc.support.SnapshotOwner;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.io.IOException;
@@ -26,6 +29,8 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.List;
 import java.util.logging.Logger;
 import javax.sql.DataSource;
@@ -46,6 +51,9 @@ class RowReaderTest {
         applySchema(dataSource);
         execute("create table if not exists versioned_nullable (id bigint primary key, name varchar(255),"
                 + " version bigint null)");
+        execute("create table if not exists instant_item (id bigint primary key, created_at timestamp)");
+        execute("create table if not exists status_owner (id bigint primary key, status int)");
+        execute("create table if not exists owns_status_owner (id bigint primary key, owner_id bigint)");
         execute("delete from asset");
         execute("delete from owner");
         execute("delete from item");
@@ -57,6 +65,12 @@ class RowReaderTest {
         execute("insert into owner (id, name) values (1, 'alpha'), (2, 'beta')");
         execute("insert into asset (id, name, owner_id) values (1, 'anvil', 1), (2, 'bandage', null)");
         execute("insert into versioned_nullable (id, name, version) values (1, 'plain', null)");
+        execute("delete from instant_item");
+        execute("insert into instant_item (id, created_at) values (1, timestamp '2024-05-01 10:00:00')");
+        execute("delete from owns_status_owner");
+        execute("delete from status_owner");
+        execute("insert into status_owner (id, status) values (1, 2)");
+        execute("insert into owns_status_owner (id, owner_id) values (1, 1)");
     }
 
     private QueryBuilder<SnapshotItem, JdbcQuery> items() {
@@ -147,6 +161,26 @@ class RowReaderTest {
     }
 
     @Test
+    void joinedEnumColumnIsResolvedThroughTheAssociationTarget() {
+        EntityPath<OwnsStatusOwner, StatusOwner> owner = EntityPath.of(OwnsStatusOwner::owner);
+
+        List<ItemStatus> statuses = new QueryBuilder<>(meta.entityType(OwnsStatusOwner.class), compiler, executor)
+                .select(owner.get(StatusOwner::status))
+                .list();
+
+        assertThat(statuses).containsExactly(ItemStatus.DONE);
+    }
+
+    @Test
+    void timestampColumnIsReadAsInstant() {
+        List<InstantItem> rows = new QueryBuilder<>(meta.entityType(InstantItem.class), compiler, executor).list();
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).createdAt())
+                .isEqualTo(Timestamp.valueOf("2024-05-01 10:00:00").toInstant());
+    }
+
+    @Test
     void associationPathCountSkipsMissingOwners() {
         EntityPath<SnapshotAsset, SnapshotOwner> owner = EntityPath.of(SnapshotAsset::owner);
 
@@ -175,6 +209,57 @@ class RowReaderTest {
                     statement.execute(statementSql);
                 }
             }
+        }
+    }
+
+    @Entity
+    @Table(name = "status_owner")
+    static class StatusOwner {
+
+        @Id
+        private Long id;
+
+        private ItemStatus status;
+
+        protected StatusOwner() {}
+
+        ItemStatus status() {
+            return status;
+        }
+    }
+
+    @Entity
+    @Table(name = "owns_status_owner")
+    static class OwnsStatusOwner {
+
+        @Id
+        private Long id;
+
+        @ManyToOne
+        @JoinColumn(name = "owner_id")
+        private StatusOwner owner;
+
+        protected OwnsStatusOwner() {}
+
+        StatusOwner owner() {
+            return owner;
+        }
+    }
+
+    @Entity
+    @Table(name = "instant_item")
+    static class InstantItem {
+
+        @Id
+        private Long id;
+
+        @Column(name = "created_at")
+        private Instant createdAt;
+
+        protected InstantItem() {}
+
+        Instant createdAt() {
+            return createdAt;
         }
     }
 

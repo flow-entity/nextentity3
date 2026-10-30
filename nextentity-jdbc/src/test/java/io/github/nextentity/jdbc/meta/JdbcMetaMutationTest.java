@@ -62,7 +62,9 @@ class JdbcMetaMutationTest {
     void embeddedFieldWithNonEmbeddableTypeIsRejected() {
         assertThatThrownBy(() -> meta.entityType(MutationEmbeddedString.class))
                 .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessage("@Embedded 未支持: " + MutationEmbeddedString.class.getName() + ".address");
+                .hasMessage("@Embedded 目标缺少 @Embeddable: "
+                        + MutationEmbeddedString.class.getName()
+                        + ".address: " + String.class.getName());
     }
 
     @Test

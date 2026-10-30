@@ -1,6 +1,7 @@
 package io.github.nextentity.jdbc.dialect;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.api.EntityPath;
 import io.github.nextentity.api.LockMode;
@@ -75,6 +76,22 @@ class PostgresDialectRenderingTest {
         items().lock(LockMode.PESSIMISTIC_WRITE).list();
 
         assertThat(executor.last.sql()).endsWith("from item t0 for update of t0");
+    }
+
+    @Test
+    void readLockUsesForShareOfRootAlias() {
+        items().lock(LockMode.PESSIMISTIC_READ).list();
+
+        assertThat(executor.last.sql()).endsWith("from item t0 for share of t0");
+    }
+
+    @Test
+    void unsupportedLockModesAreRejectedByTheDialect() {
+        PostgresDialect dialect = new PostgresDialect();
+
+        assertThatThrownBy(() -> dialect.lock(LockMode.OPTIMISTIC, List.of("t0")))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessage("方言 postgresql 不支持锁模式: OPTIMISTIC");
     }
 
     @Test

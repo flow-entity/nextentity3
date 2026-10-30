@@ -79,4 +79,20 @@ public final class SqlServerDialect implements JdbcDialect {
     public String likeEscape() {
         return " escape '\\'";
     }
+
+    /// T-SQL 的字符串长度函数是 `len`。注意 `LEN` **会裁掉尾随空格**，与 H2 / MySQL / PostgreSQL 的
+    /// `length` / `char_length` 语义不等价（属「会算错」而非「会报错」，USAGE §13.4 已披露）。
+    @Override
+    public String lengthOf(String operand) {
+        return "len(" + operand + ")";
+    }
+
+    /// T-SQL 的 `SUBSTRING` 是三参形态，没有「到结尾」的省略写法，只能用长度上界表达；
+    /// 这里下 `2147483647`（int 上界），与 H2 / MySQL / PostgreSQL 的 `substring(x, pos)` 语义对应。
+    /// 该上界形态待 SQL Server 容器通道实测（H2 / MySQL / PostgreSQL 走默认两参形态）。
+    @Override
+    public String substring(String operand, int position, Integer length) {
+        int effective = length == null ? Integer.MAX_VALUE : length;
+        return "substring(" + operand + ", " + position + ", " + effective + ")";
+    }
 }

@@ -13,6 +13,7 @@ import jakarta.persistence.Table;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -38,13 +39,13 @@ class GeneratedKeysQuotedLabelTest {
     void locatesBareIdLabelInWholeRowGeneratedKeys() throws Exception {
         ResultSet keys = resultSet(new String[] {"name", "ID"}, 17L);
 
-        assertThat(GeneratedKeys.read(keys, "id", "insert into \"gen_order\" (\"name\") values (?)"))
+        assertThat(GeneratedKeys.read(keys, "id", Long.class, "insert into \"gen_order\" (\"name\") values (?)"))
                 .as("PG 整行 keys 的 label 是裸列名 id（大小写不敏感）")
                 .isEqualTo(17L);
     }
 
-    /// 模拟驱动返回「整行 keys」：列名/标签按给定数组，只有第 %secondColumn% 列可转 long，
-    /// 第一列调用 `getLong` 抛 SQLException，确保实现真的按 label 定位而不是盲读第一列。
+    /// 模拟驱动返回「整行 keys」：列名/标签按给定数组，只有 id 列可转 BigDecimal，
+    /// 第一列调用 `getBigDecimal` 抛 SQLException，确保实现真的按 label 定位而不是盲读第一列。
     private static ResultSet resultSet(String[] labels, long idValue) {
         ResultSetMetaData metadata = proxy(ResultSetMetaData.class, (proxy, method, args) -> switch (method.getName()) {
             case "getColumnCount" -> labels.length;
@@ -55,10 +56,10 @@ class GeneratedKeysQuotedLabelTest {
             if (method.getName().equals("getMetaData")) {
                 return metadata;
             }
-            if (method.getName().equals("getLong")) {
+            if (method.getName().equals("getBigDecimal")) {
                 int index = (Integer) args[0];
                 if (labels[index - 1].equalsIgnoreCase("id")) {
-                    return idValue;
+                    return BigDecimal.valueOf(idValue);
                 }
                 throw new SQLException("column " + index + " is not numeric");
             }

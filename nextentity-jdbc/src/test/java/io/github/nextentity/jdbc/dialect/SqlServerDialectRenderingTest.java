@@ -81,9 +81,13 @@ class SqlServerDialectRenderingTest {
 
     @Test
     void lockIsRejectedExplicitly() {
-        assertThatThrownBy(() -> items().lock(LockMode.PESSIMISTIC_WRITE).list())
-                .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessageContaining("SQL Server 不支持行锁");
+        for (LockMode mode : List.of(LockMode.PESSIMISTIC_WRITE, LockMode.PESSIMISTIC_READ)) {
+            assertThatThrownBy(() -> items().lock(mode).list())
+                    .as("SQL Server 不支持锁模式 %s", mode)
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessageContaining("SQL Server 不支持行锁")
+                    .hasMessageContaining(mode.name());
+        }
     }
 
     private static final class CapturingExecutor implements Executor<JdbcQuery> {

@@ -5,17 +5,22 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
+import io.github.nextentity.jdbc.support.GeneratedBigIntegerItem;
 import io.github.nextentity.jdbc.support.GeneratedItem;
+import io.github.nextentity.jdbc.support.GeneratedShortItem;
+import io.github.nextentity.jdbc.support.IntegerGeneratedItem;
 import jakarta.persistence.PersistenceException;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 
@@ -34,6 +39,40 @@ class GeneratedKeysTest {
         long id = insertedId(FakeKeys.resultSet(new String[] {ID}, new Object[] {42L}));
 
         assertThat(id).isEqualTo(42L);
+    }
+
+    @Test
+    void readsIntegerKey() {
+        assertThat(insertedIntegerId(FakeKeys.resultSet(new String[] {ID}, new Object[] {41L})))
+                .isEqualTo(41);
+    }
+
+    @Test
+    void readsShortKey() {
+        assertThat(insertedShortId(FakeKeys.resultSet(new String[] {ID}, new Object[] {7L})))
+                .isEqualTo((short) 7);
+    }
+
+    @Test
+    void readsBigIntegerKey() {
+        assertThat(insertedBigIntegerId(FakeKeys.resultSet(new String[] {ID}, new Object[] {new BigDecimal("8")})))
+                .isEqualTo(BigInteger.valueOf(8));
+    }
+
+    @Test
+    void rejectsShortKeyOutOfRange() {
+        ResultSet keys = FakeKeys.resultSet(new String[] {ID}, new Object[] {40000L});
+
+        assertThatThrownBy(() -> insertedShortId(keys))
+                .isInstanceOf(PersistenceException.class)
+                .hasMessageContaining("超出 " + Short.class.getName() + " 的范围");
+    }
+
+    @Test
+    void rejectsNullGeneratedKey() {
+        assertThatThrownBy(() -> insertedIntegerId(FakeKeys.resultSet(new String[] {ID}, new Object[] {null})))
+                .isInstanceOf(PersistenceException.class)
+                .hasMessageContaining("生成键为 null");
     }
 
     @Test
@@ -84,10 +123,60 @@ class GeneratedKeysTest {
                 .hasMessageContaining("未返回生成键: insert into generated_item");
     }
 
+    @Test
+    void locatesIdByLabelWhenColumnNameDiffers() {
+        ResultSet keys = FakeKeys.resultSet(
+                new String[] {"key", ID}, new String[] {"k", "generated_id"}, new Object[] {43L, 47L});
+
+        assertThat(insertedId(keys)).isEqualTo(47L);
+    }
+
+    @Test
+    void locatesIdByColumnNameWhenLabelDiffers() {
+        ResultSet keys =
+                FakeKeys.resultSet(new String[] {"key", "other"}, new String[] {"k", ID}, new Object[] {43L, 48L});
+
+        assertThat(insertedId(keys)).isEqualTo(48L);
+    }
+
+    @Test
+    void reportsUnknownColumnsWhenMetadataLabelsFail() {
+        ResultSet keys = FakeKeys.resultSetWithFailingLabels(new String[] {"key", NAME}, new Object[] {"n", 99L});
+
+        assertThatThrownBy(() -> insertedId(keys))
+                .isInstanceOf(PersistenceException.class)
+                .hasMessageContaining("未找到生成键列 id")
+                .hasMessageContaining("实际列: 未知");
+    }
+
     private long insertedId(ResultSet keys) {
         JdbcPersistExecutor<GeneratedItem> persist =
                 new JdbcPersistExecutor<>(FakeKeys.dataSource(keys), meta.entityType(GeneratedItem.class), dialect);
         GeneratedItem item = new GeneratedItem("n");
+        persist.insert(item);
+        return item.id();
+    }
+
+    private Integer insertedIntegerId(ResultSet keys) {
+        JdbcPersistExecutor<IntegerGeneratedItem> persist = new JdbcPersistExecutor<>(
+                FakeKeys.dataSource(keys), meta.entityType(IntegerGeneratedItem.class), dialect);
+        IntegerGeneratedItem item = new IntegerGeneratedItem("n");
+        persist.insert(item);
+        return item.id();
+    }
+
+    private Short insertedShortId(ResultSet keys) {
+        JdbcPersistExecutor<GeneratedShortItem> persist = new JdbcPersistExecutor<>(
+                FakeKeys.dataSource(keys), meta.entityType(GeneratedShortItem.class), dialect);
+        GeneratedShortItem item = new GeneratedShortItem("n");
+        persist.insert(item);
+        return item.id();
+    }
+
+    private BigInteger insertedBigIntegerId(ResultSet keys) {
+        JdbcPersistExecutor<GeneratedBigIntegerItem> persist = new JdbcPersistExecutor<>(
+                FakeKeys.dataSource(keys), meta.entityType(GeneratedBigIntegerItem.class), dialect);
+        GeneratedBigIntegerItem item = new GeneratedBigIntegerItem("n");
         persist.insert(item);
         return item.id();
     }
@@ -98,12 +187,24 @@ class GeneratedKeysTest {
         private FakeKeys() {}
 
         static ResultSet resultSet(String[] labels, Object[] values) {
-            ResultSetMetaData metadata = metadata(labels);
+            return resultSet(labels, labels, values, false);
+        }
+
+        static ResultSet resultSet(String[] labels, String[] names, Object[] values) {
+            return resultSet(labels, names, values, false);
+        }
+
+        static ResultSet resultSetWithFailingLabels(String[] labels, Object[] values) {
+            return resultSet(labels, labels, values, true);
+        }
+
+        private static ResultSet resultSet(String[] labels, String[] names, Object[] values, boolean failLabels) {
+            ResultSetMetaData metadata = metadata(labels, names, failLabels);
             boolean[] consumed = {false};
             return proxy(ResultSet.class, (instance, method, arguments) -> switch (method.getName()) {
                 case "next" -> !consumed[0] && (consumed[0] = true) && values.length > 0;
                 case "getMetaData" -> metadata;
-                case "getLong" -> readLong(values, (int) arguments[0] - 1);
+                case "getBigDecimal" -> readBigDecimal(values, (int) arguments[0] - 1);
                 case "toString" -> "FakeKeys";
                 default -> defaultValue(method);
             });
@@ -134,23 +235,34 @@ class GeneratedKeysTest {
             });
         }
 
-        private static ResultSetMetaData metadata(String[] labels) {
+        private static ResultSetMetaData metadata(String[] labels, String[] names, boolean failLabels) {
+            // index() 会按列数各读一次 label；failLabels 从第 labels.length + 1 次起抛，模拟元数据在读取生成键时才失效。
+            AtomicInteger labelCalls = new AtomicInteger();
             return proxy(ResultSetMetaData.class, (instance, method, arguments) -> switch (method.getName()) {
                 case "getColumnCount" -> labels.length;
-                case "getColumnLabel", "getColumnName" -> labels[(int) arguments[0] - 1];
+                case "getColumnLabel" -> {
+                    if (failLabels && labelCalls.incrementAndGet() > labels.length) {
+                        throw new SQLException("metadata unavailable");
+                    }
+                    yield labels[(int) arguments[0] - 1];
+                }
+                case "getColumnName" -> names[(int) arguments[0] - 1];
                 case "toString" -> "FakeKeysMetadata";
                 default -> defaultValue(method);
             });
         }
 
-        private static long readLong(Object[] values, int index) throws SQLException {
+        private static BigDecimal readBigDecimal(Object[] values, int index) throws SQLException {
             if (index >= values.length) {
                 throw new SQLException("列序号越界: " + (index + 1));
             }
-            if (values[index] instanceof Number number) {
-                return number.longValue();
+            if (values[index] == null) {
+                return null;
             }
-            throw new SQLException("无法把 " + values[index] + " 读成 long");
+            if (values[index] instanceof Number number) {
+                return new BigDecimal(number.toString());
+            }
+            throw new SQLException("无法把 " + values[index] + " 读成 BigDecimal");
         }
 
         private static <T> T proxy(Class<T> type, InvocationHandler handler) {

@@ -1,10 +1,18 @@
 package io.github.nextentity.jdbc.exec;
 
+import io.github.nextentity.api.DeleteWhereStep;
+import io.github.nextentity.api.UpdateSetStep;
+import io.github.nextentity.core.builder.DeleteWhereStepBuilder;
+import io.github.nextentity.core.builder.UpdateSetStepBuilder;
 import io.github.nextentity.core.exec.PersistExecutor;
+import io.github.nextentity.core.spec.DeleteSpec;
+import io.github.nextentity.core.spec.UpdateSpec;
+import io.github.nextentity.jdbc.compile.ConditionalSql;
 import io.github.nextentity.jdbc.compile.SqlStatement;
 import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.JdbcEntityAttribute;
 import io.github.nextentity.jdbc.meta.JdbcEntityType;
+import io.github.nextentity.jdbc.meta.JdbcTypes;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.persistence.OptimisticLockException;
 import jakarta.persistence.PersistenceException;
@@ -24,6 +32,7 @@ import javax.sql.DataSource;
 /// 不管理事务——`DataSource` 自动提交，事务边界由调用方持有（设计 §9.2 决策 3）。
 ///
 /// 与 JPA 侧的差异只在实现手段：没有 identity map，`update` 总是发语句，不做 `contains` 短路。
+@SuppressWarnings("PMD.TooManyMethods") // PersistExecutor 契约面 + 条件改删 builder 连接 + 内部步骤，拆类只会把同一份连接状态搬运
 public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
 
     private static final String EXECUTION_FAILED = "SQL 执行失败: ";
@@ -93,6 +102,28 @@ public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
         }
     }
 
+    /// 条件更新入口：`update().set(...).where(...).execute()`，只发一条 `UPDATE`，不先取行。
+    @Override
+    public UpdateSetStep<T> update() {
+        return new UpdateSetStepBuilder<>(entityType.type(), this::updateWhere);
+    }
+
+    /// 条件删除入口：`delete().where(...).execute()`，只发一条 `DELETE`，不先取行。
+    ///
+    /// 不写 `where` 就是整表删除（与 2.2.3 一致），不额外拒绝。
+    @Override
+    public DeleteWhereStep<T> delete() {
+        return new DeleteWhereStepBuilder<>(entityType.type(), this::deleteWhere);
+    }
+
+    private int updateWhere(UpdateSpec spec) {
+        return Math.toIntExact(executeUpdate(ConditionalSql.update(spec, entityType, dialect)));
+    }
+
+    private int deleteWhere(DeleteSpec spec) {
+        return Math.toIntExact(executeUpdate(ConditionalSql.delete(spec, entityType, dialect)));
+    }
+
     private void insertGenerated(T entity, JdbcEntityAttribute id) {
         SqlStatement statement = WriteSql.insert(entityType, entity, dialect);
         try (Connection connection = dataSource.getConnection();
@@ -104,7 +135,7 @@ public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
                 if (!keys.next()) {
                     throw new PersistenceException("未返回生成键: " + statement.sql());
                 }
-                id.set(entity, identifier(GeneratedKeys.read(keys, id.column(), statement.sql()), id.type()));
+                id.set(entity, GeneratedKeys.read(keys, id.column(), id.type(), statement.sql()));
             }
         } catch (SQLException e) {
             throw new PersistenceException(EXECUTION_FAILED + statement.sql(), e);
@@ -155,7 +186,7 @@ public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
             throw new OptimisticLockException(message + ", version=" + versionValue);
         }
         if (version != null) {
-            version.set(entity, nextVersion(version, versionValue));
+            version.set(entity, JdbcTypes.nextVersion(versionValue, version.type()));
         }
     }
 
@@ -172,29 +203,7 @@ public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
     private void writeBackVersion(T entity) {
         JdbcEntityAttribute version = entityType.version();
         if (version != null && version.get(entity) == null) {
-            version.set(entity, zero(version.type()));
+            version.set(entity, JdbcTypes.toJdbc(null, version));
         }
-    }
-
-    private static Object identifier(long value, Class<?> type) {
-        if (type == Integer.class || type == int.class) {
-            return Math.toIntExact(value);
-        }
-        return value;
-    }
-
-    private static Object nextVersion(JdbcEntityAttribute version, Object value) {
-        Object next = WriteSql.nextVersion(value);
-        if (version.type() == long.class || version.type() == Long.class) {
-            return ((Number) next).longValue();
-        }
-        return next;
-    }
-
-    private static Object zero(Class<?> type) {
-        if (type == long.class || type == Long.class) {
-            return 0L;
-        }
-        return 0;
     }
 }

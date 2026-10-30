@@ -2,6 +2,7 @@ package io.github.nextentity.jdbc.meta;
 
 import io.github.nextentity.core.meta.EntityType;
 import java.lang.reflect.Constructor;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -18,6 +19,7 @@ public final class JdbcEntityType<T> implements EntityType<T> {
     private final String table;
     private final boolean tableQuoted;
     private final List<JdbcEntityAttribute> attributes;
+    private final List<JdbcEntityAttribute> columns;
     private final Map<String, JdbcEntityAttribute> attributesByName;
     private final JdbcEntityAttribute id;
     private final JdbcEntityAttribute version;
@@ -28,6 +30,7 @@ public final class JdbcEntityType<T> implements EntityType<T> {
         this.table = scanned.table();
         this.tableQuoted = scanned.tableQuoted();
         this.attributes = scanned.attributes();
+        this.columns = flattened(scanned.attributes());
         this.attributesByName = scanned.attributesByName();
         this.id = scanned.id();
         this.version = scanned.version();
@@ -62,6 +65,14 @@ public final class JdbcEntityType<T> implements EntityType<T> {
         return attributes;
     }
 
+    /// 扁平化的列属性（声明序）：`@Embedded` 属性展开为嵌入类型里的列属性，其余属性原样保留（含关联）。
+    ///
+    /// 与 [#attributes()] 的差别只在 `@Embedded`：SELECT 列集、INSERT / UPDATE 列集与行装配都走这里，
+    /// 路径解析（`address.city`）仍按 `attributes()` 逐段下钻。
+    public List<JdbcEntityAttribute> columns() {
+        return columns;
+    }
+
     /// 按属性名取属性；含被 §4.3 #9 忽略的关联属性（`joinColumn()` 为 `null`），未知名字返回 `null`。
     public JdbcEntityAttribute attribute(String attributeName) {
         return attributesByName.get(attributeName);
@@ -90,5 +101,17 @@ public final class JdbcEntityType<T> implements EntityType<T> {
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("实例化实体失败: " + type.getName(), e);
         }
+    }
+
+    private static List<JdbcEntityAttribute> flattened(List<JdbcEntityAttribute> attributes) {
+        List<JdbcEntityAttribute> columns = new ArrayList<>();
+        for (JdbcEntityAttribute attribute : attributes) {
+            if (attribute.isEmbedded()) {
+                columns.addAll(attribute.embeddedColumns());
+            } else {
+                columns.add(attribute);
+            }
+        }
+        return List.copyOf(columns);
     }
 }

@@ -13,8 +13,10 @@ import io.github.nextentity.core.spec.Logical;
 import io.github.nextentity.core.spec.NullCheck;
 import io.github.nextentity.core.spec.Operand;
 import io.github.nextentity.core.spec.Spec;
-import io.github.nextentity.jdbc.meta.EnumStorage;
+import io.github.nextentity.core.spec.StringFunctionOperand;
+import io.github.nextentity.core.spec.SubstringOperand;
 import io.github.nextentity.jdbc.meta.JdbcEntityAttribute;
+import io.github.nextentity.jdbc.meta.JdbcTypes;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -67,10 +69,8 @@ final class SqlPredicates {
         }
         if (comparison.left() instanceof Literal literal) {
             renderer.addParameter(convert(literal.value(), attributeOf(right)));
-            String predicate = "? " + operator(comparison.operator()) + " " + operands.expression(right);
-            return comparison.operator() == ComparisonOperator.LIKE
-                    ? predicate + renderer.dialect().likeEscape()
-                    : predicate;
+            // 走到这里时算子必不是 LIKE：上面已拒绝「LIKE 且右侧非字面量」，而右侧是字面量时已在上一个分支返回。
+            return "? " + operator(comparison.operator()) + " " + operands.expression(right);
         }
         return operands.expression(comparison.left()) + " " + operator(comparison.operator()) + " "
                 + operands.expression(right);
@@ -127,6 +127,8 @@ final class SqlPredicates {
             case AggregateOperand aggregate ->
                 renderer.paths().resolve(aggregate.path()).attribute();
             case ArithmeticOperand arithmetic -> attributeOf(arithmetic.left());
+            case StringFunctionOperand function -> attributeOf(function.subject());
+            case SubstringOperand substring -> attributeOf(substring.subject());
             case Literal literal -> throw new IllegalStateException("字面量没有列类型: " + literal.value());
         };
     }
@@ -138,11 +140,10 @@ final class SqlPredicates {
         return value instanceof String pattern ? pattern.replace("\\", "\\\\") : value;
     }
 
+    /// 字面量绑定值：枚举 → name/ordinal，`java.time` / `BigInteger` → 驱动普遍接受的 `java.sql` 形态，
+    /// 与写侧共用 [JdbcTypes#toLiteral(Object, JdbcEntityAttribute)]（谓词不套 `@Version` 的 0 初值）。
     private static Object convert(Object value, JdbcEntityAttribute attribute) {
-        if (value instanceof Enum<?> enumValue) {
-            return attribute.enumStorage() == EnumStorage.NAME ? enumValue.name() : enumValue.ordinal();
-        }
-        return value;
+        return JdbcTypes.toLiteral(value, attribute);
     }
 
     private static String operator(ComparisonOperator operator) {

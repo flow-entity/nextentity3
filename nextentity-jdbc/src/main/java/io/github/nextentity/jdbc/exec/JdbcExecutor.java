@@ -46,6 +46,7 @@ public final class JdbcExecutor implements Executor<JdbcQuery> {
     /// 执行计数查询（语句由编译器渲染，`forCount()` 已清排序 / 窗口 / 锁）。
     @Override
     public long count(JdbcQuery query) {
+        // `count(*)` / `count(distinct col)` 恒返回一行，`next()` 为假只是防御分支，正常路径不可达。
         return read(compiler.count(query.spec()), rows -> rows.next() ? rows.getLong(1) : 0L);
     }
 
