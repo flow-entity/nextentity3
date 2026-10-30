@@ -10,6 +10,7 @@ import io.github.nextentity.tests.jdbc.support.JdbcSchema;
 import io.github.nextentity.tests.jdbc.support.SingleConnectionDataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
@@ -20,8 +21,9 @@ import java.util.function.Supplier;
 
 /// 关联嵌套用例的 JDBC 接线：两张表按夹具落库，并给出两段嵌套路径。
 ///
-/// 关联数据用普通 JDBC 直插（`asset.owner_id`）——写入执行器对非 `null` 关联值是明确拒绝的
-/// （设计 §3.11 / §4.3 #21），夹具不为此扩能力。
+/// 关联数据用普通 JDBC 直插（`asset.owner_id`）而不是走写入执行器：夹具是"给定输入"，
+/// 不该顺带依赖写路径是否正确。**写路径本身**的证据在
+/// {@link io.github.nextentity.testing.AssociationWriteConsistencyTest} 的 JDBC 接线里。
 public class JdbcAssetSupport implements AutoCloseable {
 
     private static final String CLEAR_ASSETS = "delete from asset";
@@ -132,12 +134,54 @@ public class JdbcAssetSupport implements AutoCloseable {
         }
     }
 
-    /// 直插夹具/清表用：绕开写入执行器（关联列走普通 JDBC，§3.11）。
+    /// 直插夹具/清表用：绕开写入执行器（关联列走普通 JDBC 直插）。
     public void execute(String sql) {
         try (Statement statement = dataSource.connection().createStatement()) {
             statement.execute(sql);
         } catch (SQLException e) {
             throw new IllegalStateException("SQL 执行失败: " + sql, e);
+        }
+    }
+
+    /// 原始列读回：`select owner_id from asset where id = ?`。
+    ///
+    /// 走原生 SQL 而不是实体查询：JDBC 读回**不填充关联对象**（USAGE §13.4.4），
+    /// 写关联的证据需要的是库里的外键原始值。
+    ///
+    /// @param assetId 主键
+    /// @return 外键值；列为 `NULL` 时返回 `null`
+    public Long foreignKeyOf(long assetId) {
+        try (PreparedStatement statement =
+                dataSource.connection().prepareStatement("select owner_id from asset where id = ?")) {
+            statement.setLong(1, assetId);
+            try (ResultSet rows = statement.executeQuery()) {
+                if (!rows.next()) {
+                    throw new IllegalStateException("asset 行不存在: " + assetId);
+                }
+                long value = rows.getLong(1);
+                return rows.wasNull() ? null : value;
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("读取外键失败: " + assetId, e);
+        }
+    }
+
+    /// 原始列读回：`select name from asset where id = ?`。
+    ///
+    /// @param assetId 主键
+    /// @return 名称
+    public String nameOf(long assetId) {
+        try (PreparedStatement statement =
+                dataSource.connection().prepareStatement("select name from asset where id = ?")) {
+            statement.setLong(1, assetId);
+            try (ResultSet rows = statement.executeQuery()) {
+                if (!rows.next()) {
+                    throw new IllegalStateException("asset 行不存在: " + assetId);
+                }
+                return rows.getString(1);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("读取名称失败: " + assetId, e);
         }
     }
 

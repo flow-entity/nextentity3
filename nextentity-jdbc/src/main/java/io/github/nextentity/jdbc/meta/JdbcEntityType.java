@@ -2,13 +2,14 @@ package io.github.nextentity.jdbc.meta;
 
 import io.github.nextentity.core.meta.EntityType;
 import java.lang.reflect.Constructor;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 /// `EntityType` 的注解扫描实现：表名、属性表、`@Id` / `@Version` 句柄。
 ///
 /// 解析一次后缓存（见 [JdbcMeta]）。`attributes()` 含 `@ManyToOne` 关联属性（路径解析需要），
-/// **不含** §4.3 #9 被忽略的集合/一对一关联字段；[JdbcEntityAttribute#joinColumn()] 为 `null`
+/// **不含**被静默忽略的集合/反侧一对一关联字段；[JdbcEntityAttribute#joinColumn()] 为 `null`
 /// 的关联属性就是被忽略的那种。
 ///
 /// @param <T> 实体类型
@@ -18,6 +19,7 @@ public final class JdbcEntityType<T> implements EntityType<T> {
     private final String table;
     private final boolean tableQuoted;
     private final List<JdbcEntityAttribute> attributes;
+    private final List<JdbcEntityAttribute> columns;
     private final Map<String, JdbcEntityAttribute> attributesByName;
     private final JdbcEntityAttribute id;
     private final JdbcEntityAttribute version;
@@ -28,6 +30,7 @@ public final class JdbcEntityType<T> implements EntityType<T> {
         this.table = scanned.table();
         this.tableQuoted = scanned.tableQuoted();
         this.attributes = scanned.attributes();
+        this.columns = flattened(scanned.attributes());
         this.attributesByName = scanned.attributesByName();
         this.id = scanned.id();
         this.version = scanned.version();
@@ -36,7 +39,7 @@ public final class JdbcEntityType<T> implements EntityType<T> {
 
     /// 解析实体类型。
     ///
-    /// @param type 实体类型；缺 `@Entity` / 缺 `@Id` 等按 §4.3 #1–#14 拒绝
+    /// @param type 实体类型；映射不合法时按 USAGE §13.4.3 的拒绝表抛异常
     static <T> JdbcEntityType<T> of(Class<T> type) {
         return new JdbcEntityType<>(JdbcEntityScan.scan(type));
     }
@@ -62,12 +65,20 @@ public final class JdbcEntityType<T> implements EntityType<T> {
         return attributes;
     }
 
-    /// 按属性名取属性；含被 §4.3 #9 忽略的关联属性（`joinColumn()` 为 `null`），未知名字返回 `null`。
+    /// 扁平化的列属性（声明序）：`@Embedded` 属性展开为嵌入类型里的列属性，其余属性原样保留（含关联）。
+    ///
+    /// 与 [#attributes()] 的差别只在 `@Embedded`：SELECT 列集、INSERT / UPDATE 列集与行装配都走这里，
+    /// 路径解析（`address.city`）仍按 `attributes()` 逐段下钻。
+    public List<JdbcEntityAttribute> columns() {
+        return columns;
+    }
+
+    /// 按属性名取属性；含被静默忽略的关联属性（`joinColumn()` 为 `null`），未知名字返回 `null`。
     public JdbcEntityAttribute attribute(String attributeName) {
         return attributesByName.get(attributeName);
     }
 
-    /// 按属性名取列名；未知名字返回 `null`（校验与报错留给渲染层，见 §3.10）。
+    /// 按属性名取列名；未知名字返回 `null`（校验与报错留给渲染层 SqlPaths）。
     public String column(String attributeName) {
         JdbcEntityAttribute attribute = attributesByName.get(attributeName);
         return attribute == null ? null : attribute.column();
@@ -90,5 +101,17 @@ public final class JdbcEntityType<T> implements EntityType<T> {
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("实例化实体失败: " + type.getName(), e);
         }
+    }
+
+    private static List<JdbcEntityAttribute> flattened(List<JdbcEntityAttribute> attributes) {
+        List<JdbcEntityAttribute> columns = new ArrayList<>();
+        for (JdbcEntityAttribute attribute : attributes) {
+            if (attribute.isEmbedded()) {
+                columns.addAll(attribute.embeddedColumns());
+            } else {
+                columns.add(attribute);
+            }
+        }
+        return List.copyOf(columns);
     }
 }

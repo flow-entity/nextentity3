@@ -30,7 +30,7 @@ import io.github.nextentity.jdbc.support.SnapshotOwner;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/// 自定义方言覆盖全部六个渲染点（设计 §6.1）：每个钩子都在对应位置生效、参数经 sink 回流到语句，
+/// 自定义方言覆盖全部方言钩子（设计 §6.1）：每个钩子都在对应位置生效、参数经 sink 回流到语句，
 /// 且片段占位符数与绑定数不符时立即失败。
 class CustomDialectRenderingTest {
 

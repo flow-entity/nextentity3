@@ -39,13 +39,12 @@ final class RowReader {
             }
             return result;
         }
-        if (spec.selection() instanceof ValueSelection values) {
-            while (rows.next()) {
-                result.add((R) readValue(rows, values, query.columnTypes(), sql));
-            }
-            return result;
+        // Selection 是 sealed，实体分支已返回，剩下的只能是 ValueSelection。
+        ValueSelection values = (ValueSelection) spec.selection();
+        while (rows.next()) {
+            result.add((R) readValue(rows, values, query.columnTypes(), sql));
         }
-        throw new UnsupportedOperationException("不支持的查询形态: " + spec.selection());
+        return result;
     }
 
     private static Object readEntity(
@@ -100,7 +99,7 @@ final class RowReader {
     }
 
     private static List<JdbcEntityAttribute> scalarAttributes(JdbcEntityType<?> entityType) {
-        return entityType.attributes().stream()
+        return entityType.columns().stream()
                 .filter(attribute -> !attribute.isAssociation())
                 .toList();
     }

@@ -33,6 +33,7 @@ import io.github.nextentity.core.spec.Spec;
 import io.github.nextentity.core.spec.ValueSelection;
 import io.github.nextentity.core.spec.Window;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 
@@ -54,7 +55,8 @@ import java.util.Objects;
 ///
 /// @param <T> 实体类型
 /// @param <S> 后端语句类型
-@SuppressWarnings({"PMD.TooManyMethods", "PMD.CouplingBetweenObjects"}) // 方法数由 api 步骤接口面决定；耦合的 api 类型正是它要实现的那套 DSL
+@SuppressWarnings({"PMD.TooManyMethods", "PMD.CouplingBetweenObjects", "PMD.CyclomaticComplexity"
+}) // 方法数由 api 步骤接口面决定，耦合的 api 类型正是它要实现的那套 DSL；类级复杂度是 20+ 个重载的累加，每个重载只有一个投影/条件装配动作
 public final class QueryBuilder<T, S> implements EntityQuery<T> {
 
     private final EntityType<T> entityType;
@@ -63,6 +65,7 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
 
     private final List<AttributePath> groupBy = new ArrayList<>();
     private final List<Ordering> orderBy = new ArrayList<>();
+    private final List<AttributePath> fetch = new ArrayList<>();
     private Selection selection = new EntitySelection();
     private Spec where;
     private Spec having;
@@ -78,6 +81,24 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
         this.entityType = entityType;
         this.compiler = compiler;
         this.executor = executor;
+    }
+
+    // ---------------------------------------------------------------- fetch
+
+    /// 登记预加载路径：只把"哪些关联要一起取回"记进规格，怎么取由后端决定。
+    ///
+    /// 同一路径重复登记只保留一份——后端按路径链拼 join，重复会让同一条链被 join 两次。
+    @Override
+    public BaseWhereStep<T, T> fetch(Collection<? extends Path<T, ?>> paths) {
+        Objects.requireNonNull(paths, "paths");
+        for (Path<T, ?> path : paths) {
+            AttributePath resolved =
+                    PathRefs.resolve(Objects.requireNonNull(path, "path").refs());
+            if (!fetch.contains(resolved)) {
+                fetch.add(resolved);
+            }
+        }
+        return this;
     }
 
     // ---------------------------------------------------------------- where
@@ -172,6 +193,24 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
         return applySelection(items, distinct, mapper::map);
     }
 
+    @Override
+    public <R> BaseWhereStep<T, R> select(Class<R> type) {
+        boolean distinct = takeDistinct();
+        Objects.requireNonNull(type, "type");
+        // 目标就是实体本身时退化为整实体查询（2.2.3 口径）：列集由实体定义，不必造投影列
+        if (type.equals(entityType.type())) {
+            // 整实体查询不带 distinct 标志（见 DistinctStep 类注释），旗标在这里只能落成静默不生效
+            if (distinct) {
+                throw new UnsupportedOperationException(
+                        "select(" + type.getSimpleName() + ").distinct() 不支持：整实体查询的列集不是显式列表，SELECT DISTINCT 无法表达");
+            }
+            this.selection = new EntitySelection();
+            return step();
+        }
+        DtoProjection projection = DtoProjection.of(type, entityType.type());
+        return applySelection(projection.items(), distinct, projection.mapper());
+    }
+
     // -------------------------------------------------------------- orderBy
 
     @Override
@@ -226,7 +265,15 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
 
     @Override
     public List<T> list(int limit) {
-        return fetch(new Window(0, limit));
+        return list(0, limit);
+    }
+
+    /// 从 `offset` 起取至多 `limit` 行：与 [SliceStep#slice] 共用窗口与自动主键排序，
+    /// 只是不跑计数查询。`lock(...)` 返回的 `Collector` 也走这条（2.2.3 `Collector#list(int,int)`），
+    /// 因此「带锁分页」不需要收窄 `lock` 的返回类型。
+    @Override
+    public List<T> list(int offset, int limit) {
+        return fetch(new Window(offset, limit));
     }
 
     @Override
@@ -244,14 +291,22 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
         return rows.isEmpty() ? null : rows.getFirst();
     }
 
+    /// 计数。语义随查询形态变化：普通查询数行；`distinct()` 数去重后的投影值（交给后端渲染
+    /// `count(distinct ...)`）；`groupBy(...)` 数**组数**（`HAVING` 已生效）。
+    ///
+    /// 形态判断在 [QuerySpec#forCounting]：分组形态交出去的是 `CountScope.GROUPS`，后端据此把分组
+    /// 查询包成子查询再计数。没有 `groupBy` 的聚合形态不在这里拒绝——那是后端的契约
+    /// （见 [io.github.nextentity.api.Collector#count]），core 只把带聚合投影的 `ROWS` 规格交出去。
     @Override
     public long count() {
-        return executor.count(compiler.compile(spec(Window.NONE).forCount()));
+        return executor.count(compiler.compile(spec(Window.NONE).forCounting()));
     }
 
+    /// 存在性。普通查询看是否有行；`groupBy(...)` 看是否有**任何组**——`HAVING` 把所有组都滤空时
+    /// 答案相反，因此必须把 `HAVING` 一起渲染，不能只渲染 `where`。
     @Override
     public boolean exists() {
-        return executor.exists(compiler.compile(spec(Window.NONE).forExists()));
+        return executor.exists(compiler.compile(spec(Window.NONE).forExistence()));
     }
 
     @Override
@@ -260,10 +315,12 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
         // `slice(4, -1)` 就静默返回空页，而契约（`SliceStep#slice`）无条件承诺 IAE。
         Window window = new Window(offset, limit);
         long total = count();
+        // offset/limit 原样带出：`Slice#limit()` 承诺的是「请求的页大小」，短路路径下 data 为空，
+        // 用 `data.size()` 会把请求的 limit 报成 0。
         if (total <= offset) {
-            return new SliceResult<>(List.of(), total);
+            return new SliceResult<>(List.of(), total, offset, limit);
         }
-        return new SliceResult<>(fetch(window), total);
+        return new SliceResult<>(fetch(window), total, offset, limit);
     }
 
     // -------------------------------------------------------------- internal
@@ -332,7 +389,9 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     }
 
     /// 与已有条件做 `AND`；`Constant.TRUE` 视为"没有条件"。
-    private static Spec mergeCondition(Spec current, Spec spec) {
+    ///
+    /// 包内共用：写语句的构建器（`WhereStepBuilder`）与查询必须用同一套合并语义。
+    static Spec mergeCondition(Spec current, Spec spec) {
         if (spec == Constant.TRUE) {
             return current;
         }
@@ -354,13 +413,14 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     /// **去重投影下不追加**：主键通常不在 `SELECT DISTINCT` 的投影列里，MySQL 会拒绝
     /// `SELECT DISTINCT x ... ORDER BY 主键`（H2 放行，只会在真方言炸）。稳定分页请显式 `orderBy`。
     private QuerySpec spec(Window window) {
-        QuerySpec spec = new QuerySpec(entityType.type(), selection, where, groupBy, having, orderBy, window, lock);
+        QuerySpec spec =
+                new QuerySpec(entityType.type(), selection, where, groupBy, having, orderBy, window, lock, fetch);
         if (!window.limited() || !orderBy.isEmpty() || spec.aggregate() || distinctSelection()) {
             return spec;
         }
         List<Ordering> orders = new ArrayList<>(orderBy);
         orders.add(
                 new Ordering(AttributePath.of(entityType.type(), entityType.id().name()), Ordering.Direction.ASC));
-        return new QuerySpec(entityType.type(), selection, where, groupBy, having, orders, window, lock);
+        return new QuerySpec(entityType.type(), selection, where, groupBy, having, orders, window, lock, fetch);
     }
 }

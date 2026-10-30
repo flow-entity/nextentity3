@@ -68,7 +68,7 @@ final class SqlProjections {
     private String entityColumns() {
         JdbcEntityType<?> root = renderer.entityType();
         List<String> columns = new ArrayList<>();
-        for (JdbcEntityAttribute attribute : root.attributes()) {
+        for (JdbcEntityAttribute attribute : root.columns()) {
             if (attribute.isAssociation()) {
                 continue;
             }

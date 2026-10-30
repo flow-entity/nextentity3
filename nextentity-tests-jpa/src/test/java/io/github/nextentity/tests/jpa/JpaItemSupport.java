@@ -78,6 +78,13 @@ final class JpaItemSupport implements ConsistencySupport<ItemEntity>, AutoClosea
         return ItemEntity::status;
     }
 
+    /// 条件写入的入口（`update()` / `delete()` 需要装配层，一致性基类只拿得到 `ConsistencySupport`）。
+    ///
+    /// @return 该实体的写操作入口，与 `query()` 共用同一套装配
+    EntityOperations<ItemEntity> operations() {
+        return operations;
+    }
+
     /// 在事务里执行并返回结果（悲观锁等要求事务的查询用得到）。
     ///
     /// @param work 事务体，非 `null`

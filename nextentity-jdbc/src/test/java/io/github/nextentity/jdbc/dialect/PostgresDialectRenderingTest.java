@@ -1,6 +1,7 @@
 package io.github.nextentity.jdbc.dialect;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.api.EntityPath;
 import io.github.nextentity.api.LockMode;
@@ -18,7 +19,7 @@ import io.github.nextentity.jdbc.support.SnapshotOwner;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/// PostgreSQL 端到端渲染（设计 §6.1/§6.3）：`quote` 与 H2/MySQL 同为恒等（不走双引号）、
+/// PostgreSQL 端到端渲染（设计 §6.1）：`quote` 与 H2/MySQL 同为恒等（不走双引号）、
 /// `limit ? offset ?`、exists 的字面量 `limit 1`、`for update of <根表别名>`、`avg` 不转型。
 class PostgresDialectRenderingTest {
 
@@ -75,6 +76,22 @@ class PostgresDialectRenderingTest {
         items().lock(LockMode.PESSIMISTIC_WRITE).list();
 
         assertThat(executor.last.sql()).endsWith("from item t0 for update of t0");
+    }
+
+    @Test
+    void readLockUsesForShareOfRootAlias() {
+        items().lock(LockMode.PESSIMISTIC_READ).list();
+
+        assertThat(executor.last.sql()).endsWith("from item t0 for share of t0");
+    }
+
+    @Test
+    void unsupportedLockModesAreRejectedByTheDialect() {
+        PostgresDialect dialect = new PostgresDialect();
+
+        assertThatThrownBy(() -> dialect.lock(LockMode.OPTIMISTIC, List.of("t0")))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessage("方言 postgresql 不支持锁模式: OPTIMISTIC");
     }
 
     @Test

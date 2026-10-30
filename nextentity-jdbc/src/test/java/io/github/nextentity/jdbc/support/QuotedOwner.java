@@ -5,7 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
-/// 保留字表名 / 列名的关联目标实体（Phase F）：注解名用反引号标记 → meta 记 quoted。
+/// 保留字表名 / 列名的关联目标实体（quoted 标识符）：注解名用反引号标记 → meta 记 quoted。
 @Entity
 @Table(name = "`owner`")
 public class QuotedOwner {

@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.github.flow-entity</groupId>
         <artifactId>nextentity</artifactId>
-        <version>3.0.0</version>
+        <version>3.1.0</version>
     </parent>
 
     <artifactId>nextentity-testing</artifactId>
@@ -33,6 +33,13 @@
                  src/main 里就用到它，所以显式抬回 compile（仍为 optional，版本由消费方决定） -->
             <scope>compile</scope>
             <optional>true</optional>
+        </dependency>
+        <!-- golden schema 夹具（`io.github.nextentity.testing.golden`）是 JPA / JDBC 共用的实体注解
+             载体，除了 `jakarta.persistence` 注解不引用任何后端 API。不是 optional：没有注解就没有
+             实体元数据，两个后端读不到同一份表结构，跨后端对拍就无从谈起。 -->
+        <dependency>
+            <groupId>jakarta.persistence</groupId>
+            <artifactId>jakarta.persistence-api</artifactId>
         </dependency>
     </dependencies>
 </project>

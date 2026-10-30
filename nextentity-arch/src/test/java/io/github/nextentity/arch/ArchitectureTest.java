@@ -14,6 +14,7 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
+import io.github.nextentity.api.Collector;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
@@ -26,6 +27,7 @@ import java.time.Year;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.Map;
 import java.util.Random;
 import java.util.SplittableRandom;
 import java.util.UUID;
@@ -43,6 +45,19 @@ class ArchitectureTest {
 
     /// `api` 接口的公开方法数上限（AGENTS「接口要窄」）。
     private static final int API_MAX_PUBLIC_METHODS = 6;
+
+    /// 允许超过上限的既有接口：类型全名 → **该接口自己的**声明数上限（精确值，不是「放宽到 N」）。
+    ///
+    /// 条目只能用于「既有公开接口恢复 2.2.3 就有、3.0.0 丢掉的成员」这一类场景，
+    /// 因为拆接口会改 builder / `lock(...)` 的返回类型，属主版本动作，MINOR 里做不了。
+    /// 规则：**只许持平、不许增长**（数值就是精确上限，多一个方法立刻红），
+    /// 每条必须在 [docs/DESIGN.md](../../../../../../../docs/DESIGN.md) §7 的决策表里有对应条目，
+    /// 并写明 revisit 触发器（下一次主版本按注释里的拆分口径落地）。
+    ///
+    /// `Collector`：2.2.3 的 7 个终止符（`list()` / `list(int)` / `list(int,int)` / `first()` /
+    /// `single()` / `count()` / `exists()`）是同一个契约面；3.0.0 丢掉了 `list(int,int)`，
+    /// 3.1.0 恢复它导致声明数回到 7。拆分点（取行 vs 聚合）只有在主版本才能重新划。
+    private static final Map<String, Integer> WIDE_INTERFACE_ALLOWLIST = Map.of(Collector.class.getName(), 7);
 
     /// 模块之间不得出现循环依赖。
     @ArchTest
@@ -269,6 +284,14 @@ class ArchitectureTest {
 
     /// 一致性测试基类不得被某个后端绑架：`testing` 只准依赖 `api` + `core` 接口。
     ///
+    /// ## `testing.golden` 的例外（3.1.0）
+    ///
+    /// 唯一豁免的子包是 `io.github.nextentity.testing.golden`：那里放的是 golden schema 的
+    /// **实体注解载体**（`@Entity` / `@Embedded` / `@Convert` / `@ManyToOne`），JPA 与 JDBC 两条
+    /// 后端必须读同一份实体元数据才能对拍，因此它必须同时出现在两个测试模块的 classpath 上；
+    /// 它本身没有任何后端 API 调用（只有注解与 POJO 访问器），不是一致性基类，规则的执法对象
+    /// 也不包括它。豁免按子包精确给出（不是整包放行）：基类一旦搬进 `golden` 同样会被判红。
+    ///
     /// 顺带说明它守不住的那一半：这条规则按类型依赖执法，能挡住基类引用
     /// `java.sql..` / `jakarta..` / `org.hibernate..` / `org.springframework..`；
     /// 但「基类里拿一个 `String` 拼 SQL 再断言」没有任何类型特征，ArchUnit 看不到数据流，
@@ -281,6 +304,10 @@ class ArchitectureTest {
     static final ArchRule TESTING_STAYS_BACKEND_FREE = noClasses()
             .that()
             .resideInAPackage("io.github.nextentity.testing..")
+            .and()
+            // 豁免理由：golden 夹具里的 `jakarta.persistence` 只作注解用（无 EntityManager/无 Hibernate API），
+            // 而同一张 golden 表必须被 JPA 与 JDBC 共用，注解是唯一声明方式；一致性基类仍不许碰后端 API。
+            .resideOutsideOfPackage("io.github.nextentity.testing.golden..")
             .should()
             .dependOnClassesThat()
             .resideInAnyPackage("jakarta..", "org.hibernate..", "org.springframework..", "java.sql..")
@@ -349,12 +376,14 @@ class ArchitectureTest {
 
     /// 公开方法（不含 static）不超过 `API_MAX_PUBLIC_METHODS` 个。
     ///
+    /// 例外只走 `WIDE_INTERFACE_ALLOWLIST`，且上限是精确值：`Collector` 允许 7，第 8 个方法照样红。
+    ///
     /// @return 条件
     private static ArchCondition<JavaClass> haveAtMostPublicMethods() {
-        int max = API_MAX_PUBLIC_METHODS;
-        return new ArchCondition<>("声明不超过 " + max + " 个公开方法") {
+        return new ArchCondition<>("声明不超过 " + API_MAX_PUBLIC_METHODS + " 个公开方法（例外见 WIDE_INTERFACE_ALLOWLIST）") {
             @Override
             public void check(JavaClass item, ConditionEvents events) {
+                int max = WIDE_INTERFACE_ALLOWLIST.getOrDefault(item.getName(), API_MAX_PUBLIC_METHODS);
                 long count = item.getMethods().stream()
                         .filter(method -> method.getModifiers().contains(JavaModifier.PUBLIC))
                         .filter(method -> !method.getModifiers().contains(JavaModifier.STATIC))

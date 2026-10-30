@@ -3,7 +3,9 @@ package io.github.nextentity.spring;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.nextentity.api.DeleteWhereStep;
 import io.github.nextentity.api.EntityQuery;
+import io.github.nextentity.api.UpdateSetStep;
 import io.github.nextentity.core.EntityOperationsFactory;
 import io.github.nextentity.core.meta.EntityType;
 import io.github.nextentity.core.repo.EntityOperations;
@@ -156,6 +158,16 @@ class AbstractRepositoryTest {
         @Override
         public void updateAll(Iterable<Item> entities) {
             throw new UnsupportedOperationException("AbstractRepository 不批量更新");
+        }
+
+        @Override
+        public UpdateSetStep<Item> update() {
+            throw new UnsupportedOperationException("AbstractRepository 不条件更新");
+        }
+
+        @Override
+        public DeleteWhereStep<Item> delete() {
+            throw new UnsupportedOperationException("AbstractRepository 不条件删除");
         }
 
         @Override

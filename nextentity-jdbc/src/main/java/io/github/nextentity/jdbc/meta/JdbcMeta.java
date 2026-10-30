@@ -17,7 +17,7 @@ public final class JdbcMeta {
     ///
     /// @param type 实体类型，非 `null`
     /// @param <T>  实体类型
-    /// @return 元数据；未映射时按 §4.3 #1–#14 抛异常
+    /// @return 元数据；映射不合法时按 USAGE §13.4.3 的拒绝表抛异常
     @SuppressWarnings("unchecked") // 缓存键就是 type()，写入时与读出时泛型一致
     public <T> JdbcEntityType<T> entityType(Class<T> type) {
         Objects.requireNonNull(type, "type");

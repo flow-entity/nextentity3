@@ -17,10 +17,10 @@ import java.util.List;
 import java.util.Locale;
 import org.junit.jupiter.api.Test;
 
-/// `quote` 的作用域契约（Phase F）：meta 标记为 quoted 的标识符，查询渲染与写侧（INSERT/UPDATE）都过
+/// `quote` 的作用域契约：meta 标记为 quoted 的标识符，查询渲染与写侧（INSERT/UPDATE）都过
 /// `JdbcDialect#quote`；未 quoted 的名字即使方言覆写了 `quote` 也保持裸名（既有快照零 churn）。
 ///
-/// 依据：设计 §6.3（quote 调用点）与 §6.6（条件引用），`docs/DESIGN.md` 不变量⑤已按 Phase F 改写为
+/// 依据：DESIGN §6.1 的不变量（quote 只作用于 quoted 标识符，调用点见下），`docs/DESIGN.md` 不变量⑤要求
 /// 「未 quoted 的标识符恒裸名」。
 class QuoteScopeContractTest {
 

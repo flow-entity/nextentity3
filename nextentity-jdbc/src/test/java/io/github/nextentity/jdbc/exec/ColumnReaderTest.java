@@ -5,9 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.jdbc.meta.JdbcEntityAttribute;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
+import io.github.nextentity.jdbc.support.ConvertedItem;
+import io.github.nextentity.jdbc.support.ConvertedLongItem;
 import io.github.nextentity.jdbc.support.ItemStatus;
 import io.github.nextentity.jdbc.support.OrdinalItem;
 import io.github.nextentity.jdbc.support.SnapshotItem;
+import io.github.nextentity.jdbc.support.StrictConvertedItem;
 import jakarta.persistence.PersistenceException;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -16,7 +19,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import org.junit.jupiter.api.Test;
 
-/// `ColumnReader` 的静态类型收窄（设计 §5.1 / §5.2）：Integer / int / Long / long / Double / double / String /
+/// `ColumnReader` 的静态类型收窄（见 USAGE §13.4.1）：Integer / int / Long / long / Double / double / String /
 /// `getObject` 回退、NULL 走 `wasNull`、枚举两种存储形态与两种脏数据（#26）。
 class ColumnReaderTest {
 
@@ -134,6 +137,41 @@ class ColumnReaderTest {
                 .isInstanceOf(PersistenceException.class)
                 .hasMessage("SQL 执行失败: " + sql + "；列 status 的值 3 无法解析为枚举 " + ItemStatus.class.getName()
                         + "（共 3 项: [NEW, ACTIVE, DONE]）"));
+    }
+
+    @Test
+    void readsConvertedColumnThroughAttributeConverter() throws SQLException {
+        JdbcEntityAttribute status = meta.entityType(ConvertedItem.class).attribute("status");
+
+        withRow("select 'ACTIVE', cast(null as varchar) from dual", rows -> {
+            assertThat(ColumnReader.readCell(rows, 1, String.class, status, "")).isEqualTo(ItemStatus.ACTIVE);
+            assertThat(ColumnReader.readCell(rows, 2, String.class, status, "")).isNull();
+        });
+    }
+
+    @Test
+    void readsConverterColumnByItsDatabaseType() throws SQLException {
+        JdbcEntityAttribute amount = meta.entityType(ConvertedLongItem.class).attribute("amount");
+
+        withRow("select cast(42 as bigint) from dual", rows -> assertThat(
+                        ColumnReader.readCell(rows, 1, Long.class, amount, "select amount"))
+                .isEqualTo(42L));
+    }
+
+    @Test
+    void readColumnKeepsTheStaticTypeWithoutAttribute() throws SQLException {
+        withRow("select 7 from dual", rows -> assertThat(ColumnReader.readColumn(rows, 1, Long.class))
+                .isEqualTo(7L));
+    }
+
+    @Test
+    void converterIsNotCalledForSqlNull() throws SQLException {
+        JdbcEntityAttribute status = meta.entityType(StrictConvertedItem.class).attribute("status");
+
+        withRow("select 'ACTIVE', cast(null as varchar) from dual", rows -> {
+            assertThat(ColumnReader.readCell(rows, 1, String.class, status, "")).isEqualTo(ItemStatus.ACTIVE);
+            assertThat(ColumnReader.readCell(rows, 2, String.class, status, "")).isNull();
+        });
     }
 
     private static void withRow(String sql, RowAssertion assertion) throws SQLException {

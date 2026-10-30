@@ -572,11 +572,18 @@ class JdbcCompilerBranchTest {
 
     @Test
     void nonPessimisticWriteLockIsRejected() {
-        QuerySpec spec = entity(SnapshotItem.class, null, List.of(), LockMode.PESSIMISTIC_READ);
+        QuerySpec spec = entity(SnapshotItem.class, null, List.of(), LockMode.PESSIMISTIC_FORCE_INCREMENT);
 
         assertThatThrownBy(() -> select(spec))
                 .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessage("JDBC 后端只支持 PESSIMISTIC_WRITE: PESSIMISTIC_READ");
+                .hasMessage("JDBC 后端只支持 PESSIMISTIC_WRITE / PESSIMISTIC_READ: PESSIMISTIC_FORCE_INCREMENT");
+    }
+
+    @Test
+    void pessimisticReadLockIsRenderedByDialect() {
+        QuerySpec spec = entity(SnapshotItem.class, null, List.of(), LockMode.PESSIMISTIC_READ);
+
+        assertThat(select(spec).sql()).endsWith(" from item t0 for update");
     }
 
     @Test

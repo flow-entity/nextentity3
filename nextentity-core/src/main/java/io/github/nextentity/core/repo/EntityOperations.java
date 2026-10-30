@@ -6,13 +6,12 @@ import io.github.nextentity.core.meta.EntityType;
 
 /// 单个实体的操作入口：查询 + 写入 + 元数据。
 ///
-/// 只保留两个真实消费者需要的成员：
-/// - `AppVersionRepository`（`spring.AbstractRepository` 子类）只用 `query()`；
-/// - point-mall 的 `AppRepositoryImpl`（B 方案重写后）用 `query()`、`PersistExecutor` 的四个写方法，
-///   以及 `entityType().version()` 回写 `@Version`（`update`/`updateAll` 的乐观锁语义）。
+/// 成员来自两处：
+/// - 本接口自己声明 `query()` 与 `entityType()`；
+/// - [PersistExecutor] 提供实体级写入（`insert` / `insertAll` / `update` / `updateAll`）与
+///   条件写入入口（`update().set().where()` / `delete().where()`）。
 ///
-/// 2.2.3 的条件 DSL（`update().set().where()` / `delete().where()` / `fetch(...)` / `toSubQuery()`）
-/// 在 point-mall 零调用点，一律不进本接口。
+/// 3.1 起 2.2.3 的条件更新/删除 DSL 加性恢复（`fetch(...)` 在 `EntityQuery` 上，`toSubQuery()` 仍不提供）。
 ///
 /// @param <T> 实体类型
 public interface EntityOperations<T> extends PersistExecutor<T> {

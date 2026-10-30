@@ -2,14 +2,16 @@ package io.github.nextentity.jdbc.exec;
 
 import io.github.nextentity.jdbc.meta.EnumStorage;
 import io.github.nextentity.jdbc.meta.JdbcEntityAttribute;
+import io.github.nextentity.jdbc.meta.JdbcTypes;
 import jakarta.persistence.PersistenceException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Arrays;
 
-/// 单列读取：按 `columnTypes` 里登记的静态 Java 类型从 `ResultSet` 收窄，`null` 走 `wasNull`。
+/// 单列读取：按 `columnTypes` 里登记的静态 Java 类型从 `ResultSet` 收窄。
 ///
-/// 枚举列的越界 ORDINAL / 脏 name 属于行数据问题，按设计 §3.12 / #24 包成 `PersistenceException`，
+/// 类型收窄统一走 [JdbcTypes#read(ResultSet, int, Class)]（与写侧的类型绑定共用同一张类型清单）；
+/// 枚举列的越界 ORDINAL / 脏 name 属于行数据问题，按行数据错误包成 `PersistenceException`（语义差异见 USAGE §13.4.4），
 /// 文案带列名、原始值、枚举类型与项数（泄漏原生 `ArrayIndexOutOfBoundsException` 不算契约）。
 final class ColumnReader {
 
@@ -17,10 +19,14 @@ final class ColumnReader {
 
     private ColumnReader() {}
 
-    /// 读第 `index` 列（1 起）；`attribute` 非空且是枚举列时顺带按存储形态转成枚举常量。
+    /// 读第 `index` 列（1 起）：`@Convert` 列先按转换器的数据库类型收窄再还原，枚举列按存储形态转成常量。
     static Object readCell(ResultSet rows, int index, Class<?> columnType, JdbcEntityAttribute attribute, String sql)
             throws SQLException {
-        Object value = readColumn(rows, index, columnType);
+        if (attribute != null && attribute.converter() != null) {
+            Object value = JdbcTypes.read(rows, index, attribute.databaseType());
+            return value == null ? null : attribute.converter().convertToEntityAttribute(value);
+        }
+        Object value = JdbcTypes.read(rows, index, columnType);
         if (value == null || attribute == null || attribute.enumStorage() == EnumStorage.NONE) {
             return value;
         }
@@ -28,41 +34,12 @@ final class ColumnReader {
     }
 
     static Object readColumn(ResultSet rows, int index, Class<?> columnType) throws SQLException {
-        if (columnType == Integer.class || columnType == int.class) {
-            return intValue(rows, index);
-        }
-        if (columnType == Long.class || columnType == long.class) {
-            return longValue(rows, index);
-        }
-        if (columnType == Double.class || columnType == double.class) {
-            return doubleValue(rows, index);
-        }
-        if (columnType == String.class) {
-            return rows.getString(index);
-        }
-        return rows.getObject(index);
-    }
-
-    private static Integer intValue(ResultSet rows, int index) throws SQLException {
-        int value = rows.getInt(index);
-        return rows.wasNull() ? null : value;
-    }
-
-    private static Long longValue(ResultSet rows, int index) throws SQLException {
-        long value = rows.getLong(index);
-        return rows.wasNull() ? null : value;
-    }
-
-    private static Double doubleValue(ResultSet rows, int index) throws SQLException {
-        double value = rows.getDouble(index);
-        return rows.wasNull() ? null : value;
+        return JdbcTypes.read(rows, index, columnType);
     }
 
     private static Object enumValue(JdbcEntityAttribute attribute, Object value, String sql) {
+        // readCell 只在 enumStorage != NONE 时进入本方法，而枚举存储只会落在枚举类型的列上。
         Class<?> enumType = attribute.type();
-        if (!enumType.isEnum()) {
-            return value;
-        }
         Object[] constants = enumType.getEnumConstants();
         if (attribute.enumStorage() == EnumStorage.NAME) {
             return enumByName(value, enumType, attribute, constants, sql);

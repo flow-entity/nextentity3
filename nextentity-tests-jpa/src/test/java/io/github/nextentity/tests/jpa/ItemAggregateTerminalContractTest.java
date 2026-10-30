@@ -11,11 +11,12 @@ import org.junit.jupiter.api.Test;
 
 /// 终止符在「聚合/分组规格」上的契约（后端执行器职责，不属于一致性基类）。
 ///
-/// `having` / `groupBy` / 聚合投影会改变「有没有行」的含义：只把 `where` 拿去渲染 `COUNT(*)`
-/// 会得到**相反**的结论（分组数 vs 总行数、having 过滤后的组数 vs 过滤前的行数），所以
-/// `count()` 与 `exists()` 一律显式拒绝，抛 `UnsupportedOperationException`。
+/// 3.1.0 起 `groupBy` 之后的 `count()` / `exists()` 有明确定义：数**组数** / 判断**是否有组**
+/// （`having` 生效），窗口也作用在组上。仍然被拒绝的是**没有 `groupBy` 的聚合投影**：
+/// 只把 `where` 拿去渲染 `COUNT(*)` 会得到**相反**的结论，所以 `count()` / `exists()` 一律显式拒绝，
+/// 抛 `UnsupportedOperationException`。
 ///
-/// `slice()` 自己没有判断：它的 `total` 来自 `count()`，因此对聚合/分组规格是**级联**拒绝，
+/// `slice()` 自己没有判断：它的 `total` 来自 `count()`，因此对聚合规格是**级联**拒绝，
 /// 抛的是 `count()` 的那个异常。
 ///
 /// 拒绝消息里带着实体名（多列 `distinct` 还带列数），断言把这些片段一起钉住——消息写错、
@@ -54,20 +55,18 @@ class ItemAggregateTerminalContractTest extends ConsistencyTestBase<ItemEntity> 
                 .hasMessageContaining(ENTITY_NAME);
     }
 
-    /// 有 `groupBy`、无聚合投影：`count()` 走同一个拒绝分支，但判定入口是「`groupBy` 非空」，
-    /// 与 having-only 形态各占一半，不能互相代替——漏掉这一半，`GROUP BY` 查询照常数行
-    /// 就会被静默数成总行数。
+    /// 有 `groupBy`、无聚合投影：3.1.0 起 `count()` 数的是**组数**（`CountScope.GROUPS`），
+    /// 不再是拒绝。期望值由夹具内存去重算出，不写死常量。
     ///
-    /// 守护 `nextentity-jpa` 的 `jpa/exec/JpaExecutor.java:57-59`（判定源在
-    /// `nextentity-core` 的 `core/spec/QuerySpec.java:62`）。
+    /// 守护 `nextentity-jpa` 的 `JpaExecutor#count` GROUPS 分支（判定源在
+    /// `nextentity-core` 的 `core/spec/QuerySpec.java#forGroupCount`）。
     @Test
-    void countRejectsGroupBy() {
+    void countCountsGroupsAfterGroupBy() {
         var groupedBy = query().groupBy(statusRef());
 
-        assertThatThrownBy(groupedBy::count)
-                .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessageContaining("分组/聚合规格的 count 未实现")
-                .hasMessageContaining(ENTITY_NAME);
+        long expectedGroups =
+                fixtureRows().stream().map(row -> row.status()).distinct().count();
+        assertThat(groupedBy.count()).isEqualTo(expectedGroups);
     }
 
     /// 多列 `distinct()` 的 `count()` 必须显式拒绝：`COUNT(DISTINCT a, b)` 在 MySQL 与 PostgreSQL

@@ -7,32 +7,37 @@ import io.github.nextentity.jdbc.compile.SqlStatement;
 import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.JdbcEntityType;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
+import io.github.nextentity.jdbc.meta.JdbcTypes;
 import io.github.nextentity.jdbc.support.IntegerVersionedItem;
 import io.github.nextentity.jdbc.support.VersionedItem;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.sql.Timestamp;
 import org.junit.jupiter.api.Test;
 
-/// `WriteSql` 的版本零值填充与版本自增类型分派（设计 §3.11 / §5.4）。
+/// `WriteSql` 的版本零值填充与版本自增类型分派（写入 SQL 契约）。
 class WriteSqlMutationTest {
 
     private final JdbcMeta meta = new JdbcMeta();
     private final JdbcDialect dialect = JdbcDialect.of("H2");
 
     @Test
-    void nextVersionTreatsNullAsZeroAndIncrementsBoxedTypes() {
-        assertThat(WriteSql.nextVersion(null)).isEqualTo(0);
-        assertThat(WriteSql.nextVersion(1)).isEqualTo(2);
-        assertThat(WriteSql.nextVersion(1L)).isEqualTo(2L);
+    void nextVersionTreatsNullAsZeroAndIncrementsNumericTypes() {
+        assertThat(JdbcTypes.nextVersion(null, Integer.class)).isEqualTo(0);
+        assertThat(JdbcTypes.nextVersion(1, Integer.class)).isEqualTo(2);
+        assertThat(JdbcTypes.nextVersion(null, Long.class)).isEqualTo(0L);
+        assertThat(JdbcTypes.nextVersion(1L, Long.class)).isEqualTo(2L);
+        assertThat(JdbcTypes.nextVersion(null, Short.class)).isEqualTo((short) 0);
+        assertThat(JdbcTypes.nextVersion((short) 1, Short.class)).isEqualTo((short) 2);
     }
 
     @Test
-    void nextVersionRejectsOtherTypesWithTheValueClassName() {
-        assertThatThrownBy(() -> WriteSql.nextVersion((short) 1))
+    void nextVersionRejectsTimestampWithTheTypeName() {
+        assertThatThrownBy(() -> JdbcTypes.nextVersion(new Timestamp(0L), Timestamp.class))
                 .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessage("@Version 只支持 Integer / Long: " + Short.class.getName());
+                .hasMessage("@Version 只支持 int / long / short（含包装类型）: " + Timestamp.class.getName());
     }
 
     @Test

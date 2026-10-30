@@ -148,26 +148,24 @@ class JpaPersistVersionTest extends JpaTestSupport {
     }
 
     @Test
-    @DisplayName("已在持久化上下文的实体：执行器早退，变更只由脏检查写一次（版本 +1，不 +2）")
-    void updateOnManagedEntityIsDelegatedToDirtyChecking() {
+    @DisplayName("托管实体的 update：flush 上下文，变更由脏检查写一次（版本 +1，不 +2）")
+    void updateOnManagedEntityFlushesDirtyState() {
         inTx(entityManager -> {
             VersionedLedger ledger = entityManager.find(VersionedLedger.class, 1L);
             ledger.setName("dirty");
+            drainSql();
 
             persister(entityManager).update(ledger);
 
-            // `:76` 早退分支的可观测契约：执行器自己一条 UPDATE 都不发，版本也不推进
-            assertThat(drainSql()).noneMatch(sql -> sql.toLowerCase().startsWith("update"));
-            assertThat(ledger.getVersion()).isZero();
-
-            // flush 之后只该有脏检查自己发的那**一条整句** UPDATE（WHERE 用旧版本 0，`set` 里 name 在前、无别名）：
-            // 执行器若不早退，会先发自己那条 `SET version=1` 的 UPDATE，flush 再按版本 1 发第二条，
-            // 版本号被推到 2——整句集合与最终版本号两边都对不上。
-            // 注意这条与下面 `updateWithNullVersionIsOptimisticLockConflict` 里那条**不是同一句**
-            // （那条带别名 `vl1_0`、`set version=?,name=?`）：两句各由生产它的途径钉住，别合并成一句。
-            entityManager.flush();
+            // 合并语义（3.1.0）：执行器不再静默早退，而是 flush 整个持久化上下文——脏检查自己发的
+            // 一条整句 UPDATE 立刻落库（WHERE 用旧版本 0，`set` 里 name 在前、无别名）。
             assertThat(normalized(drainSql()))
                     .containsExactly("update versioned_ledger set name=?,version=? where id=? and version=?");
+            assertThat(ledger.getVersion()).isEqualTo(1L);
+
+            // 再 flush 一次不重复发：执行器没有另发一条自己的 UPDATE，版本也不会被推到 2
+            entityManager.flush();
+            assertThat(drainSql()).isEmpty();
             assertThat(ledger.getVersion()).isEqualTo(1L);
             return null;
         });
@@ -175,6 +173,40 @@ class JpaPersistVersionTest extends JpaTestSupport {
             VersionedLedger reloaded = entityManager.find(VersionedLedger.class, 1L);
             assertThat(reloaded.getName()).isEqualTo("dirty");
             assertThat(reloaded.getVersion()).isEqualTo(1L);
+            return null;
+        });
+    }
+
+    /// 合并语义的边界：flush 是**上下文级**操作，不只是这一个实体。
+    ///
+    /// 这条用例是 `updateIgnoresManagedEntity`（旧断言「托管实体 update 不发 SQL」）的反向替代：
+    /// 旧实现静默 return，另一条脏实体要等到提交才落库；新实现当场把整个上下文刷下去，
+    /// 因此「update 之后库里的状态」在调用点就可观测。
+    @Test
+    @DisplayName("托管实体的 update：flush 的是整个上下文，另一条脏实体也被一起写下去")
+    void updateFlushesOtherDirtyEntitiesInSameContext() {
+        inTx(entityManager -> {
+            VersionedLedger target = entityManager.find(VersionedLedger.class, 1L);
+            VersionedLedger other = entityManager.find(VersionedLedger.class, 2L);
+            other.setName("other-dirty");
+            drainSql();
+
+            persister(entityManager).update(target);
+
+            assertThat(normalized(drainSql()))
+                    .as("只有 other 脏：一条脏检查 UPDATE")
+                    .containsExactly("update versioned_ledger set name=?,version=? where id=? and version=?");
+            assertThat(other.getVersion()).isEqualTo(1L);
+            assertThat(target.getVersion()).as("target 未被修改，版本不动").isZero();
+            return null;
+        });
+        inTx(entityManager -> {
+            VersionedLedger reloadedOther = entityManager.find(VersionedLedger.class, 2L);
+            assertThat(reloadedOther.getName()).isEqualTo("other-dirty");
+            assertThat(reloadedOther.getVersion()).isEqualTo(1L);
+            assertThat(entityManager.find(VersionedLedger.class, 1L).getName())
+                    .as("target 自己没被写")
+                    .isEqualTo("opening");
             return null;
         });
     }
@@ -234,25 +266,6 @@ class JpaPersistVersionTest extends JpaTestSupport {
             VersionedLedger reloaded = entityManager.find(VersionedLedger.class, 1L);
             assertThat(reloaded.getName()).isEqualTo("opening");
             assertThat(reloaded.getVersion()).isEqualTo(0L);
-            return null;
-        });
-    }
-
-    @Test
-    @DisplayName("update：已托管实体直接返回，不重复发 UPDATE，版本号保持原值")
-    void updateIgnoresManagedEntity() {
-        inTx(entityManager -> {
-            VersionedLedger ledger = entityManager.find(VersionedLedger.class, 1L);
-            long versionBefore = ledger.getVersion();
-            ledger.setName("managed-noop");
-            drainSql();
-
-            persister(entityManager).update(ledger);
-
-            // `updateOne` 开头的 `contains` 判断把托管实体当作「Hibernate 会自己 flush」直接返回。
-            // 去掉这个判断，这里就会多发一条 UPDATE 并把版本自增，调用方看到版本跳号。
-            assertThat(drainSql()).as("托管实体的 update 不应发出 SQL").isEmpty();
-            assertThat(ledger.getVersion()).as("托管实体的版本号不应被改动").isEqualTo(versionBefore);
             return null;
         });
     }

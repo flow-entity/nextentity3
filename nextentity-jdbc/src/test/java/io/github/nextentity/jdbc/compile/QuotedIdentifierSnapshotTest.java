@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 
-/// Phase F（设计 §6.3）：注解用反引号标记过的保留字表名 / 列名才走 `JdbcDialect.quote`，
+/// 标识符引用口径：注解用反引号标记过的保留字表名 / 列名才走 `JdbcDialect.quote`，
 /// 内置四方言的引用字符分别为 H2/PG 双引号、MySQL 反引号、MSSQL 方括号。
 ///
 /// 未标记的既有实体仍渲染裸名（见 {@link JdbcSqlSnapshotTest}），因此本类只钉 quoted 路径。

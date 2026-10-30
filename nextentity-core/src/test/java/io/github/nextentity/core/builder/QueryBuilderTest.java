@@ -27,6 +27,7 @@ import io.github.nextentity.core.spec.Between;
 import io.github.nextentity.core.spec.Comparison;
 import io.github.nextentity.core.spec.ComparisonOperator;
 import io.github.nextentity.core.spec.Constant;
+import io.github.nextentity.core.spec.CountScope;
 import io.github.nextentity.core.spec.EntitySelection;
 import io.github.nextentity.core.spec.In;
 import io.github.nextentity.core.spec.Literal;
@@ -653,6 +654,63 @@ class QueryBuilderTest {
     }
 
     @Test
+    @DisplayName("groupBy 之后 count()：数的是组数，投影换成分组键、清排序与窗口")
+    void countAfterGroupByCountsGroups() {
+        backend.total = 4L;
+
+        long groups = query().where(Order::getStatus)
+                .eq("A")
+                .groupBy(Order::getStatus)
+                .having(Path.of(Order::getAge).count().gt(0L))
+                .orderBy(Order::getStatus)
+                .asc()
+                .count();
+
+        assertThat(groups).isEqualTo(4L);
+        QuerySpec spec = backend.last();
+        assertThat(spec.countScope()).isEqualTo(CountScope.GROUPS);
+        assertThat(spec.groupBy()).containsExactly(AttributePath.of(Order.class, "status"));
+        assertThat(spec.having()).isNotNull();
+        assertThat(spec.orderBy()).isEmpty();
+        assertThat(spec.window()).isEqualTo(Window.NONE);
+        // 子查询只选分组键，外层 count(*) 才是组数；沿用聚合投影会把组内行数再数一遍。
+        assertThat(spec.selection()).isInstanceOf(ValueSelection.class);
+        assertThat(((ValueSelection) spec.selection()).items())
+                .containsExactly(new PathProjection(AttributePath.of(Order.class, "status")));
+    }
+
+    @Test
+    @DisplayName("groupBy 之后 exists()：看是否存在任何组，分组与 having 一起渲染")
+    void existsAfterGroupByAsksAboutGroups() {
+        backend.exists = true;
+
+        assertThat(query().groupBy(Order::getStatus)
+                        .having(Path.of(Order::getAge).count().gt(0L))
+                        .exists())
+                .isTrue();
+
+        QuerySpec spec = backend.last();
+        assertThat(spec.countScope()).isEqualTo(CountScope.GROUPS);
+        assertThat(spec.groupBy()).containsExactly(AttributePath.of(Order.class, "status"));
+        assertThat(spec.having()).isNotNull();
+        assertThat(spec.window()).isEqualTo(new Window(null, 1));
+    }
+
+    @Test
+    @DisplayName("没有 groupBy 的聚合形态：仍按 ROWS 交给后端（拒绝是后端的契约，core 不单方面改语义）")
+    void aggregateWithoutGroupingStaysRowScope() {
+        Expression<Order, Long> total = Path.of(Order::getAge).count();
+
+        query().select(total).count();
+        assertThat(backend.last().countScope()).isEqualTo(CountScope.ROWS);
+        assertThat(backend.last().aggregate()).isTrue();
+
+        assertThat(query().having(Path.of(Order::getAge).count().gt(0L)).exists())
+                .isFalse();
+        assertThat(backend.last().countScope()).isEqualTo(CountScope.ROWS);
+    }
+
+    @Test
     @DisplayName("slice()：先 count 再取一页，total 进 Slice")
     void sliceRunsCountThenList() {
         backend.total = 25L;
@@ -691,6 +749,145 @@ class QueryBuilderTest {
         assertThat(slice.data()).isEmpty();
         assertThat(slice.total()).isEqualTo(3L);
         assertThat(backend.specs).hasSize(1);
+    }
+
+    /// `Slice#offset()`/`limit()` 回报的是**请求**的窗口，而取到行的一侧 `data.size()` 恰好
+    /// 可能与 `limit` 相等（这里特意让两者不等）：按 `data.size()` 反推的实现会被这条用例抓住。
+    @Test
+    @DisplayName("slice()：取到行时带出请求的 offset/limit，不是 data.size()")
+    void sliceReportsRequestedWindow() {
+        backend.total = 25L;
+        backend.rows = List.of(new Order());
+
+        Slice<Order> slice = query().slice(10, 5);
+
+        assertThat(slice.data()).hasSize(1);
+        assertThat(slice.offset()).isEqualTo(10);
+        assertThat(slice.limit()).isEqualTo(5);
+    }
+
+    /// 短路路径下 `data` 为空，`offset`/`limit` 只能来自入参本身——这是「回报请求原值」
+    /// 与「回报 data.size()」分叉的地方。
+    @Test
+    @DisplayName("slice()：短路路径同样带出请求的 offset/limit")
+    void sliceReportsRequestedWindowWhenShortCircuited() {
+        backend.total = 3L;
+
+        Slice<Order> slice = query().slice(10, 5);
+
+        assertThat(slice.data()).isEmpty();
+        assertThat(slice.offset()).isEqualTo(10);
+        assertThat(slice.limit()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("list(offset, limit)：窗口下发给执行器并返回该页行")
+    void listWithOffsetAndLimit() {
+        Order row = new Order();
+        backend.rows = List.of(row);
+
+        List<Order> rows = query().list(10, 5);
+
+        assertThat(rows).containsExactly(row);
+        assertThat(backend.last().window()).isEqualTo(new Window(10, 5));
+    }
+
+    /// 带锁分页：`lock(...)` 返回的是 [io.github.nextentity.api.Collector]，`list(int, int)` 是
+    /// 唯一能表达 offset 的重载。锁与窗口必须同时进入规格——锁被分页路径丢掉就等于静默不加锁。
+    @Test
+    @DisplayName("lock(mode).list(offset, limit)：锁与分页窗口同时进入规格")
+    void lockWithPagingKeepsLockAndWindow() {
+        Order row = new Order();
+        backend.rows = List.of(row);
+
+        List<Order> rows = query().where(Order::getStatus)
+                .eq("A")
+                .lock(LockMode.PESSIMISTIC_WRITE)
+                .list(10, 5);
+
+        assertThat(rows).containsExactly(row);
+        assertThat(backend.last().window()).isEqualTo(new Window(10, 5));
+        assertThat(backend.last().lock()).isEqualTo(LockMode.PESSIMISTIC_WRITE);
+    }
+
+    @Test
+    @DisplayName("list(offset, limit)：负数窗口拒绝，而不是静默取错页")
+    void listWithNegativeWindowRejected() {
+        assertThatThrownBy(() -> query().list(-1, 5))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("offset");
+        assertThatThrownBy(() -> query().list(0, -1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("limit");
+    }
+
+    // ----------------------------------------------------------------- fetch
+
+    @Test
+    @DisplayName("fetch(方法引用)：预加载路径作为一段属性链进入规格，且不影响后续 where")
+    void fetchPathRefCarriesAttributePath() {
+        query().fetch(Order::getCustomer).where(Order::getStatus).eq("A").list();
+
+        assertThat(backend.last().fetch()).containsExactly(AttributePath.of(Order.class, "customer"));
+        assertThat(backend.last().where())
+                .isEqualTo(new Comparison(path("status"), ComparisonOperator.EQ, Literal.of("A")));
+    }
+
+    @Test
+    @DisplayName("fetch(嵌套 Path)：整条链原样保留，深度不丢")
+    void fetchNestedPathKeepsWholeChain() {
+        query().fetch(EntityPath.of(Order::getCustomer)
+                        .get(Order.Customer::getOrg)
+                        .get(Order.Organization::getName))
+                .list();
+
+        assertThat(backend.last().fetch()).containsExactly(AttributePath.of(Order.class, "customer", "org", "name"));
+    }
+
+    @Test
+    @DisplayName("fetch 多个路径：按登记顺序保留；同一路径重复登记只留一份")
+    void fetchDeduplicatesSamePath() {
+        query().fetch(Order::getCustomer, Order::getStatus).list();
+        assertThat(backend.last().fetch())
+                .containsExactly(AttributePath.of(Order.class, "customer"), AttributePath.of(Order.class, "status"));
+
+        query().fetch(Order::getCustomer, Order::getCustomer).list();
+        assertThat(backend.last().fetch()).containsExactly(AttributePath.of(Order.class, "customer"));
+    }
+
+    @Test
+    @DisplayName("fetch(空集合)：等于不预加载，规格里没有路径")
+    void fetchEmptyCollectionIsNoop() {
+        query().fetch(List.<Path<Order, ?>>of()).list();
+
+        assertThat(backend.last().fetch()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("fetch(null) / fetch 含 null 元素：当场拒绝，而不是留到后端拼 join 时炸")
+    void fetchRejectsNullInput() {
+        assertThatThrownBy(() -> query().fetch((Collection<Path<Order, ?>>) null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("paths");
+        // 单值重载在 api 层就转成 Path，null 在 Path.of 处即拒绝（消息由 api 给）
+        assertThatThrownBy(() -> query().fetch(Order::getCustomer, null)).isInstanceOf(NullPointerException.class);
+
+        List<Path<Order, ?>> withNull = new ArrayList<>();
+        withNull.add(Path.of(Order::getCustomer));
+        withNull.add(null);
+        assertThatThrownBy(() -> query().fetch(withNull))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("path");
+    }
+
+    @Test
+    @DisplayName("count()/exists() 的规格清掉预加载：计数语句不该为填关联多 join")
+    void countAndExistsDropFetch() {
+        query().fetch(Order::getCustomer).count();
+        assertThat(backend.last().fetch()).isEmpty();
+
+        query().fetch(Order::getCustomer).exists();
+        assertThat(backend.last().fetch()).isEmpty();
     }
 
     @Test

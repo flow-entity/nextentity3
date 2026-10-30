@@ -35,7 +35,12 @@ final class JpaQueryBuilder {
         CriteriaQuery<Object> query = builder.createQuery(type);
         Root<Object> root = query.from(type);
         query.select(root);
-        apply(new JpaCriteria(builder, root, meta), spec, query);
+        JpaCriteria criteria = new JpaCriteria(builder, root, meta);
+        // fetch 放在条件/排序之前解析：先建出 fetch join，后续路径不会因为顺序不同而多一份 join
+        for (AttributePath fetch : spec.fetch()) {
+            criteria.fetch(fetch);
+        }
+        apply(criteria, spec, query);
         return query;
     }
 

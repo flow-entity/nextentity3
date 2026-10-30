@@ -1,6 +1,8 @@
 package io.github.nextentity.core.repo;
 
+import io.github.nextentity.api.DeleteWhereStep;
 import io.github.nextentity.api.EntityQuery;
+import io.github.nextentity.api.UpdateSetStep;
 import io.github.nextentity.core.EntityOperationsFactory;
 import io.github.nextentity.core.builder.QueryBuilder;
 import io.github.nextentity.core.compile.Compiler;
@@ -95,6 +97,16 @@ public final class SimpleEntityOperationsFactory<S> implements EntityOperationsF
         @Override
         public void updateAll(Iterable<T> entities) {
             persist().updateAll(entities);
+        }
+
+        @Override
+        public UpdateSetStep<T> update() {
+            return persist().update();
+        }
+
+        @Override
+        public DeleteWhereStep<T> delete() {
+            return persist().delete();
         }
     }
 }

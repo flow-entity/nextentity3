@@ -44,6 +44,19 @@ class SpecStructureTest {
         return new QuerySpec(entityType, selection, where, groupBy, null, orderBy, window, lock);
     }
 
+    /// 带分组与 HAVING 的规格：只关心分组计数这一节，其余字段取缺省。
+    private static QuerySpec grouped(Selection selection, List<AttributePath> groupBy, Spec having) {
+        return new QuerySpec(
+                String.class,
+                selection,
+                null,
+                groupBy,
+                having,
+                List.of(new Ordering(STATUS, Ordering.Direction.ASC)),
+                Window.NONE,
+                null);
+    }
+
     @Test
     @DisplayName("单段路径为直接字段，多段路径为嵌套字段")
     void pathDepth() {
@@ -367,6 +380,76 @@ class SpecStructureTest {
                 .isInstanceOf(UnsupportedOperationException.class);
     }
 
+    // ------------------------------------------- 分组之后的计数/存在性
+    //
+    // `groupBy(...)` 之后 `count()` 数的是组数、`exists()` 问的是"有没有组"，两者都必须把
+    // `groupBy`/`having` 一起交给后端；数错层（组数 vs 总行数）是静默错数，看不出来。
+
+    @Test
+    @DisplayName("分组计数：投影换成分组键，保留分组与 HAVING，清排序窗口锁")
+    void groupCountCountsGroups() {
+        Selection aggregates = new ValueSelection(
+                List.of(new AggregateProjection(AggregateFunction.COUNT, STATUS)), false, FIRST_COLUMN);
+        Comparison having = new Comparison(STATUS, ComparisonOperator.EQ, Literal.of("A"));
+
+        QuerySpec counting = grouped(aggregates, List.of(STATUS, ID), having).forGroupCount();
+
+        assertThat(counting.countScope()).isEqualTo(CountScope.GROUPS);
+        assertThat(counting.groupBy()).containsExactly(STATUS, ID);
+        assertThat(counting.having()).isEqualTo(having);
+        assertThat(counting.orderBy()).isEmpty();
+        assertThat(counting.window()).isEqualTo(Window.NONE);
+        assertThat(counting.lock()).isNull();
+        assertThat(counting.fetch()).isEmpty();
+        // 子查询只选分组键：沿用 `count(...)` 投影会把组内行数再数一遍。
+        assertThat(counting.selection()).isInstanceOf(ValueSelection.class);
+        assertThat(((ValueSelection) counting.selection()).items())
+                .containsExactly(new PathProjection(STATUS), new PathProjection(ID));
+    }
+
+    @Test
+    @DisplayName("分组存在性：限 1 行、保留分组与 HAVING、清排序")
+    void groupExistsLimitsToOne() {
+        Comparison having = new Comparison(STATUS, ComparisonOperator.EQ, Literal.of("A"));
+
+        QuerySpec probing =
+                grouped(new EntitySelection(), List.of(STATUS), having).forGroupExists();
+
+        assertThat(probing.countScope()).isEqualTo(CountScope.GROUPS);
+        assertThat(probing.groupBy()).containsExactly(STATUS);
+        assertThat(probing.having()).isEqualTo(having);
+        assertThat(probing.window()).isEqualTo(new Window(null, 1));
+        assertThat(probing.orderBy()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("分组计数/存在性：没有分组键就拒绝")
+    void groupingRequired() {
+        QuerySpec plain = spec(String.class, new EntitySelection(), null, List.of(), List.of(), Window.NONE, null);
+
+        assertThatThrownBy(plain::forGroupCount)
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("groupBy");
+        assertThatThrownBy(plain::forGroupExists)
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("groupBy");
+    }
+
+    @Test
+    @DisplayName("计数对象缺省是行：历史构造器与 forCount()/forExists() 都保持 ROWS")
+    void countScopeDefaultsToRows() {
+        QuerySpec plain = spec(String.class, new EntitySelection(), null, List.of(), List.of(), Window.NONE, null);
+
+        assertThat(plain.countScope()).isEqualTo(CountScope.ROWS);
+        assertThat(plain.forCount().countScope()).isEqualTo(CountScope.ROWS);
+        assertThat(plain.forExists().countScope()).isEqualTo(CountScope.ROWS);
+        // 计数/存在性规格不该丢弃分组信息：丢了就退化成"总行数/是否有行"。
+        assertThat(grouped(new EntitySelection(), List.of(STATUS), null)
+                        .forCount()
+                        .groupBy())
+                .containsExactly(STATUS);
+    }
+
     // ------------------------------------------- 构造期契约：必填字段与访问器
     //
     // 这一节只管「字段在构造期被拒绝、访问器原样交回」，语义仍由上面各节负责。
@@ -401,6 +484,33 @@ class SpecStructureTest {
                         (Executable) () -> new QuerySpec(
                                 String.class, new EntitySelection(), null, List.of(), null, null, Window.NONE, null),
                         "orderBy"),
+                Arguments.of(
+                        "QuerySpec.countScope",
+                        (Executable) () -> new QuerySpec(
+                                String.class,
+                                new EntitySelection(),
+                                null,
+                                List.of(),
+                                null,
+                                List.of(),
+                                Window.NONE,
+                                null,
+                                List.of(),
+                                null),
+                        "countScope"),
+                Arguments.of(
+                        "QuerySpec.fetch",
+                        (Executable) () -> new QuerySpec(
+                                String.class,
+                                new EntitySelection(),
+                                null,
+                                List.of(),
+                                null,
+                                List.of(),
+                                Window.NONE,
+                                null,
+                                null),
+                        "fetch"),
                 Arguments.of(
                         "QuerySpec.window",
                         (Executable) () -> new QuerySpec(
@@ -452,6 +562,16 @@ class SpecStructureTest {
                         (Executable) () -> new ArithmeticOperand(BinaryOperator.ADD, value, null),
                         "right"),
                 Arguments.of(
+                        "StringFunctionOperand.function",
+                        (Executable) () -> new StringFunctionOperand(null, STATUS),
+                        "function"),
+                Arguments.of(
+                        "StringFunctionOperand.subject",
+                        (Executable) () -> new StringFunctionOperand(StringFunction.LOWER, null),
+                        "subject"),
+                Arguments.of(
+                        "SubstringOperand.subject", (Executable) () -> new SubstringOperand(null, 0, 1), "subject"),
+                Arguments.of(
                         "AggregateProjection.function",
                         (Executable) () -> new AggregateProjection(null, STATUS),
                         "function"),
@@ -465,6 +585,16 @@ class SpecStructureTest {
                         "AggregateOperand.path",
                         (Executable) () -> new AggregateOperand(AggregateFunction.MAX, null),
                         "path"),
+                Arguments.of("Assignment.path", (Executable) () -> new Assignment(null, value), "path"),
+                Arguments.of(
+                        "UpdateSpec.entityType",
+                        (Executable) () -> new UpdateSpec(null, List.of(new Assignment(STATUS, value)), null),
+                        "entityType"),
+                Arguments.of(
+                        "UpdateSpec.assignments",
+                        (Executable) () -> new UpdateSpec(String.class, null, null),
+                        "assignments"),
+                Arguments.of("DeleteSpec.entityType", (Executable) () -> new DeleteSpec(null, null), "entityType"),
                 Arguments.of("PathProjection.path", (Executable) () -> new PathProjection(null), "path"),
                 Arguments.of("ComputedProjection.operand", (Executable) () -> new ComputedProjection(null), "operand"),
                 Arguments.of("Ordering.path", (Executable) () -> new Ordering(null, Ordering.Direction.ASC), "path"),
@@ -479,6 +609,43 @@ class SpecStructureTest {
                 .as(field)
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage(fieldName);
+    }
+
+    @Test
+    @DisplayName("条件更新：没有赋值就拒绝——空 UPDATE 没有意义")
+    void updateSpecRequiresAssignment() {
+        assertThatThrownBy(() -> new UpdateSpec(String.class, List.of(), null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("set(...)");
+    }
+
+    @Test
+    @DisplayName("条件更新：赋值列表是拷贝，where 可空（整表更新）")
+    void updateSpecCopiesAssignments() {
+        List<Assignment> assignments = new ArrayList<>(List.of(new Assignment(STATUS, "ARCHIVED")));
+
+        UpdateSpec spec = new UpdateSpec(String.class, assignments, null);
+        assignments.add(new Assignment(ID, "A"));
+
+        assertThat(spec.assignments()).containsExactly(new Assignment(STATUS, "ARCHIVED"));
+        assertThat(spec.where()).isNull();
+        assertThatThrownBy(() -> spec.assignments().add(new Assignment(ID, "A")))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    @DisplayName("赋值允许 null 值：置 NULL 与「跳过这一列」是两件事")
+    void assignmentAllowsNullValue() {
+        Assignment assignment = new Assignment(STATUS, null);
+
+        assertThat(assignment.value()).isNull();
+        assertThat(assignment).isNotEqualTo(new Assignment(STATUS, "A"));
+    }
+
+    @Test
+    @DisplayName("条件删除：where 可空（整表删除）")
+    void deleteSpecAllowsUnconditional() {
+        assertThat(new DeleteSpec(String.class, null).where()).isNull();
     }
 
     /// `Window` 的两个边界：`0` 合法（`limit = 0` 是「受限但不截断」），缺省用 `null`。
@@ -539,5 +706,39 @@ class SpecStructureTest {
         assertThat(Literal.of("A").value()).isEqualTo("A");
         assertThat(Constant.TRUE.value()).isTrue();
         assertThat(Constant.FALSE.value()).isFalse();
+    }
+
+    // ------------------------------------------- 字符串函数节点（3.1.0 新增操作数）
+
+    @Test
+    @DisplayName("字符串函数节点保留函数与主语，可互相嵌套")
+    void stringFunctionOperandCarriesSubject() {
+        StringFunctionOperand lower = new StringFunctionOperand(StringFunction.LOWER, STATUS);
+        StringFunctionOperand nested = new StringFunctionOperand(StringFunction.TRIM, lower);
+
+        assertThat(lower.function()).isEqualTo(StringFunction.LOWER);
+        assertThat(lower.subject()).isEqualTo(STATUS);
+        assertThat(nested.subject()).isEqualTo(lower);
+    }
+
+    @Test
+    @DisplayName("截取节点保留位置与长度；length 为 null 表示截到末尾，长度为 0 合法，负数被拒绝")
+    void substringOperandCarriesWindow() {
+        SubstringOperand operand = new SubstringOperand(STATUS, 1, 3);
+
+        assertThat(operand.subject()).isEqualTo(STATUS);
+        assertThat(operand.offset()).isEqualTo(1);
+        assertThat(operand.length()).isEqualTo(3);
+        assertThat(new SubstringOperand(STATUS, 2, 0).length()).isZero();
+        // 省略长度的形态与「截 0 个字符」「截一个上界数字个字符」都不是同一件事
+        assertThat(new SubstringOperand(STATUS, 2, null).length()).isNull();
+        assertThat(new SubstringOperand(STATUS, 2, null)).isNotEqualTo(new SubstringOperand(STATUS, 2, 0));
+
+        assertThatThrownBy(() -> new SubstringOperand(STATUS, -1, 3))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("offset");
+        assertThatThrownBy(() -> new SubstringOperand(STATUS, 0, -1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("length");
     }
 }

@@ -5,11 +5,12 @@ import io.github.nextentity.api.model.Tuple3;
 
 /// 投影入口：决定查询返回什么。
 ///
-/// 投影形态：单列、双列 [Tuple2]、三列 [Tuple3]、聚合/算术表达式，
-/// 以及列集由 [ProjectionMapper] 声明、不在本接口签名里写死的投影（结果类型由映射器决定）。
-/// 四列及以上由 [ProjectionMappers] 产出的映射器覆盖。以上形态都能被 [DistinctStep#distinct()] 修饰成 `SELECT DISTINCT`。
-/// 投影成 DTO 靠调用方自己的映射代码（[#project(ProjectionMapper)] 的映射器，或
-/// [io.github.nextentity.api.model.Slice#to] 之类的手写转换）；本接口不提供按类反射/注解自动映射的重载。
+/// 投影形态：单列、双列 [Tuple2]、三列 [Tuple3]、聚合/算术表达式、按 DTO 类型反射出的扁平投影
+/// （[#select(Class)]），以及列集由 [ProjectionMapper] 声明、不在本接口签名里写死的投影（结果类型由映射器决定）。
+/// 四列及以上由 [ProjectionMappers] 产出的映射器覆盖。以上形态都能被 [DistinctStep#distinct()] 修饰成
+/// `SELECT DISTINCT`（DTO 投影写作 `distinct().select(Dto.class)`）。
+/// 需要改名、嵌套或计算列时仍用 [#project(ProjectionMapper)] 手写映射器，[#select(Class)] 只覆盖
+/// "DTO 属性名与实体属性同名"的扁平场景。
 ///
 /// @param <T> 根实体类型
 public interface SelectStep<T> extends DistinctStep<T> {
@@ -63,4 +64,29 @@ public interface SelectStep<T> extends DistinctStep<T> {
     ///     或含后端无法解释的表达式（api 侧可解释的是 `Path`、`PathRef` 与 `Op`）；这些都在本方法内失败，
     ///     不会拖到编译/执行阶段
     <R> BaseWhereStep<T, R> project(ProjectionMapper<T, R> mapper);
+
+    /// 按 DTO 类型反射投影：DTO 的每个属性一列，属性名按名匹配实体属性。
+    ///
+    /// 目标类型的两种可用形态：
+    ///
+    /// - `record`：属性名取规范构造器的参数名，列序即参数序；
+    /// - 普通类：属性名由公开的 `setXxx` 定位（`setName` → `name`），需要无参构造器，列序按属性名排序。
+    ///
+    /// 接口与抽象类不支持：接口投影要靠运行期代理，本轮不提供——改用 [#project(ProjectionMapper)] 手写映射器。
+    ///
+    /// 属性名必须是实体的**单层**属性（`name` 可以，`department.name` 不行）：嵌套映射不属本形态。
+    /// 属性名无法与实体属性做编译期校验，写错会在后端渲染时失败。
+    ///
+    /// 这是显式 opt-in 的按名自动映射，不是"凡是 DTO 就自动反射"：不调用本方法时行为完全不变。
+    ///
+    /// 目标类型恰好是实体类型时退化为整实体查询（结果为实体实例），此时 `distinct()` 不可用：
+    /// 整实体查询的列集不是显式列表，`SELECT DISTINCT` 表达不出来。
+    ///
+    /// @param type DTO 类型，非 `null`
+    /// @param <R> 结果类型
+    /// @return 后续步骤，结果类型为 `R`
+    /// @throws IllegalArgumentException 目标类型没有可映射的属性（record 无组件、类无 `setXxx`），
+    ///     普通类缺无参构造器，或目标类型是接口/抽象类
+    /// @throws UnsupportedOperationException 目标类型是实体类型本身却又调了 [DistinctStep#distinct()]
+    <R> BaseWhereStep<T, R> select(Class<R> type);
 }

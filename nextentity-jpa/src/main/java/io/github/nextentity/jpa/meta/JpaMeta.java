@@ -1,9 +1,12 @@
 package io.github.nextentity.jpa.meta;
 
 import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.metamodel.Attribute;
 import jakarta.persistence.metamodel.Metamodel;
 import jakarta.persistence.metamodel.PluralAttribute;
+import java.lang.reflect.AnnotatedElement;
+import java.lang.reflect.Member;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -68,5 +71,28 @@ public final class JpaMeta {
     /// @return 集合关联返回 `true`
     public boolean pluralAssociation(Class<?> managedType, String attribute) {
         return metamodel.managedType(managedType).getAttribute(attribute) instanceof PluralAttribute<?, ?, ?>;
+    }
+
+    /// 判断「单值关联是否由本实体持有外键列」（`@ManyToOne` 与 owning 侧 `@OneToOne`）。
+    ///
+    /// 写侧（`JpaPersistExecutor` 的 `CriteriaUpdate` / 条件更新）只能写**本表**列：集合关联在
+    /// 另一张表 / 连接表，`@OneToOne(mappedBy=...)` 反侧的外键列在对端表，两者都写不了也不该写
+    /// （CHANGELOG 3.1.0 已披露「仍不写」）。元模型不暴露 owning 口，只能回到映射的 Java 成员上
+    /// 看注解：`@OneToOne` 带非空 `mappedBy` 即反侧。
+    ///
+    /// @param managedType 当前所在 managed type，非 `null`
+    /// @param attribute   属性名
+    /// @return 单值关联且由本实体持有外键列时返回 `true`；标量 / 集合关联 / 反侧返回 `false`
+    public boolean owningAssociation(Class<?> managedType, String attribute) {
+        Attribute<?, ?> resolved = metamodel.managedType(managedType).getAttribute(attribute);
+        if (resolved instanceof PluralAttribute<?, ?, ?> || !resolved.isAssociation()) {
+            return false;
+        }
+        Member member = resolved.getJavaMember();
+        if (!(member instanceof AnnotatedElement annotated)) {
+            return true;
+        }
+        OneToOne oneToOne = annotated.getAnnotation(OneToOne.class);
+        return oneToOne == null || oneToOne.mappedBy().isEmpty();
     }
 }

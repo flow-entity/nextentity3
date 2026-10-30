@@ -21,7 +21,7 @@ import java.util.logging.Logger;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 
-/// 门面装配（设计 §2.1）：`DataSource` 构造期探测产品名、显式方言注入、四个零件的接线、
+/// 门面装配：`DataSource` 构造期探测产品名、显式方言注入、四个零件的接线、
 /// 以及探测失败/未知产品名的拒绝（#20）。
 class JdbcEntityOperationsFactoryTest {
 

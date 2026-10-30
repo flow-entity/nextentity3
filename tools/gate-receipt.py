@@ -158,6 +158,12 @@ STATIC_EXEMPT = {
     # 移植载体：源文件刻意与上游同排版以便逐文件 diff，故跳过 spotless/checkstyle/PMD。
     # 见 nextentity-tests-legacy/README.md 与 AGENTS「移植语料是范围例外」。
     "nextentity-tests-legacy": ("checkstyle", "pmd"),
+    # 示例语料：nextentity-examples 是 2.2.3 真实调用却的移植载体（gate.sh 的 ci/night/release
+    # 各有一条 `*-examples` 步骤真跑它的 130 条测试），风格门禁与 tests-legacy 同性质跳过。
+    # 这里**必须显式登记**而不是让 `_scan_static` 因「没有报告」而 `continue` 掉：豁免要作为
+    # 一条被断言的事实留在凭证里（`exempt=True` 的 static 通道），否则「期望集缺失 = 检查没写」
+    # 那种假绿会原样发生在它身上。
+    "nextentity-examples": ("checkstyle", "pmd", "spotbugs"),
 }
 
 
@@ -352,8 +358,10 @@ def scan(root: str, since: float = 0.0) -> dict[str, dict]:
     # 必须当成**独立通道**而不是并进 surefire：并进去就成了「两个模式的失败数相加」，
     # 既看不出是哪个模式红的，也没法给 PG 模式单独挂预期失败基线。
     channels.update(_scan_xml_reports(root, "surefire-pg", since))
-    # JDBC 的 PG / SQL Server 容器通道：profile 把 failsafe 报告写到 `failsafe-pg-reports` /
+    # PG / SQL Server 容器通道：profile 把 failsafe 报告写到 `failsafe-pg-reports` /
     # `failsafe-mssql-reports`，于是自动成为独立通道 `failsafe-pg:...` / `failsafe-mssql:...`。
+    # tests-jdbc 与 tests-jpa 共用这套目录约定（`-Pjdbc-postgres` / `-Pjpa-postgres`），
+    # 凭证不需要为第二条 JPA 通道加代码——通道名带模块名，两边天然分开。
     # 不并进 failsafe：三种方言的失败要能分开归因，且 skip 预算/floor 得按方言单独挂。
     channels.update(_scan_xml_reports(root, "failsafe-pg", since))
     channels.update(_scan_xml_reports(root, "failsafe-mssql", since))

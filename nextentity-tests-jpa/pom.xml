@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.github.flow-entity</groupId>
         <artifactId>nextentity</artifactId>
-        <version>3.0.0</version>
+        <version>3.1.0</version>
     </parent>
 
     <artifactId>nextentity-tests-jpa</artifactId>
@@ -121,6 +121,18 @@
             <version>8.0.33</version>
             <scope>test</scope>
         </dependency>
+        <!-- PostgreSQL 容器通道：testcontainers 子模块 + JDBC 驱动（形态与 nextentity-tests-jdbc
+             的 `-Pjdbc-postgres` 对齐；版本由根 pom 的 dependencyManagement 统一，不在这里另钉）。 -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
 
         <!-- Spring 侧真实接线在**真 MySQL** 上的容器变体：`nextentity-spring` 的
              `NextEntityRealBackendTest` 只跑 H2，事务绑定的共享 EM 代理 + 真方言 + 回滚
@@ -175,9 +187,12 @@
         <plugins>
             <!-- 两条通道按类名分流，互不吞并：
                  - surefire（`mvn test` / `verify` 前半程）跑 H2 用例 `*Test`，显式排除 `*IntegrationTest`；
-                 - failsafe（`integration-test` + `verify`）只收 `*IntegrationTest`，即需要 Docker 的容器用例。
+                 - failsafe（`integration-test` + `verify`）只收 `MySql*IntegrationTest`，即默认的
+                   真 MySQL 容器通道；`-Pjpa-postgres` 把白名单换成 `Postgres*`（见下方 profile）。
                  failsafe 默认 includes 是 `**/IT*` / `**/*IT` / `**/*ITCase`，与项目约定的 `*IntegrationTest`
                  命名不匹配，不显式覆盖则容器用例会被 surefire 跑掉、failsafe 一条也收不到。
+                 白名单不用 `**/*IntegrationTest`：PG 通道的类也在同一个目录里，通配会把两种方言
+                 塞进同一次运行——报告目录只能有一个，两边的失败会混在一起而归因不了。
                  PR 档只要 H2：`-DskipITs`（failsafe 自带属性，只跳容器通道），H2 条数不变。 -->
             <!-- 跨模块合并覆盖率：本模块是唯一同时执行 L2/L3/L4 的地方，只有在这里做
                  `report-aggregate` 才能看到「全部测试合起来还有哪些生产代码行没人跑」。
@@ -215,7 +230,7 @@
                 <configuration>
                     <argLine>@{argLine} -Duser.timezone=${pinned.timezone} -Dnextentity.pinnedTimezone=${pinned.timezone}</argLine>
                     <includes>
-                        <include>**/*IntegrationTest.java</include>
+                        <include>**/MySql*IntegrationTest.java</include>
                     </includes>
                     <systemPropertyVariables>
                         <api.version>${docker.api.version}</api.version>
@@ -287,6 +302,47 @@
                                 </configuration>
                             </execution>
                         </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- PostgreSQL 容器通道：failsafe 类名白名单切到 `Postgres*IntegrationTest`，报告写到
+             `target/failsafe-pg-reports`，gate-receipt.py 按目录把它认成独立通道
+             `failsafe-pg:nextentity-tests-jpa`（与 tests-jdbc 的 `-Pjdbc-postgres` 同形）。
+
+             `-Dnextentity.requireContainer=true` 在 profile 里**固化**：方言通道不允许静默降级。
+             本地没有 Docker 时这条通道会直接红——那是刻意的，CI 必须真跑它。
+
+             为什么单独一个 profile 而不是并进默认 failsafe：两个方言的失败必须能分开归因，
+             而 failsafe 一次运行只有一个报告目录。默认通道仍是真 MySQL（`MySql*` 白名单），
+             本 profile 把白名单换成 `Postgres*`，两者不会同时出现在同一次运行里。
+             镜像仍走根 pom 的 `nextentity.postgres.image`（CI 用 GATE_EXTRA_MVN_ARGS 换 Docker Hub）。 -->
+        <profile>
+            <id>jpa-postgres</id>
+            <properties>
+                <nextentity.requireContainer>true</nextentity.requireContainer>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <reportsDirectory>${project.build.directory}/failsafe-pg-reports</reportsDirectory>
+                            <includes>
+                                <include>**/Postgres*IntegrationTest.java</include>
+                            </includes>
+                            <systemPropertyVariables>
+                                <api.version>${docker.api.version}</api.version>
+                                <nextentity.requireContainer>${nextentity.requireContainer}</nextentity.requireContainer>
+                                <nextentity.postgres.image>${nextentity.postgres.image}</nextentity.postgres.image>
+                                <ryuk.container.image>${nextentity.ryuk.image}</ryuk.container.image>
+                            </systemPropertyVariables>
+                            <environmentVariables>
+                                <TESTCONTAINERS_RYUK_CONTAINER_IMAGE>${nextentity.ryuk.image}</TESTCONTAINERS_RYUK_CONTAINER_IMAGE>
+                            </environmentVariables>
+                        </configuration>
                     </plugin>
                 </plugins>
             </build>

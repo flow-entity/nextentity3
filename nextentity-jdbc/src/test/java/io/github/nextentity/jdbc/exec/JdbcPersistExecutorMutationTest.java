@@ -33,7 +33,7 @@ import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/// 写入器在「生成键 / 版本回写 / 批量 / 空集合 / 入参校验」边界上的行为（PIT 执行面覆盖，设计 §3.11 / §5.4）。
+/// 写入器在「生成键 / 版本回写 / 批量 / 空集合 / 入参校验」边界上的行为（PIT 执行面覆盖）。
 class JdbcPersistExecutorMutationTest {
 
     private static final String URL = "jdbc:h2:mem:persist_mutation;MODE=MySQL;DB_CLOSE_DELAY=-1";

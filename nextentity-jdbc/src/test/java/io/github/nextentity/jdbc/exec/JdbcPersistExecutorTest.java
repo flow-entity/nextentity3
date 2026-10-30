@@ -27,9 +27,9 @@ import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/// 写入层（H2，§5.4）：生成键回填、`@Version` 自增回写、行数 ≠ 1 时的异常族，以及 §4.3 #22 的空主键拒绝。
+/// 写入层（H2，写入层）：生成键回填、`@Version` 自增回写、行数 ≠ 1 时的异常族，以及空主键拒绝。
 ///
-/// 写入器不管理事务（设计 §9.2 决策 3）：每个 `insert`/`update` 自己取连接、自动提交。
+/// 写入器不管理事务（事务归调用方）：每个 `insert`/`update` 自己取连接、自动提交。
 class JdbcPersistExecutorTest {
 
     private final JdbcMeta meta = new JdbcMeta();
@@ -43,6 +43,33 @@ class JdbcPersistExecutorTest {
         execute("delete from generated_item");
         execute("delete from integer_generated_item");
         execute("delete from versioned_item");
+    }
+
+    @Test
+    void updateWithNullEntityIsRejected() {
+        JdbcPersistExecutor<SnapshotItem> persist = executor(SnapshotItem.class);
+
+        assertThatThrownBy(() -> persist.update(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("entity");
+    }
+
+    @Test
+    void updateAllWithNullEntitiesIsRejected() {
+        JdbcPersistExecutor<SnapshotItem> persist = executor(SnapshotItem.class);
+
+        assertThatThrownBy(() -> persist.updateAll(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("entities");
+    }
+
+    @Test
+    void insertAllWithNullEntitiesIsRejected() {
+        JdbcPersistExecutor<SnapshotItem> persist = executor(SnapshotItem.class);
+
+        assertThatThrownBy(() -> persist.insertAll(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("entities");
     }
 
     private <T> JdbcPersistExecutor<T> executor(Class<T> type) {
@@ -156,12 +183,94 @@ class JdbcPersistExecutorTest {
                 .hasMessage("实体 " + VersionedItem.class.getName() + " 不存在: id=7, version=5");
     }
 
+    @Test
+    void conditionalUpdateSetsMatchingRowsAndReturnsAffectedCount() throws SQLException {
+        executor(SnapshotItem.class)
+                .insertAll(List.of(
+                        new SnapshotItem(1L, "banana", 10, 20, "n1", null),
+                        new SnapshotItem(2L, "cherry", 30, 40, "n2", null)));
+
+        int affected = executor(SnapshotItem.class)
+                .update()
+                .set(SnapshotItem::name, "apple")
+                .where(SnapshotItem::id)
+                .eq(1L)
+                .execute();
+
+        assertThat(affected).isEqualTo(1);
+        assertThat(itemName(1L)).isEqualTo("apple");
+        assertThat(itemName(2L)).isEqualTo("cherry");
+    }
+
+    @Test
+    void conditionalUpdateWithoutWhereAffectsWholeTable() throws SQLException {
+        executor(SnapshotItem.class)
+                .insertAll(List.of(
+                        new SnapshotItem(1L, "banana", 10, 20, "n1", null),
+                        new SnapshotItem(2L, "cherry", 30, 40, "n2", null)));
+
+        int affected = executor(SnapshotItem.class)
+                .update()
+                .set(SnapshotItem::note, null)
+                .execute();
+
+        assertThat(affected).isEqualTo(2);
+        assertThat(itemNote(1L)).isNull();
+        assertThat(itemNote(2L)).isNull();
+    }
+
+    @Test
+    void conditionalDeleteWithWhereRemovesOnlyMatchingRows() throws SQLException {
+        executor(SnapshotItem.class)
+                .insertAll(List.of(
+                        new SnapshotItem(1L, "banana", 10, 20, "n1", null),
+                        new SnapshotItem(2L, "cherry", 30, 40, "n2", null)));
+
+        int affected = executor(SnapshotItem.class)
+                .delete()
+                .where(SnapshotItem::score)
+                .gt(20)
+                .execute();
+
+        assertThat(affected).isEqualTo(1);
+        assertThat(count("item")).isEqualTo(1);
+    }
+
+    @Test
+    void conditionalDeleteWithoutWhereClearsTable() throws SQLException {
+        executor(SnapshotItem.class)
+                .insertAll(List.of(
+                        new SnapshotItem(1L, "banana", 10, 20, "n1", null),
+                        new SnapshotItem(2L, "cherry", 30, 40, "n2", null)));
+
+        assertThat(executor(SnapshotItem.class).delete().execute()).isEqualTo(2);
+        assertThat(count("item")).isZero();
+    }
+
     private Object storedVersion(long id) throws SQLException {
         try (Connection connection = dataSource.getConnection();
                 Statement statement = connection.createStatement();
                 ResultSet rows = statement.executeQuery("select version from versioned_item where id = " + id)) {
             assertThat(rows.next()).isTrue();
             return rows.getLong(1);
+        }
+    }
+
+    private String itemName(long id) throws SQLException {
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement();
+                ResultSet rows = statement.executeQuery("select name from item where id = " + id)) {
+            assertThat(rows.next()).isTrue();
+            return rows.getString(1);
+        }
+    }
+
+    private String itemNote(long id) throws SQLException {
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement();
+                ResultSet rows = statement.executeQuery("select note from item where id = " + id)) {
+            assertThat(rows.next()).isTrue();
+            return rows.getString(1);
         }
     }
 

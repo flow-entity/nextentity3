@@ -3,6 +3,7 @@ package io.github.nextentity.jpa.meta;
 import io.github.nextentity.core.meta.EntityAttribute;
 import io.github.nextentity.core.meta.EntityType;
 import jakarta.persistence.metamodel.Attribute;
+import jakarta.persistence.metamodel.Attribute.PersistentAttributeType;
 import jakarta.persistence.metamodel.Metamodel;
 import jakarta.persistence.metamodel.SingularAttribute;
 import java.util.Collections;
@@ -42,7 +43,10 @@ public final class JpaEntityType<T> implements EntityType<T> {
         EntityAttribute id = null;
         EntityAttribute version = null;
         for (Attribute<?, ?> attribute : metamodel.entity(type).getAttributes()) {
-            EntityAttribute meta = new JpaEntityAttribute(type, attribute.getName());
+            PersistentAttributeType attributeType = attribute.getPersistentAttributeType();
+            boolean association = attributeType == PersistentAttributeType.MANY_TO_ONE
+                    || attributeType == PersistentAttributeType.ONE_TO_ONE;
+            EntityAttribute meta = new JpaEntityAttribute(type, attribute.getName(), association);
             attributes.put(attribute.getName(), meta);
             if (attribute instanceof SingularAttribute<?, ?> singular) {
                 if (singular.isId()) {
@@ -71,6 +75,21 @@ public final class JpaEntityType<T> implements EntityType<T> {
     @Override
     public EntityAttribute version() {
         return version;
+    }
+
+    /// 条件更新是否允许写某属性：标量看 `@Column(updatable)`、关联外键看 `@JoinColumn(updatable)`
+    /// （两者缺省 `true`）。只回答「该列在 `SET` 侧是否可写」，读回不受影响。
+    ///
+    /// 属性不存在时返回 `true`：存在性校验留给后续的 `get(...)`，这里不替它报错。
+    ///
+    /// @param attribute 属性名（JPA 字段名）
+    /// @return `updatable = false` 时返回 `false`，其余返回 `true`
+    public boolean updatable(String attribute) {
+        JpaEntityAttribute meta = (JpaEntityAttribute) attributes.get(attribute);
+        if (meta == null) {
+            return true;
+        }
+        return meta.association() ? meta.joinColumnUpdatable() : meta.columnUpdatable();
     }
 
     /// 全部映射属性（含 id 与 version），按元模型声明顺序。

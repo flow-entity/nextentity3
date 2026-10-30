@@ -16,7 +16,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import org.junit.jupiter.api.Test;
 
-/// Phase F：meta 标记为 quoted 的标识符在写侧过 `JdbcDialect#quote`；未标记的保持裸名（零 churn）。
+/// 标识符引用：meta 标记为 quoted 的标识符在写侧过 `JdbcDialect#quote`；未标记的保持裸名（零 churn）。
 class WriteSqlQuotedTest {
 
     private final JdbcMeta meta = new JdbcMeta();

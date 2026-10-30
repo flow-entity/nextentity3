@@ -8,7 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/// 属性收集器：按声明序累加属性，并做 §4.3 #2 的 `@Id` 唯一性、#6 的 `@Version` 唯一性检查。
+/// 属性收集器：按声明序累加属性，并检查 `@Id` 与 `@Version` 的唯一性（拒绝口径见 USAGE §13.4.3）。
 final class JdbcAttributes {
 
     private final Class<?> type;
@@ -40,7 +40,7 @@ final class JdbcAttributes {
         }
     }
 
-    /// 持久属性（标量 + 可渲染的 `@ManyToOne`），声明序；§4.3 #9 被忽略的关联不在其中。
+    /// 持久属性（标量 + 可渲染的 `@ManyToOne`），声明序；被静默忽略的集合 / 反侧关联不在其中（见 USAGE §13.4.2）。
     List<JdbcEntityAttribute> attributes() {
         return ImmutableList.copyOf(attributes);
     }

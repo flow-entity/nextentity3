@@ -54,7 +54,8 @@ import org.junit.jupiter.api.TestFactory;
 ///                       countDistinct(id) → 0L
 ///                       sum/avg/min/max → list [null] / first null / single null
 /// 零行的分组查询      : list=[] first=null single=null；+having=[]；+orderBy=[]
-/// 被拒绝的终止符      : 分组/聚合规格上的 count() / exists() / slice() →
+///                       count()=0L（没有组）exists()=false slice(0,10)=data[]+total 0L
+/// 被拒绝的终止符      : 无 groupBy 的聚合投影上的 count() / exists() / slice() →
 ///                       UnsupportedOperationException（消息含「未实现」）
 /// ```
 /// 这些值全部与 `Collector` / `SliceStep` / `Aggregates` 的 javadoc 契约一致，
@@ -254,13 +255,11 @@ public abstract class EmptyResultDifferentialTest<T extends Item> extends Consis
                 }));
     }
 
-    /// 契约拒绝必须钉住：分组/聚合规格上的 `count()` / `exists()` / `slice()` 一律
-    /// 抛 `UnsupportedOperationException`。
+    /// 分组规格上的 `count()` / `exists()` / `slice()` 按「组」统计：空表没有组，因此
+    /// `count()` = 0、`exists()` = false、`slice()` = 空页（`total` = 0）；这三格是空结果语义的直接推论。
     ///
-    /// 这些格与数据无关（查询本来就是空集），因此它们证明的是**规格级拒绝**，
-    /// 而不是某条数据路径上才炸——`count()` 只渲染 `where` 会把分组数当行数（静默错数），
-    /// `exists()` 会把被 `having` 滤空的组答成「有行」（结论反了），所以拒绝是正确设计。
-    /// 实测 H2 与 MySQL 抛的是同一个异常、同一条消息（消息在 JPA 层统一抛出）。
+    /// 仍然被拒绝的是**无 `groupBy` 的聚合投影**上的三个终止符：`count()` 只渲染 `where` 会把
+    /// 「一行聚合结果」当行数（静默错数），`exists()` 同理（结论反了），所以那三格保持拒绝。
     ///
     /// @return 每格一条动态用例
     @TestFactory
@@ -279,29 +278,30 @@ public abstract class EmptyResultDifferentialTest<T extends Item> extends Consis
                         .isInstanceOf(UnsupportedOperationException.class)
                         .hasMessageContaining("未实现")),
                 DynamicTest.dynamicTest(
-                        "groupBy + count() → 拒绝", () -> assertThatThrownBy(() -> query().select(Path.of(noteRef()))
+                        "groupBy + count() → 0（没有组）", () -> assertThat(query().select(Path.of(noteRef()))
                                         .where(scoreRef())
                                         .gt(1000)
                                         .groupBy(noteRef())
                                         .count())
-                                .isInstanceOf(UnsupportedOperationException.class)
-                                .hasMessageContaining("未实现")),
+                                .as("空表没有任何分组键值，组数恒为 0")
+                                .isZero()),
                 DynamicTest.dynamicTest(
-                        "groupBy + exists() → 拒绝", () -> assertThatThrownBy(() -> query().select(Path.of(noteRef()))
+                        "groupBy + exists() → false（没有任何组）", () -> assertThat(query().select(Path.of(noteRef()))
                                         .where(scoreRef())
                                         .gt(1000)
                                         .groupBy(noteRef())
                                         .exists())
-                                .isInstanceOf(UnsupportedOperationException.class)
-                                .hasMessageContaining("未实现")),
-                DynamicTest.dynamicTest(
-                        "groupBy + slice() → 拒绝", () -> assertThatThrownBy(() -> query().select(Path.of(noteRef()))
-                                        .where(scoreRef())
-                                        .gt(1000)
-                                        .groupBy(noteRef())
-                                        .slice(0, 10))
-                                .isInstanceOf(UnsupportedOperationException.class)
-                                .hasMessageContaining("未实现")));
+                                .as("空表没有任何组，存在性恒为 false")
+                                .isFalse()),
+                DynamicTest.dynamicTest("groupBy + slice() → 空页（total=0）", () -> {
+                    Slice<String> slice = query().select(Path.of(noteRef()))
+                            .where(scoreRef())
+                            .gt(1000)
+                            .groupBy(noteRef())
+                            .slice(0, 10);
+                    assertThat(slice.data()).as("空表没有组，页内数据为空").isEmpty();
+                    assertThat(slice.total()).as("total 与组数同口径").isZero();
+                }));
     }
 
     /// 一个恒假条件的两种写法。`filter` 是它在内存里的独立实现，`query` 是它在查询 API 里的写法；

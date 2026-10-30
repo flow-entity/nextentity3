@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.jdbc.support.ItemStatus;
+import io.github.nextentity.jdbc.support.QuotedOrder;
+import io.github.nextentity.jdbc.support.SnapshotAsset;
 import io.github.nextentity.jdbc.support.SnapshotOwner;
 import jakarta.persistence.Access;
 import jakarta.persistence.AccessType;
@@ -36,7 +38,7 @@ import jakarta.persistence.Version;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/// `meta` 的映射规则与拒绝文案（§4.1 / §4.3 #1–#14、#25、#26 的 meta 期部分）：
+/// `meta` 的映射规则与拒绝文案（meta 期部分；拒绝口径见 USAGE §13.4.3）：
 /// 表名三级回退、父类遍历、字段注解拒绝、关联元数据、枚举存储、id/version 唯一性。
 class JdbcEntityRulesTest {
 
@@ -161,14 +163,40 @@ class JdbcEntityRulesTest {
     }
 
     @Test
-    void oneToOneFieldIsIgnoredButResolvable() {
+    void quotedReferencedColumnNameIsRecorded() {
+        assertThat(meta.entityType(QuotedOrder.class).attribute("owner").isReferencedColumnQuoted())
+                .isTrue();
+        assertThat(meta.entityType(SnapshotAsset.class).attribute("owner").isReferencedColumnQuoted())
+                .isFalse();
+    }
+
+    @Test
+    void quotedJoinColumnWithoutReferencedNameIsNotRecordedAsQuoted() {
+        JdbcEntityAttribute owner =
+                meta.entityType(QuotedJoinColumnEntity.class).attribute("owner");
+
+        assertThat(owner.isJoinColumnQuoted()).isTrue();
+        assertThat(owner.isReferencedColumnQuoted()).isFalse();
+    }
+
+    @Test
+    void oneToOneWithMappedByIsIgnored() {
+        JdbcEntityAttribute child = meta.entityType(MappedByOwner.class).attribute("child");
+
+        assertThat(child.isAssociation()).isTrue();
+        assertThat(child.joinColumn()).isNull();
+    }
+
+    @Test
+    void oneToOneWithJoinColumnIsRenderedAndWritable() {
         JdbcEntityType<OneToOneIgnored> type = meta.entityType(OneToOneIgnored.class);
 
-        assertThat(type.attributes()).extracting(JdbcEntityAttribute::name).containsExactly("id");
+        assertThat(type.attributes()).extracting(JdbcEntityAttribute::name).containsExactly("id", "owner");
         JdbcEntityAttribute owner = type.attribute("owner");
         assertThat(owner).isNotNull();
         assertThat(owner.isAssociation()).isTrue();
-        assertThat(owner.joinColumn()).isNull();
+        assertThat(owner.joinColumn()).isEqualTo("owner_id");
+        assertThat(owner.isJoinColumnInsertable()).isTrue();
         assertThat(owner.associationTarget()).isEqualTo(SnapshotOwner.class);
     }
 
@@ -197,17 +225,17 @@ class JdbcEntityRulesTest {
     }
 
     @Test
-    void manyToOneWithoutJoinColumnIsRejected() {
-        assertThatThrownBy(() -> meta.entityType(MissingJoinColumn.class))
-                .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessage("@ManyToOne 缺少 @JoinColumn(name): " + MissingJoinColumn.class.getName() + ".owner");
+    void manyToOneWithoutJoinColumnUsesJpaDefaultName() {
+        JdbcEntityAttribute owner = meta.entityType(MissingJoinColumn.class).attribute("owner");
+
+        assertThat(owner.joinColumn()).isEqualTo("owner_id");
     }
 
     @Test
-    void manyToOneWithEmptyJoinColumnNameIsRejected() {
-        assertThatThrownBy(() -> meta.entityType(EmptyJoinColumn.class))
-                .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessage("@ManyToOne 缺少 @JoinColumn(name): " + EmptyJoinColumn.class.getName() + ".owner");
+    void manyToOneWithEmptyJoinColumnNameUsesJpaDefaultName() {
+        JdbcEntityAttribute owner = meta.entityType(EmptyJoinColumn.class).attribute("owner");
+
+        assertThat(owner.joinColumn()).isEqualTo("owner_id");
     }
 
     @Test
@@ -244,7 +272,7 @@ class JdbcEntityRulesTest {
     void duplicateVersionIsRejected() {
         assertThatThrownBy(() -> meta.entityType(DuplicateVersion.class))
                 .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessage("@Version 只支持 Integer / Long: " + DuplicateVersion.class.getName() + ".second");
+                .hasMessage(JdbcEntityRules.VERSION_UNSUPPORTED + DuplicateVersion.class.getName() + ".second");
     }
 
     @Test
@@ -320,16 +348,35 @@ class JdbcEntityRulesTest {
     }
 
     @Test
-    void embeddedAndConvertAreRejected() {
-        assertThatThrownBy(() -> meta.entityType(EmbeddedField.class))
-                .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessage("@Embedded 未支持: " + EmbeddedField.class.getName() + ".address");
-        assertThatThrownBy(() -> meta.entityType(EmbeddableTypeField.class))
-                .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessage("@Embedded 未支持: " + EmbeddableTypeField.class.getName() + ".address");
-        assertThatThrownBy(() -> meta.entityType(ConvertedField.class))
-                .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessage("@Convert 未支持: " + ConvertedField.class.getName() + ".payload");
+    void embeddedFieldsAreFlattenedIntoColumns() {
+        JdbcEntityType<EmbeddedField> type = meta.entityType(EmbeddedField.class);
+
+        JdbcEntityAttribute address = type.attribute("address");
+        assertThat(address.isEmbedded()).isTrue();
+        assertThat(address.embeddedColumns())
+                .extracting(JdbcEntityAttribute::name)
+                .containsExactly("city");
+        assertThat(type.columns()).extracting(JdbcEntityAttribute::column).containsExactly("id", "address_city");
+    }
+
+    @Test
+    void embeddableTypeWithoutEmbeddedAnnotationIsAlsoFlattened() {
+        JdbcEntityAttribute address = meta.entityType(EmbeddableTypeField.class).attribute("address");
+
+        assertThat(address.isEmbedded()).isTrue();
+        assertThat(address.embeddedColumn("city").column()).isEqualTo("address_city");
+    }
+
+    @Test
+    void convertFieldCarriesAttributeConverter() {
+        JdbcEntityAttribute payload = meta.entityType(ConvertedField.class).attribute("payload");
+
+        assertThat(payload.converter()).isNotNull();
+        assertThat(payload.databaseType()).isEqualTo(String.class);
+    }
+
+    @Test
+    void embeddedIdIsStillRejectedAsCompositeKey() {
         assertThatThrownBy(() -> meta.entityType(EmbeddedIdField.class))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessage("复合主键未支持: " + EmbeddedIdField.class.getName());
@@ -1067,5 +1114,35 @@ class JdbcEntityRulesTest {
                     .isInstanceOf(UnsupportedOperationException.class)
                     .hasMessageContaining("标识符名不能含引用定界符（\" ` [ ]）");
         }
+    }
+
+    @Entity
+    static class MappedByOwner {
+        @Id
+        Long id;
+
+        @OneToOne(mappedBy = "owner")
+        MappedByChild child;
+    }
+
+    @Entity
+    static class MappedByChild {
+        @Id
+        Long id;
+
+        @OneToOne
+        @JoinColumn(name = "owner_id")
+        MappedByOwner owner;
+    }
+
+    @Entity
+    static class QuotedJoinColumnEntity {
+
+        @Id
+        Long id;
+
+        @ManyToOne
+        @JoinColumn(name = "`owner_id`")
+        SnapshotOwner owner;
     }
 }

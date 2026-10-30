@@ -15,7 +15,7 @@ import io.github.nextentity.jdbc.support.SnapshotItem;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/// SQL Server 端到端渲染（设计 §6.2）：exists 的 `top (1)` 进 SELECT 头、分页必须带 ORDER BY
+/// SQL Server 端到端渲染（设计 §6.1）：exists 的 `top (1)` 进 SELECT 头、分页必须带 ORDER BY
 /// （无用户排序时补 `order by 1`）、`offset ? rows`、`fetch next ? rows only`、LIKE 显式 ESCAPE、
 /// `avg` 转 float、行锁显式拒绝。
 class SqlServerDialectRenderingTest {
@@ -81,9 +81,13 @@ class SqlServerDialectRenderingTest {
 
     @Test
     void lockIsRejectedExplicitly() {
-        assertThatThrownBy(() -> items().lock(LockMode.PESSIMISTIC_WRITE).list())
-                .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessageContaining("SQL Server 不支持行锁");
+        for (LockMode mode : List.of(LockMode.PESSIMISTIC_WRITE, LockMode.PESSIMISTIC_READ)) {
+            assertThatThrownBy(() -> items().lock(mode).list())
+                    .as("SQL Server 不支持锁模式 %s", mode)
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessageContaining("SQL Server 不支持行锁")
+                    .hasMessageContaining(mode.name());
+        }
     }
 
     private static final class CapturingExecutor implements Executor<JdbcQuery> {

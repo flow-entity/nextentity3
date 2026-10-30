@@ -27,7 +27,7 @@ import org.junit.jupiter.api.Test;
 /// 本用例按「引用后应长什么样」写，不依赖实现细节：注解里是引用形态 → JDBC 侧同一实体必须能建表、读写、查询、关联。
 /// 引用形态采用 JPA 可移植的**反引号标记**（Hibernate 的 quoted identifier 语法），断言只看行为不看 SQL 文本。
 ///
-/// 复跑：`bash tmp/scripts/mvnl.sh -pl nextentity-tests-jdbc -am test -Dtest=ReviewR21QuotedIdentifierTest`
+/// 复跑：`mvn -pl nextentity-tests-jdbc -am test -Dtest=ReviewR21QuotedIdentifierTest`
 class ReviewR21QuotedIdentifierTest {
 
     @Test

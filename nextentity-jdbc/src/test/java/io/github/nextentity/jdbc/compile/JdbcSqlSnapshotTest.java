@@ -16,10 +16,10 @@ import io.github.nextentity.jdbc.support.SnapshotOwner;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/// 查询 SQL 整句快照（§7.5，不连库）：`JdbcCompiler` 渲染出的 `sql()` 与 `parameters()` 逐字钉住。
+/// 查询 SQL 整句快照（不连库）：`JdbcCompiler` 渲染出的 `sql()` 与 `parameters()` 逐字钉住。
 ///
 /// 驱动方式：`JdbcMeta` + `H2Dialect` + 捕获式 `Executor`，查什么由 core 的 `QueryBuilder` 生成规格；
-/// 本类只断言编译产物，后续接线类（tests-jdbc）用同一 compiler 打真库。渲染口径见设计 §3.0：
+/// 本类只断言编译产物，后续接线类（tests-jdbc）用同一 compiler 打真库。渲染口径见 [SqlStatement] 与 [SqlRenderer]：
 /// 全小写关键字、裸标识符（无引号）、根表 `t0`、join 目标 `t1`、参数按渲染顺序绑定。
 class JdbcSqlSnapshotTest {
 
@@ -402,6 +402,19 @@ class JdbcSqlSnapshotTest {
                 .isEqualTo("select t0.id, t0.name, t0.score, t0.score2, t0.note, t0.status from item t0"
                         + " order by t0.id asc limit ? for update");
         assertThat(executor.last.parameters()).containsExactly(3);
+    }
+
+    @Test
+    void h2RendersReadLockAsForUpdateFallback() {
+        items().where(Path.of(SnapshotItem::score))
+                .gt(10)
+                .lock(LockMode.PESSIMISTIC_READ)
+                .list();
+
+        assertThat(executor.last.sql())
+                .isEqualTo("select t0.id, t0.name, t0.score, t0.score2, t0.note, t0.status from item t0"
+                        + " where t0.score > ? for update");
+        assertThat(executor.last.parameters()).containsExactly(10);
     }
 
     /// 捕获式执行器：`QueryBuilder` 只把编译产物交给它，不连库。
