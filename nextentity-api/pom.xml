@@ -148,7 +148,7 @@
         <japicmp.skip>true</japicmp.skip>
         <!-- 基线 = 上一发布版（3.0.0 已发 Central，api 有独立 artifact）。
              对照 2.2.3 需显式 -Djapicmp.oldArtifactId=nextentity-core。 -->
-        <japicmp.oldVersion>3.0.0</japicmp.oldVersion>
+        <japicmp.oldVersion>3.1.0</japicmp.oldVersion>
         <japicmp.oldArtifactId>nextentity-api</japicmp.oldArtifactId>
         <!-- 发布集：本模块发到 Central，覆盖根 pom 的默认 true，仅 -Ppublish 生效 -->
         <central.publishing.skipPublishing>false</central.publishing.skipPublishing>

@@ -114,13 +114,13 @@ jobs:
 
       # 门禁先行：release 档 = clean verify（容器强制）+ JDBC 方言通道 + 遗留回归 + install
       # + 5 个 PIT 通道 + api 兼容。判据只认它落盘的 receipt.json，不以日志末行为准。
-      # OLD_VERSION 是 api 兼容基线的版本号 = 上一发布版（当前 3.0.0，Central 上可解析）。
+      # OLD_VERSION 是 api 兼容基线的版本号 = 上一发布版（当前 3.1.0，Central 上可解析）。
       # 发 3.0.x 时保持 3.0.0；发 3.1.0 时改成 3.0.1 之类——不能等于本次要发的版本，否则
       # japicmp 会把本模块 jar 与自身比较并误报（见 AGENTS.md「公开签名变更」）。
       - name: Gate (release tier + receipt)
         timeout-minutes: 120
         env:
-          OLD_VERSION: "3.0.0"
+          OLD_VERSION: "3.1.0"
         run: |
           GATE_ROOT="$PWD" tools/gate.sh release --require-clean
 
