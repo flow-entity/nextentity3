@@ -17,7 +17,7 @@ import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 /// `LockContractTest` 的 PostgreSQL 通道：锁 JSON 由方言决定（`for update of <根表别名>` /
-/// `for share of <根表别名>`，§7.7）。
+/// `for share of <根表别名>`，见 USAGE §13.4.5）。
 @ExtendWith(L4Gate.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class PostgresLockContractIntegrationTest {

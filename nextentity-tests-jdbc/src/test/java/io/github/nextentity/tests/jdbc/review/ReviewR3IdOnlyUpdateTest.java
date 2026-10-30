@@ -11,9 +11,9 @@ import org.junit.jupiter.api.Test;
 
 /// 评审发现 R3（Lead 裁决 2026-10-28）：只有 @Id 字段（没有可写标量列）的实体，`update` 不得渲染
 /// `update ... set  where id=?` 这类非法 SQL，也不得 no-op 静默通过；必须在写入前抛
-/// `UnsupportedOperationException`（architect 在 §3.11/§4.3 补拒绝条目，文案以其定稿为准）。
+/// `UnsupportedOperationException`（拒绝条目与文案见 USAGE §10）。
 ///
-/// 复跑：`bash tmp/scripts/mvnl.sh -pl nextentity-tests-jdbc -am test -Dtest=ReviewR3IdOnlyUpdateTest`
+/// 复跑：`mvn -pl nextentity-tests-jdbc -am test -Dtest=ReviewR3IdOnlyUpdateTest`
 class ReviewR3IdOnlyUpdateTest {
 
     @Test

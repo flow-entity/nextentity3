@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 
-/// `LockContractTest` 的 MySQL 通道：锁语义是方言相关能力，两方言各钉一次（§7.4）。
+/// `LockContractTest` 的 MySQL 通道：锁语义是方言相关能力，两方言各钉一次（见 USAGE §13.4.5）。
 @ExtendWith(MySqlL4Gate.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class MySqlLockContractIntegrationTest {

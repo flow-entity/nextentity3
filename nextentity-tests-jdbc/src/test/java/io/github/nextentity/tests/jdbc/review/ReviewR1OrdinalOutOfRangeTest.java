@@ -8,10 +8,10 @@ import io.github.nextentity.tests.jdbc.OrdinalItemEntity;
 import jakarta.persistence.PersistenceException;
 import org.junit.jupiter.api.Test;
 
-/// 评审发现 R1：越界 ORDINAL 读回应按设计 §3.12 / §4.3 #24 包成 PersistenceException
+/// 评审发现 R1：越界 ORDINAL 读回应按行数据错误包成 PersistenceException
 /// （`SQL 执行失败: <sql>`），现状是裸 ArrayIndexOutOfBoundsException。
 ///
-/// 复跑：`bash tmp/scripts/mvnl.sh -pl nextentity-tests-jdbc -am test -Dtest=ReviewR1OrdinalOutOfRangeTest`
+/// 复跑：`mvn -pl nextentity-tests-jdbc -am test -Dtest=ReviewR1OrdinalOutOfRangeTest`
 class ReviewR1OrdinalOutOfRangeTest {
 
     @Test

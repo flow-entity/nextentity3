@@ -14,7 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
-/// 关联属性写入（§4.3 #21 / §7.1 CUT-17）：非 null 关联值从关联对象的 `@Id` 取外键列写入，不再抛
+/// 关联属性写入（DESIGN §7.1 CUT-17）：非 null 关联值从关联对象的 `@Id` 取外键列写入，不再抛
 /// `UnsupportedOperationException`；关联值为 null 时该列跳过，写入照常成功。
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class RejectContractTest {

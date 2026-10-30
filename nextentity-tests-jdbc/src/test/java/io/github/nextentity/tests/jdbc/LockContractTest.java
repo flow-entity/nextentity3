@@ -13,7 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
-/// 锁契约（§4.3 #18/#19）：`PESSIMISTIC_WRITE` → `for update`、`PESSIMISTIC_READ` → H2 无 `FOR SHARE`
+/// 锁契约：`PESSIMISTIC_WRITE` → `for update`、`PESSIMISTIC_READ` → H2 无 `FOR SHARE`
 /// 时退化为 `for update`（更强锁，非等价，见 `H2Dialect#lock`）；其余三种在编译期拒绝；
 /// 锁只接受实体查询，值选择上的锁同样拒绝。
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)

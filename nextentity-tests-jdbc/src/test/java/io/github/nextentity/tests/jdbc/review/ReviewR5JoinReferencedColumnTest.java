@@ -19,9 +19,9 @@ import org.junit.jupiter.api.Test;
 /// （H2 报类型比较错，MySQL 8.0.18 隐式转 0 静默 0 行）。
 ///
 /// 裁决（architect，2026-10-28）：本轮只支持「@ManyToOne 指向目标 @Id」这一种形态，`referencedColumnName`
-/// 非空且不等于目标 @Id 列时在 meta 期抛 `UnsupportedOperationException`（设计 §4.3 #27）。
+/// 非空且不等于目标 @Id 列时在 meta 期抛 `UnsupportedOperationException`（见 USAGE §13.4.3）。
 ///
-/// 复跑：`bash tmp/scripts/mvnl.sh -pl nextentity-tests-jdbc -am test -Dtest=ReviewR5JoinReferencedColumnTest`
+/// 复跑：`mvn -pl nextentity-tests-jdbc -am test -Dtest=ReviewR5JoinReferencedColumnTest`
 class ReviewR5JoinReferencedColumnTest {
 
     @Test

@@ -4,6 +4,7 @@ import io.github.nextentity.core.repo.EntityOperations;
 import io.github.nextentity.jdbc.JdbcEntityOperationsFactory;
 import io.github.nextentity.tests.jdbc.support.JdbcSchema;
 import io.github.nextentity.tests.jdbc.support.MySqlL4Container;
+import io.github.nextentity.tests.jdbc.support.PostgresL4Container;
 import io.github.nextentity.tests.jdbc.support.SingleConnectionDataSource;
 import io.github.nextentity.tests.jdbc.support.SqlServerL4Container;
 import java.sql.ResultSet;
@@ -79,5 +80,13 @@ final class SqlServerExtendedSupport extends ExtendedSupport {
 
     SqlServerExtendedSupport() {
         super(SqlServerL4Container.dataSource("extended_capabilities"), JdbcSchema.SQLSERVER);
+    }
+}
+
+/// PostgreSQL 容器通道的接线（建表脚本换成 `schema-postgres.sql`）。
+final class PostgresExtendedSupport extends ExtendedSupport {
+
+    PostgresExtendedSupport() {
+        super(PostgresL4Container.dataSource("extended_capabilities"), JdbcSchema.POSTGRES);
     }
 }
