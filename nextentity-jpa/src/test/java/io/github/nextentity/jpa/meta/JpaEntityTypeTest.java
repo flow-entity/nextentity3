@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.nextentity.jpa.entity.DerivedRecord;
 import io.github.nextentity.jpa.entity.LabelOnlyEntity;
 import jakarta.persistence.metamodel.Attribute;
+import jakarta.persistence.metamodel.Attribute.PersistentAttributeType;
 import jakarta.persistence.metamodel.EntityType;
 import jakarta.persistence.metamodel.Metamodel;
 import jakarta.persistence.metamodel.SingularAttribute;
@@ -56,7 +57,19 @@ class JpaEntityTypeTest {
     }
 
     private static SingularAttribute<?, ?> attribute(String name, boolean id) {
-        return stub(SingularAttribute.class, Map.of("getName", name, "isId", id, "isVersion", false));
+        // `getPersistentAttributeType` 是写侧判定要用的（关联 vs 标量），桩必须如实回答，
+        // 否则解析逻辑一碰它就会以「桩未实现」报错——那是桩太瘦，不是被测代码的问题。
+        return stub(
+                SingularAttribute.class,
+                Map.of(
+                        "getName",
+                        name,
+                        "isId",
+                        id,
+                        "isVersion",
+                        false,
+                        "getPersistentAttributeType",
+                        PersistentAttributeType.BASIC));
     }
 
     /// 只回答 `answers` 里列出的方法，其余方法一律显式失败：桩若被调用到未预料的方法，

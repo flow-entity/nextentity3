@@ -58,6 +58,22 @@ public final class WriteRoundTripSupport<T> implements AutoCloseable {
                 entityType);
     }
 
+    /// 连上共享的 PostgreSQL 容器（`hbm2ddl` 建表），只映射给定实体。
+    ///
+    /// @param entityType 主实体类型
+    /// @param mapped     同装置上额外映射的实体类型
+    /// @param <T>        主实体类型
+    /// @return 装置：用完必须 `close()`
+    public static <T> WriteRoundTripSupport<T> onPostgres(Class<T> entityType, Class<?>... mapped) {
+        return new WriteRoundTripSupport<>(
+                HibernateHarness.start(
+                        PostgresL4Container.jdbcUrl(),
+                        PostgresL4Container.username(),
+                        PostgresL4Container.password(),
+                        entities(entityType, mapped)),
+                entityType);
+    }
+
     private static Class<?>[] entities(Class<?> entityType, Class<?>[] mapped) {
         Class<?>[] all = Arrays.copyOf(mapped, mapped.length + 1);
         all[mapped.length] = entityType;

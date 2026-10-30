@@ -54,18 +54,21 @@ class ItemCapabilitySqlSnapshotTest extends ConsistencyTestBase<ItemEntity> {
 
     /// `substring(offset)`（省略长度）必须只带两个参数：3.0.0 之前的实现下发过 `2147483647` 这类
     /// 「到结尾」的巨数值字面量，是可移植性坑（部分方言位数不够 / 被当成非法长度）。
+    ///
+    /// 函数名两种合法渲染都认：H2 方言渲 `substring`，PostgreSQL 方言渲 `substr`（H2 的 PG
+    /// 兼容通道两种都合法）。要钉的是「参数个数」，不是函数名拼写。
     @Test
     void substringWithoutLengthPassesTwoArguments() {
         String statement =
                 sqlOf(() -> query().where(nameRef()).substring(1).eq("pple").list());
 
-        assertThat(statement).contains("substring(ie1_0.name");
+        assertThat(statement).containsPattern("subs(?:tring|tr)\\(ie1_0\\.name");
         assertThat(statement).doesNotContain("2147483647");
-        assertThat(argumentCount(statement, "substring")).as(statement).isEqualTo(2);
+        assertThat(argumentCount(statement, "subs(?:tring|tr)")).as(statement).isEqualTo(2);
 
         String ranged =
                 sqlOf(() -> query().where(nameRef()).substring(1, 2).eq("pp").list());
-        assertThat(argumentCount(ranged, "substring")).as(ranged).isEqualTo(3);
+        assertThat(argumentCount(ranged, "subs(?:tring|tr)")).as(ranged).isEqualTo(3);
     }
 
     /// `notLike` 在 core 里折成 `NOT(LIKE ...)`；Hibernate 再把它归一成 SQL 的 `not like`（不是 `not (x like ?)`），
@@ -103,6 +106,50 @@ class ItemCapabilitySqlSnapshotTest extends ConsistencyTestBase<ItemEntity> {
 
         assertThat(statement).contains("select count(*) from (").contains("group by");
         assertThat(statement).doesNotContain("fetch first");
+    }
+
+    /// `slice(offset, limit)` 在 `groupBy` 之后发两条语句：派生表计数（total=组数）+ 带窗口的分组查询。
+    ///
+    /// 两条都必须保留 `group by`——否则 total 数的是行数、页大小也按行生效，正是 3.1.0 之前
+    /// 「分组分页等于没分页」的那种静默错。
+    @Test
+    void groupSliceUsesDerivedCountAndWindowedGroupQuery() {
+        support.clearSql();
+        query().select(Path.of(statusRef()), Path.of(idRef()).count())
+                .groupBy(statusRef())
+                .orderBy(statusRef())
+                .asc()
+                .slice(0, 2);
+        List<String> statements = normalized(support.drainSql());
+
+        assertThat(statements).hasSize(2);
+        assertThat(statements.get(0))
+                .as("第一条是 total 的派生表计数")
+                .contains("select count(*) from (")
+                .contains("group by");
+        assertThat(statements.get(1)).as("第二条是真正取页的分组查询，窗口落在 SQL 里").contains("group by");
+        assertWindowRendered(statements.get(1));
+    }
+
+    /// `Collector.list(offset, limit)` 只发一条带窗口的分组查询（不要 total），窗口同样落在组上。
+    @Test
+    void collectorWindowEmitsSingleWindowedGroupQuery() {
+        String statement = sqlOf(
+                () -> query().select(Path.of(statusRef()), Path.of(idRef()).count())
+                        .groupBy(statusRef())
+                        .orderBy(statusRef())
+                        .asc()
+                        .list(1, 1));
+
+        assertThat(statement).contains("group by");
+        assertWindowRendered(statement);
+    }
+
+    /// 窗口子句的方言写法：MySQL/MariaDB 是 `limit`，PostgreSQL 是 `fetch first ? rows only`，
+    /// H2 两种模式各随其一。钉「有没有窗口」而不是钉具体关键字——否则同一条用例在
+    /// `-Pdialect-pg` 下会红成方言噪音，掩盖真正的「窗口没下发」。
+    private static void assertWindowRendered(String statement) {
+        assertThat(statement).as("分组查询必须把窗口下推到 SQL：%s", statement).containsPattern("(limit|offset|fetch first)");
     }
 
     private String sqlOf(Runnable query) {

@@ -39,6 +39,8 @@ final class JpaAssetSupport implements AutoCloseable {
     }
 
     void seedData(List<AssetFixture> fixtures) {
+        // 上一个用例可能留下同 id 的托管实体（读取过 asset），先清上下文再按固定主键重写
+        harness.entityManager().clear();
         harness.inTransaction(entityManager -> {
             entityManager.createQuery(CLEAR_ASSETS).executeUpdate();
             entityManager.createQuery(CLEAR_OWNERS).executeUpdate();
@@ -79,6 +81,38 @@ final class JpaAssetSupport implements AutoCloseable {
     /// 清空 SQL 账本。
     void clearSql() {
         harness.clearSql();
+    }
+
+    /// 原始列读回：`select owner_id from asset where id = ?`。
+    ///
+    /// 走 native query 而不是实体查询：关联是懒加载的，读实体不保证拿到"库里的外键值"，
+    /// 而写关联的证据恰恰需要这个原始值。
+    ///
+    /// @param assetId 主键
+    /// @return 外键值；列为 `NULL` 时返回 `null`
+    Long foreignKeyOf(long assetId) {
+        // 放在事务里跑：Hibernate 的 session 只有在事务边界内才稳定地借/还连接
+        Object value = harness.inTransaction(() -> harness.entityManager()
+                .createNativeQuery("select owner_id from asset where id = ?")
+                .setParameter(1, assetId)
+                .getSingleResult());
+        return value == null ? null : ((Number) value).longValue();
+    }
+
+    /// 原始列读回：`select name from asset where id = ?`。
+    ///
+    /// @param assetId 主键
+    /// @return 名称
+    String nameOf(long assetId) {
+        return harness.inTransaction(() -> (String) harness.entityManager()
+                .createNativeQuery("select name from asset where id = ?")
+                .setParameter(1, assetId)
+                .getSingleResult());
+    }
+
+    /// 丢弃一级缓存/持久化上下文：让后续读回真的来自数据库，而不是刚才写入的托管对象。
+    void clearPersistenceContext() {
+        harness.entityManager().clear();
     }
 
     @Override

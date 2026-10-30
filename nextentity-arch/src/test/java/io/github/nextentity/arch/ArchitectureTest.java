@@ -284,6 +284,14 @@ class ArchitectureTest {
 
     /// 一致性测试基类不得被某个后端绑架：`testing` 只准依赖 `api` + `core` 接口。
     ///
+    /// ## `testing.golden` 的例外（3.1.0）
+    ///
+    /// 唯一豁免的子包是 `io.github.nextentity.testing.golden`：那里放的是 golden schema 的
+    /// **实体注解载体**（`@Entity` / `@Embedded` / `@Convert` / `@ManyToOne`），JPA 与 JDBC 两条
+    /// 后端必须读同一份实体元数据才能对拍，因此它必须同时出现在两个测试模块的 classpath 上；
+    /// 它本身没有任何后端 API 调用（只有注解与 POJO 访问器），不是一致性基类，规则的执法对象
+    /// 也不包括它。豁免按子包精确给出（不是整包放行）：基类一旦搬进 `golden` 同样会被判红。
+    ///
     /// 顺带说明它守不住的那一半：这条规则按类型依赖执法，能挡住基类引用
     /// `java.sql..` / `jakarta..` / `org.hibernate..` / `org.springframework..`；
     /// 但「基类里拿一个 `String` 拼 SQL 再断言」没有任何类型特征，ArchUnit 看不到数据流，
@@ -296,6 +304,10 @@ class ArchitectureTest {
     static final ArchRule TESTING_STAYS_BACKEND_FREE = noClasses()
             .that()
             .resideInAPackage("io.github.nextentity.testing..")
+            .and()
+            // 豁免理由：golden 夹具里的 `jakarta.persistence` 只作注解用（无 EntityManager/无 Hibernate API），
+            // 而同一张 golden 表必须被 JPA 与 JDBC 共用，注解是唯一声明方式；一致性基类仍不许碰后端 API。
+            .resideOutsideOfPackage("io.github.nextentity.testing.golden..")
             .should()
             .dependOnClassesThat()
             .resideInAnyPackage("jakarta..", "org.hibernate..", "org.springframework..", "java.sql..")

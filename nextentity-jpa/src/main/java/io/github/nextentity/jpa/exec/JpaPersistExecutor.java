@@ -134,7 +134,13 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
         throw new OptimisticLockException(message + ", version=" + versionValue);
     }
 
-    /// 把实体的标量属性与单值关联写进 SET 子句：跳过主键与不可写关联，版本列写「旧值 + 1」。
+    /// 把实体的标量属性与单值关联写进 SET 子句：跳过主键与写侧标记为只读的列，版本列写「旧值 + 1」。
+    ///
+    /// 只读按注解判：标量看 `@Column(updatable = false)`、关联外键看 `@JoinColumn(updatable = false)`，
+    /// 与 JDBC 后端 `WriteSql.appendScalars` / `WriteSql.associationColumn` 同口径——**只按 flags 判，
+    /// 不做列名去重**：同一列既被标量字段又被关联映射时（legacy `Employee` 的 `departmentId`），关联侧
+    /// 因 `updatable = false` 被跳过，SET 里天然只出现一次；两边都可写的同列映射是非法映射，Hibernate
+    /// 自己的 INSERT 会先报重复列，不该由这里猜命名策略去兜。
     ///
     /// 单值关联的写法是 `set(root.get(关联), 关联对象)`：Hibernate 从关联对象取 `@Id` 写外键列，
     /// 值为 `null` 时写 `NULL`（JPA 侧 dirty checking 本来就能置空，不为了对齐 JDBC 的
@@ -154,7 +160,15 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
                     // 集合关联（另一张表 / 连接表）与 @OneToOne(mappedBy) 反侧（外键在对端表）
                     continue;
                 }
+                if (!entityMeta.updatable(name)) {
+                    // @JoinColumn(updatable = false)：外键列不参与 UPDATE
+                    continue;
+                }
                 update.set(root.get(name), attribute.getValue().get(entity));
+                continue;
+            }
+            if (!entityMeta.updatable(name)) {
+                // @Column(updatable = false)：写侧跳过，读回不受影响
                 continue;
             }
             boolean versionColumn = version != null && name.equals(version.name());

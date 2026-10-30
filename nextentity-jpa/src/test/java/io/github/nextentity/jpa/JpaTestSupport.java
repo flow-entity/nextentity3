@@ -18,6 +18,7 @@ import io.github.nextentity.jpa.entity.SealHolder;
 import io.github.nextentity.jpa.entity.Shipment;
 import io.github.nextentity.jpa.entity.ShopOrder;
 import io.github.nextentity.jpa.entity.Tag;
+import io.github.nextentity.jpa.entity.UpdatableFlags;
 import io.github.nextentity.jpa.entity.VersionedEntry;
 import io.github.nextentity.jpa.entity.VersionedLedger;
 import io.github.nextentity.jpa.entity.Warehouse;
@@ -83,6 +84,7 @@ abstract class JpaTestSupport {
         configuration.addAnnotatedClass(ElementCollectionHolder.class);
         configuration.addAnnotatedClass(Branch.class);
         configuration.addAnnotatedClass(FetchChain.class);
+        configuration.addAnnotatedClass(UpdatableFlags.class);
         this.sessionFactory = configuration.buildSessionFactory();
         this.meta = new JpaMeta(sessionFactory);
     }

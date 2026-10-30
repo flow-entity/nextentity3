@@ -67,6 +67,7 @@ final class ConditionalWrite<T> {
         CriteriaUpdate<T> update = builder.createCriteriaUpdate(entityType);
         Root<T> root = update.from(entityType);
         for (Assignment assignment : spec.assignments()) {
+            requireUpdatable(assignment);
             update.set((Path) assignmentTarget(root, assignment.path()), assignment.value());
         }
         if (spec.where() != null) {
@@ -84,6 +85,24 @@ final class ConditionalWrite<T> {
             delete.where(new JpaCriteria(builder, root, meta).predicate(spec.where()));
         }
         return entityManager.createQuery(delete).executeUpdate();
+    }
+
+    /// SET 目标是否可写：`@Column(updatable=false)` 与 `@JoinColumn(updatable=false)` 都拒。
+    ///
+    /// 文案与 JDBC 后端（`ConditionalSql.assignment`）**逐字一致**：同一调用打到两个后端上
+    /// 必须拿到同一句话，否则一致性对拍只能断到"都抛了 UOE"这种弱结论。
+    private void requireUpdatable(Assignment assignment) {
+        AttributePath path = assignment.path();
+        if (!path.isDirect()
+                || meta.entityType(path.entityType()).updatable(path.names().getFirst())) {
+            return;
+        }
+        throw new UnsupportedOperationException("条件更新不支持 @Column(updatable=false) 列: " + describe(path));
+    }
+
+    /// 与 JDBC 的 `Assignment` 路径描述同格式：`实体全名.属性[.属性]`。
+    private static String describe(AttributePath path) {
+        return path.entityType().getName() + "." + String.join(".", path.names());
     }
 
     /// 条件更新的 SET 目标：逐段 `get`（不 join，也不要 `JpaPaths` 的 LEFT JOIN）。

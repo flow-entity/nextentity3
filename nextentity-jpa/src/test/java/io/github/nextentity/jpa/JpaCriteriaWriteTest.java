@@ -2,9 +2,12 @@ package io.github.nextentity.jpa;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.nextentity.api.EntityPath;
 import io.github.nextentity.api.Path;
 import io.github.nextentity.core.repo.EntityOperations;
 import io.github.nextentity.jpa.entity.Customer;
+import io.github.nextentity.jpa.entity.Shipment;
+import io.github.nextentity.jpa.entity.ShipmentAddress;
 import io.github.nextentity.jpa.entity.ShopOrder;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
@@ -126,6 +129,32 @@ class JpaCriteriaWriteTest extends JpaTestSupport {
 
         assertThat(updated).isZero();
         assertThat(deleted).isZero();
+    }
+
+    @Test
+    @DisplayName("条件 update 支持嵌套路径：@Embedded 的一段也按列写")
+    void conditionalUpdateSupportsNestedPath() {
+        inTx(entityManager -> {
+            entityManager.createQuery("delete from Shipment").executeUpdate();
+            entityManager.persist(new Shipment(1L, new ShipmentAddress("Shanghai")));
+            return null;
+        });
+
+        int affected = inTx(
+                entityManager -> new JpaEntityOperationsFactory(entityManager, entityManager.getEntityManagerFactory())
+                        .operations(Shipment.class)
+                        .update()
+                        .set(EntityPath.of(Shipment::getAddress).get(ShipmentAddress::getCity), "Hangzhou")
+                        .where(Shipment::getId)
+                        .eq(1L)
+                        .execute());
+
+        assertThat(affected).isEqualTo(1);
+        inTx(entityManager -> {
+            assertThat(entityManager.find(Shipment.class, 1L).getAddress().getCity())
+                    .isEqualTo("Hangzhou");
+            return null;
+        });
     }
 
     private EntityOperations<ShopOrder> orders(EntityManager entityManager) {
