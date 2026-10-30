@@ -559,7 +559,7 @@ List<Order> orders = query()
         .where(Order::getStatus).eq(OrderStatus.PAID)
         .list();
 
-// 多个关联一次传（重载最多 3 条 Path）；嵌套关联用 Path 逐段 get
+// 多个关联一次传（便捷重载最多 3 条 Path；4 条以上用 fetch(Collection<Path>)）；嵌套关联用 Path 逐段 get
 List<Order> loaded = query()
         .fetch(Path.of(Order::getCustomer),
                 Path.of(Order::getCustomer).get(Customer::getOrg),
@@ -575,7 +575,7 @@ List<Order> loaded = query()
 - **不能链两次 `fetch`**：`fetch(...)` 返回 `BaseWhereStep`，它没有 `fetch`；多个关联一次多参传。2.2.3 Javadoc 里的 `.fetch(a).fetch(b)` 本身编译不过，不要照抄。
 - `select(...)` / `project(...)` 之后没有 `fetch`：投影行不是实体，没有关联可填。
 
-`fetch(...)` 收的是关联路径（`@ManyToOne` / `@OneToOne` 等），普通列用 `select(...)`。语义上它改变「发几条 SQL」，不改变结果集：JPA 后端渲染为 join fetch / `EntityGraph`；**JDBC 后端调用 `fetch(...)` 抛 `UnsupportedOperationException`**——JDBC 不组装实体图、没有懒加载代理，`fetch` 在该后端没有可兑现的语义，与其静默 no-op 让用户拿到 `null` 关联，不如 fail-fast（理由类型=架构约束，见 §13.4.3）。替代路径：用 `project(ProjectionMapper)` 显式取关联列（LEFT JOIN 可用），或改用 JPA 后端。验证「真的没有 N+1」请用 SQL 条数对照（同一查询 fetch 前后各数一次语句数），不要只看结果有没有值。
+`fetch(...)` 收的是关联路径（`@ManyToOne` / `@OneToOne` 等），普通列用 `select(...)`。语义上它改变「发几条 SQL」，不改变结果集：JPA 后端渲染为 `LEFT JOIN FETCH`（同一条 SQL 载入关联，嵌套 fetch 复用前缀，见 `JpaPaths`）；**JDBC 后端调用 `fetch(...)` 抛 `UnsupportedOperationException`**——JDBC 不组装实体图、没有懒加载代理，`fetch` 在该后端没有可兑现的语义，与其静默 no-op 让用户拿到 `null` 关联，不如 fail-fast（理由类型=架构约束，见 §13.4.3）。替代路径：用 `project(ProjectionMapper)` 显式取关联列（LEFT JOIN 可用），或改用 JPA 后端。验证「真的没有 N+1」请用 SQL 条数对照（同一查询 fetch 前后各数一次语句数），不要只看结果有没有值。
 
 ## 9. 锁
 
@@ -586,7 +586,7 @@ Order pessimistic = query().where(Order::getId).eq(id).lock(LockMode.PESSIMISTIC
 
 `lock(...)` 必须跟在产生条件的算子之后（例如 `.eq(id).lock(...)`），返回终止符。`LockMode` 的 5 个常量与 `jakarta.persistence.LockModeType` 同名（同名只为可读，`api` 并不依赖 jakarta），由 `nextentity-jpa` 映射成后端的锁模式。
 
-3.1.0 起 JDBC 后端也提供 `PESSIMISTIC_READ`（JPA 后端自 3.0.0 起已按名字映射五种锁模式，本版只补验证与文档；2.2.3 在 MySQL + PostgreSQL 双容器验证过这套读锁用法，写法与 `PESSIMISTIC_WRITE` 同形）：JDBC 后端由方言 `lock` 钩子渲染共享锁（MySQL = `for share`，容器实测通过；PostgreSQL 代码同样出 `for share`，但 PG 容器通道待 tester 波验证、发布前按「未实测」披露；H2 没有 `FOR SHARE`，用 `for update` 兜底——比 FOR SHARE 锁更强，是安全方向的近似，不是等价降级；SQL Server 方言不做行锁，显式拒绝；未实现的方言显式拒绝，**不静默降级成写锁**）。JDBC 后端只接受 `PESSIMISTIC_WRITE` 与 `PESSIMISTIC_READ`，其余三种模式显式拒绝（`UnsupportedOperationException`，不静默降级成写锁）。
+3.1.0 起 JDBC 后端也提供 `PESSIMISTIC_READ`（JPA 后端自 3.0.0 起已按名字映射五种锁模式，本版只补验证与文档；2.2.3 在 MySQL + PostgreSQL 双容器验证过这套读锁用法，写法与 `PESSIMISTIC_WRITE` 同形）：JDBC 后端由方言 `lock` 钩子渲染共享锁（MySQL 与 PostgreSQL 都是 `for share`，**两条容器通道均已实测**：MySQL 容器；PostgreSQL 容器的 `PostgresItemLockIntegrationTest` 2 条、`PostgresLockContractIntegrationTest` 4 条全绿，且与 MySQL 通道跑同一批 590 条用例；H2 没有 `FOR SHARE`，用 `for update` 兜底——比 FOR SHARE 锁更强，是安全方向的近似，不是等价降级；SQL Server 方言不做行锁，显式拒绝；未实现的方言显式拒绝，**不静默降级成写锁**）。JDBC 后端只接受 `PESSIMISTIC_WRITE` 与 `PESSIMISTIC_READ`，其余三种模式显式拒绝（`UnsupportedOperationException`，不静默降级成写锁）。
 
 `lock(...)` 之后还能继续分页（3.1.0 在 `Collector` 上加的重载，`lock(...)` 返回类型没变）：
 
@@ -643,7 +643,11 @@ int clearedFk = operations.update()
         .execute();
 ```
 
-`set(...)` 的方法引用重载只接受标量列；嵌套列与「把外键置空」必须用 `Path` 重载（`PathRef` 表达不了 `null` 与逐段路径）。右值只支持**字面量**：不支持「列 = 列」或引用了其它列的表达式；`value = null` 表示置 `NULL`。条件面复用 §3 的谓词（含 §3.1 的可选条件与 §3.6 的组合），且条件在语句里直接求值，不先取行。`execute()` 返回受影响行数，批量写不经过实体快照，因此不触发级联、也不带「读-改-写」的乐观锁语义（需要行级 `@Version` 校验时用 `update(entity)` 形态）。写操作必须在调用方事务里执行（§11）。
+`set(...)` 的方法引用重载只接受标量列；嵌套列与「把外键置空」必须用 `Path` 重载（`PathRef` 表达不了 `null` 与逐段路径）。右值只支持**字面量**：不支持「列 = 列」或引用了其它列的表达式；`value = null` 表示置 `NULL`。条件面复用 §3 的谓词（含 §3.1 的可选条件与 §3.6 的组合），且条件在语句里直接求值，不先取行。`execute()` 返回受影响行数；批量写不经过实体快照，因此不触发级联。
+
+**并发语义（与 2.2.3 一致）**：条件更新/删除**不参与乐观锁**——既不校验、也不自增 `@Version`，也不回写调用方对象（Hibernate 的 `CriteriaUpdate`/`CriteriaDelete` 与 JDBC 批量语句都不施加版本列；只有 §10 的单实体 `update(entity)` 会把版本写回入参对象）。代价是：并发下批量更新可能覆盖别人刚提交的行，而调用方看不到 `OptimisticLockException`。要行级版本保护，改用单实体 `update(entity)`；或把版本列显式写进 `where(...)` 条件（`where(Employee::getVersion).eq(expectedVersion)`），再按受影响行数判断是否被并发改过并重试。
+
+**只读列**：条件更新命中 `@Column(updatable=false)` / `@JoinColumn(updatable=false)` 的列时，**两个后端一致 fail-fast 抛 `UnsupportedOperationException`**（消息点名该列）——JDBC 与 JPA（3.1.0 起）都是同一口径；静默跳过会让「更新了但某列没变」难以察觉。替代：去掉该列标志；或改走单实体 `update(entity)`（只读列按映射本来就不进 `SET` 集）；或直接发原生 SQL。写操作必须在调用方事务里执行（§11）。
 
 > ⚠️ **不写 `where(...)` 就是整表更新/删除**（`update()` / `delete()` 没有「空条件拒绝」的保护）；批量语句请始终显式给出条件，Javadoc 也写了同一句警告。
 
@@ -651,7 +655,12 @@ int clearedFk = operations.update()
 
 ## 11. 事务
 
-本库不自己开事务，边界由调用方的 `@Transactional` 决定。**写操作必须在调用方事务里执行**：没有事务时 `update(...)` 抛 `TransactionRequiredException`（JPA 对 `executeUpdate` 的契约），而 `insertAll(...)` **既不落库也不报错**，读回是 0 行。这不是缺陷，是「边界归调用方」的直接后果，但它会静默丢数据——写路径务必挂在 `@Transactional` 上（证据见 `ItemNoTransactionContextTest` 与 `MySqlItemNoTransactionIntegrationTest`）：
+本库不自己开事务，边界由调用方的 `@Transactional` 决定。**两个后端对「没有事务」的约定不同，写路径必须按目标后端选边界**：
+
+- **JPA 后端**：写操作必须在调用方事务里执行。没有事务时 `update(...)` 抛 `TransactionRequiredException`（JPA 对 `executeUpdate` 的契约），而 `insertAll(...)` 既不落库也不报错、读回是 0 行——它会静默丢数据，写路径务必挂在 `@Transactional` 上。证据：`ItemNoTransactionContextTest` 与 `MySqlItemNoTransactionIntegrationTest`（均在 `nextentity-tests-jpa`）。
+- **JDBC 后端**：写入建立在 JDBC 自动提交之上，**没有事务时 `update` 也会立即生效、不抛异常**（不经过 `TransactionRequiredException`）；`insertAll` 同走自动提交（tester 波正在补一条「无事务 `insertAll` 落库」用例，落地后把证据补到这里）。需要「多条写原子提交/回滚」时必须由调用方显式开事务（`TransactionTemplate` 或 Spring `@Transactional`）。证据：`nextentity-tests-jdbc/.../NoTransactionContextTest.java#updateSucceedsWithoutExplicitTransaction`（该类 Javadoc 明写「JDBC 写入建立在自动提交之上，与 tests-jpa 相反」）。
+
+这不是缺陷，而是「边界归调用方」在两个后端上的不同落点：JPA 用 fail-fast 提醒没挂事务，JDBC 按驱动默认自动提交直接生效。下面示例是推荐写法（显式事务边界，两个后端都成立）：
 
 ```java
 @Transactional
@@ -770,6 +779,8 @@ orders.updateAll(List.of(order));
 
 #### 13.4.3 拒绝（fail-fast，不静默写坏数据）
 
+本节是 **JDBC 实体映射拒绝清单的唯一出处**：代码里拒绝分支的注释一律指到这里（`USAGE.md §13.4.3`），不再引用编号或外部设计文件。
+
 | 拒绝项 | 行为 | 理由类型 | 用户可走的替代路径 |
 |---|---|---|---|
 | `@Inheritance` 继承映射 | `UnsupportedOperationException` | 自设规则（当前只支持单表扁平映射） | 拆成独立实体 + 标量列；或换 JPA 后端 |
@@ -784,7 +795,7 @@ orders.updateAll(List.of(order));
 | 依赖 `@Convert(autoApply = true)`（字段上没有显式 `@Convert`） | 不自动应用；该字段按原 Java 类型走列类型校验（不被自动转换） | 尚未验证（扫描成本 + 无正例） | 在字段上显式标 `@Convert(converter = ...)` |
 | 锁模式：`PESSIMISTIC_READ`/`PESSIMISTIC_WRITE` 之外的三种 | `UOE` | 外部约束（无标准 SQL 形态） | 只使用这两种锁模式，或走原生 SQL |
 | SQL Server 上的行锁（两种模式） | `UOE` | 外部约束：T-SQL 没有 `FOR SHARE`，也没有标准 `FOR UPDATE` 行锁；`with (rowlock)` 是索引提示、不是锁语义（未实测） | 应用层锁（悲观锁表 / 串行队列）、快照隔离（`READ COMMITTED SNAPSHOT`）、或原生 SQL |
-| 条件更新/删除命中 `@Column(updatable=false)` 列 | `UOE`（消息点名列；fail-fast，不会静默跳过该列） | 自设规则：批量写入的赋值列集必须显式可写，静默跳过会让「更新了但某列没变」难以察觉 | 去掉该列标志；或换用条件更新之外的方式（如 `update(entity)`）；或换 JPA 后端 |
+| 条件更新/删除命中 `@Column(updatable=false)` / `@JoinColumn(updatable=false)` 列 | 两后端一致 `UOE`（消息点名列；fail-fast，不会静默跳过该列） | 自设规则：批量写入的赋值列集必须显式可写，静默跳过会让「更新了但某列没变」难以察觉 | 去掉该列标志；或改走单实体 `update(entity)`（只读列按映射不进 `SET`）；或原生 SQL（共享 DSL 契约，见 §10.1） |
 | `fetch(...)`（JDBC 后端） | `UOE`（fail-fast，不静默 no-op） | 架构约束：JDBC 后端不组装实体图、无懒加载代理，`fetch` 没有可兑现的语义；静默接受只会让调用方拿到 `null` 关联 | `project(ProjectionMapper)` 显式取关联列（LEFT JOIN 可用），或改用 JPA 后端 |
 
 #### 13.4.4 与 JPA 的语义差异（不是拒绝，但结果可能不同）
@@ -794,17 +805,18 @@ orders.updateAll(List.of(order));
 | 关联置空 | 关联 `null` 时跳过列，`update(entity)` 无法置空外键 | JPA 按 `nullable`/级联语义写 `NULL`；JDBC 用条件更新 `set(Path.of(X::getDept).get(Dept::getId), null)` 表达 |
 | 读回关联对象 | 只装标量列，关联字段为 `null` | JPA 按映射/预取加载关联 |
 | `@Version` 自增 | 应用侧读取后 +1 写回 | JPA 由提供方管理版本并可 DB 侧生成 |
+| 条件更新命中只读列（`updatable=false`） | `UOE`（走共享 DSL 契约，消息点名列） | **无差异**：条件更新是 3.1.0 新增入口，两个后端同版落地并一致 fail-fast（DSL 契约见 §10.1）。与 3.0.0 的差别在**单实体**更新路径：JPA 侧曾静默写只读列，JDBC 侧在映射期直接拒绝该标志 |
 | 生成键回读 | 单列结果集取第 1 列；多列按列标签/列名匹配 id 列名；`BigInteger` 走 `getBigDecimal` 转换；窄类型做范围校验 | JPA 由提供方回填 |
 | 分组 `count()`（`groupBy` + `count()`） | 派生表原生支持（子查询计数） | JPA 侧依赖 Hibernate 6+ 的 `createCountQuery()`（单条 SQL）；其它 provider 抛 `UOE`（文案指名 provider），见 §7.4 |
-| `fetch(...)` 预取 | 显式拒绝：`UOE`（JDBC 不组装实体图、无懒加载代理，没有可兑现的语义；不静默 no-op） | JPA 渲染为 join fetch / `EntityGraph`，消除 N+1；JDBC 侧要读关联列请用 `project(...)` 投影或原生 SQL |
+| `fetch(...)` 预取 | 显式拒绝：`UOE`（JDBC 不组装实体图、无懒加载代理，没有可兑现的语义；不静默 no-op） | JPA 渲染为 `LEFT JOIN FETCH`（同一条 SQL 载入关联），消除 N+1；JDBC 侧要读关联列请用 `project(...)` 投影或原生 SQL |
 | 分页 `limit = 0` | 视为不限行 | 与 JPA 一致（api 契约），单列在此说明避免误读 |
-| 事务 | 边界归调用方；无事务时 `update` 抛 `TransactionRequiredException`、`insertAll` 不落库（§11） | 同约定 |
+| 事务 | 写入建立在 JDBC 自动提交上：无事务时 `update` 立即生效、不抛异常；`insertAll` 同走自动提交（tester 波补无事务 `insertAll` 落库用例后补证据，见 §11） | **不同约定**（理由类型=外部约束：自动提交是 JDBC 连接层的默认行为）：JPA 侧无事务 `update` 抛 `TransactionRequiredException`、`insertAll` 静默不落库（证据在 `nextentity-tests-jpa`）。需要原子性时两个后端都用 `TransactionTemplate` 或 Spring `@Transactional` 包住（§11） |
 | DDL | 不生成，表结构自己建（测试按方言引号建表） | 不生成 |
 | 异常 | `SQLException` 包成 `PersistenceException("SQL 执行失败: " + sql, e)` | 同 JPA 顶层异常族 |
 
 #### 13.4.5 方言差异（可能出现「会算错」的项）
 
-- **共享锁**：MySQL 渲染 `for share` 并通过容器实测；PostgreSQL 代码同样出 `for share`，但 **PG 容器通道待 tester 波验证，发布前按「未实测」披露**；H2 没有 `FOR SHARE`，用 `for update` 兜底——**比 FOR SHARE 锁更强，是安全方向的近似，不是等价降级**。SQL Server 不提供行锁（13.4.3）。
+- **共享锁**：MySQL 与 PostgreSQL 都渲染 `for share`，**两条容器通道均已实测**（MySQL 容器；PostgreSQL 容器 `PostgresItemLockIntegrationTest` 2 条 + `PostgresLockContractIntegrationTest` 4 条全绿，且 PG 与 MySQL 跑同一批 590 条用例）；H2 没有 `FOR SHARE`，用 `for update` 兜底——**比 FOR SHARE 锁更强，是安全方向的近似，不是等价降级**。SQL Server 不提供行锁（13.4.3）。
 - **字符串长度**：默认渲染 `length(x)`；SQL Server 用 `len(x)`，而 `LEN` 会**裁掉尾随空格**（`LEN('ab ')` 与标准 `CHAR_LENGTH` 不等价），是已披露的方言语义差异、不是缺陷——**跨库依赖长度的查询在 SQL Server 上会少算尾随空格**。
 - **`substring` 省略长度**：H2/MySQL/PostgreSQL 可下发 `substring(x, pos)`；SQL Server 的 `SUBSTRING` 必须带长度参数，实现用 `substring(x, pos, 2147483647)`（int 上界）表达「到结尾」，该上界形态**已在 SQL Server 容器实测通过**（方言惯用法，语义为截取到结尾）。
 - **生成键策略**：四种内置方言都只支持 `IDENTITY`/`AUTO`；`SEQUENCE`/`TABLE` 统一拒绝（13.4.3）。
@@ -824,7 +836,7 @@ orders.updateAll(List.of(order));
 
 | 能力 | 2.2.3 写法 | 3.1.0 用法 | 详见 |
 |---|---|---|---|
-| 显式 fetch | `.fetch(Order::getCustomer)` | 同形（`FetchStep` 6 个方法；不能链两次、最多 3 条 `Path`，见 §8.1） | §8.1 |
+| 显式 fetch | `.fetch(Order::getCustomer)` | 同形（`FetchStep` 6 个方法；不能链两次；便捷重载最多 3 条 `Path`，4 条以上用 `fetch(Collection<Path>)`，见 §8.1） | §8.1 |
 | DTO / record 投影 | `select(OrderRow.class)` | 同形；只覆盖扁平映射（属性名 = 实体单层属性名），去重用 `distinct().select(OrderRow.class)`；嵌套/改名仍用 `project(ProjectionMapper)` | §6.3 |
 | 按条件更新 / 删除 | `update().set(..).where(..).execute()` / `delete().where(..).execute()` | 同形，返回受影响行数 | §10.1 |
 | `startsWith` / `endsWith` / `notLike`（及取反族、`IfNotNull` / `IfNotEmpty` 变体） | `where(..).startsWith("A")` | 同形 | §3.8 |
@@ -833,7 +845,7 @@ orders.updateAll(List.of(order));
 | `Slice.offset()` / `limit()` | `slice.offset()` | 同形 | §4 |
 | `PESSIMISTIC_READ` | `.lock(LockMode.PESSIMISTIC_READ)` | 同形 | §9 |
 | `lock(...)` 之后分页 | `.lock(..).list(offset, limit)` | 同形（`Collector` 上的重载） | §9 |
-| JDBC 后端的列类型 / 映射 / 生成键 / 写关联 | — | 见 §13.4 的 3.1.0 支持面 |
+| JDBC 后端的列类型 / 映射 / 生成键 / 写关联 | — | 见 §13.4 的 3.1.0 支持面 | §13.4 |
 
 ### 15.2 仍不提供
 
