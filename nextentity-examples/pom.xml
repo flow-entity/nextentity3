@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.flow-entity</groupId>
+        <artifactId>nextentity</artifactId>
+        <version>3.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>nextentity-examples</artifactId>
+    <name>nextentity-examples</name>
+    <description>2.2.3 的 examples 模块移植载体：真实旅程推演与「0 调用点」检验器，不发布</description>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- 版本口径与其它模块一致：H2/AssertJ 用根 pom 钉住的版本，别被 Boot BOM 抬走 -->
+            <dependency>
+                <groupId>com.h2database</groupId>
+                <artifactId>h2</artifactId>
+                <version>${h2.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.assertj</groupId>
+                <artifactId>assertj-core</artifactId>
+                <version>${assertj.version}</version>
+            </dependency>
+            <!-- JUnit 必须先于 spring-boot-dependencies 声明：Boot 4.0.0 自带 junit-bom 6.0.1，
+                 两个 import 竞争时先声明者赢，否则同一模块里混两套 JUnit 大版本。
+                 版本必须跟 Boot 一致（下面 properties 里覆盖成 6.0.1）：Spring 7 的
+                 SpringExtension 用了 ExtensionContext.Store.computeIfAbsent(Object, Function, Class)
+                 三参重载，JUnit 5.x 没有它，会以 NoSuchMethodError 在 beforeAll 炸掉全部用例。 -->
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${junit.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.github.flow-entity</groupId>
+            <artifactId>nextentity-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.flow-entity</groupId>
+            <artifactId>nextentity-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.flow-entity</groupId>
+            <artifactId>nextentity-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.flow-entity</groupId>
+            <artifactId>nextentity-spring</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.persistence</groupId>
+            <artifactId>jakarta.persistence-api</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <properties>
+        <!--
+          本模块是 2.2.3 examples 语料的移植载体（与 nextentity-tests-legacy 同一性质）：
+          源文件刻意保持与上游一致的排版与结构，以便和 D:\source\java\nextentity 逐文件 diff 复核。
+          spotless / checkstyle / PMD 一律跳过——对移植语料做风格整形会让 diff 失去可比性。
+        -->
+        <spotbugs.skip>true</spotbugs.skip>
+        <!-- 本模块不发布：发布集保持 6 个模块 -->
+        <!-- Spring 7 的 SpringExtension 依赖 JUnit 6 的三参 Store.computeIfAbsent，
+             跟 spring-boot-dependencies 的 junit-bom 对齐（Boot 4.0.0 → 6.0.1）；
+             根 pom 的 5.11.4 只适用于不引 spring-test 7 的模块。 -->
+        <junit.version>6.0.1</junit.version>
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <maven.install.skip>true</maven.install.skip>
+        <maven.source.skip>true</maven.source.skip>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+        <gpg.skip>true</gpg.skip>
+        <flatten.skip>true</flatten.skip>
+        <central.publishing.skipPublishing>true</central.publishing.skipPublishing>
+    </properties>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!-- 移植期一次列全所有编译错误，避免 javac 默认 100 条截断导致反复往返 -->
+                    <compilerArgs>
+                        <arg>-Xlint:deprecation,-processing</arg>
+                        <arg>-Werror</arg>
+                        <arg>-Xmaxerrs</arg>
+                        <arg>2000</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-pmd-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

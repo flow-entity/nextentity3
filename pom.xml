@@ -52,6 +52,8 @@
         <module>nextentity-tests-jpa</module>
         <module>nextentity-tests-jdbc</module>
         <module>nextentity-tests-legacy</module>
+        <!-- 真实语料：2.2.3 examples 移植，不发布，只作「0 调用点」检验器与真实旅程推演 -->
+        <module>nextentity-examples</module>
         <module>nextentity-bom</module>
     </modules>
 
