@@ -48,3 +48,10 @@ surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemLockConsis
 surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemLockConsistencyTest#pessimisticWriteLockOnMissingRowReturnsEmpty | type=error | issue=H2-PG-LOCK-CLAUSE | expires=2026-12-31 | 同上
 surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemQueryEntrySnapshotTest#pessimisticLockSingleReturnsTheFilteredRow | type=error | issue=H2-PG-LOCK-CLAUSE | expires=2026-12-31 | 同上
 surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.ItemQueryEntrySnapshotTest#snapshotsSixColumnProjectionsAndProjectionReplacement | type=error | issue=H2-PG-LOCK-CLAUSE | expires=2026-12-31 | 同上
+
+# --- 时间类型的时区偏移：H2 的 PG 兼容模式把 `Instant` 列按时区偏移读回 ---
+# 同一份 golden 夹具（`2024-01-02T03:04:05Z`）在真 MySQL / 真 PostgreSQL 容器上都原样读回，
+# 只有 H2 的 PostgreSQL 兼容模式读成 `2024-01-01T19:04:05Z`（正好差一个 JVM 时区偏移，pinned
+# Asia/Shanghai = +08:00）——这是 H2 兼容层对 `timestamp with time zone` 的转换差异，不是
+# nextentity 的映射缺陷；真 PG 通道（`failsafe-pg`）该用例全绿是这条判定的另一半证据。
+surefire-pg:nextentity-tests-jpa | io.github.nextentity.tests.jpa.golden.GoldenSchemaLandingTest#customerColumnsRoundTripWithDeclaredTypes | type=failure | issue=H2-PG-INSTANT-TZ | expires=2026-12-31 | H2 PG 兼容模式把 Instant 读回偏移一个 JVM 时区（真 MySQL/PG 容器通道原样读回）

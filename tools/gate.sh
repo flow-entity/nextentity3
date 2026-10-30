@@ -422,7 +422,7 @@ tier_ci() {
     # CI 权威通道。与本地 pr 档的唯一区别：容器通道**必须真跑**，Docker 缺失即红。
     # 这一档存在的理由：本地 pr 档用 -DskipITs 换取 30s，而 -DskipITs 不留任何标记——
     # 只有把「权威结论只在 ci 档产生」写死，才不会被本地那份省事的绿骗过去。
-    EXPECT_STEPS=(ci-fast ci-container ci-jdbc ci-jdbc-pg ci-jdbc-mssql ci-legacy ci-install ci-pit-core)
+    EXPECT_STEPS=(ci-fast ci-container ci-jpa-pg ci-jdbc ci-jdbc-pg ci-jdbc-mssql ci-legacy ci-install ci-examples ci-pit-core)
     STEP_MIN_TESTS="surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-jpa=82 surefire:nextentity-spring=14 surefire:nextentity-arch=24"
     step ci-fast \
         "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-arch" \
@@ -439,26 +439,40 @@ tier_ci() {
     # 不补会出一个口径差：`ci-fast` 跑的是 `test` 相位，而 checkstyle/PMD/SpotBugs 全绑在 `verify` 上，
     # 于是 arch 的**静态**违规在 `pr`/`night`/`release` 红、在 `ci` 绿——`ci` 是权威档，
     # 权威档比本地档松是最不能留的一种反序。
-    STEP_MIN_TESTS="surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-arch=24 surefire:nextentity-jpa=82 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=587 failsafe:nextentity-tests-jpa=559 surefire-pg:nextentity-tests-jpa=577"
+    STEP_MIN_TESTS="surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-arch=24 surefire:nextentity-jpa=82 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=645 failsafe:nextentity-tests-jpa=590 surefire-pg:nextentity-tests-jpa=645"
     STEP_EXPECTED_FAILURES="tools/expected-failures/h2-postgresql.txt"
     step ci-container \
         "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-arch,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa,static:nextentity-api,static:nextentity-core,static:nextentity-arch,static:nextentity-jpa,static:nextentity-spring,static:nextentity-testing,static:nextentity-tests-jpa" \
         ./mvnw -B -pl nextentity-tests-jpa,nextentity-arch -am verify -Dnextentity.requireContainer=true -Pdialect-pg
+    # PostgreSQL 容器通道（JPA 侧）：`-Pjpa-postgres` 把 failsafe 的 include 切到
+    # `Postgres*IntegrationTest`、reportsDirectory 切到 `target/failsafe-pg-reports`
+    # （凭证按目录认成独立通道 `failsafe-pg:nextentity-tests-jpa`），并在 profile 里
+    # 固化 requireContainer=true——无 Docker 直接红，不许静默降级。
+    # floor = 2026-10-30 容器实测 590 条 / 49 类（含 golden schema 镜像 8 条）；skip 1 =
+    # TemporalWriteContract 的 `@EnabledIfSystemProperty(nextentity.h2mode=postgresql)` 那条
+    # （`...LoseExactlyOneJvmOffsetOnPostgresCompatibleMode` 只在 H2 的 PG 兼容模式跑，PG 容器通道上它不适用；同类的 Preserve 那条反过来只在真库跑）。
+    # 与 ci-container 的 MySQL 通道同批用例（590），凭证的方言矩阵等式就是靠这个成立的。
+    STEP_MAX_SKIP="failsafe-pg:nextentity-tests-jpa=1:*PostgresTemporalWriteIntegrationTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode*"
+    STEP_MIN_TESTS="failsafe-pg:nextentity-tests-jpa=590"
+    step ci-jpa-pg \
+        "failsafe-pg:nextentity-tests-jpa,static:nextentity-jpa,static:nextentity-testing,static:nextentity-tests-jpa" \
+        ./mvnw -B -pl nextentity-tests-jpa -am verify -Pjpa-postgres
     # JDBC 容器通道：与 tests-jpa 同款，`-Dnextentity.requireContainer=true` 让「无 Docker」直接红，
     # 而不是把整条方言对拍静默降级成 skip。**不申报 STEP_MAX_SKIP = 预算 0**：jdbc 侧一条跳过都不许有。
-    STEP_MIN_TESTS="surefire:nextentity-jdbc=329 surefire:nextentity-tests-jdbc=528 failsafe:nextentity-tests-jdbc=512"
+    STEP_MIN_TESTS="surefire:nextentity-jdbc=329 surefire:nextentity-tests-jdbc=577 failsafe:nextentity-tests-jdbc=544"
     step ci-jdbc \
         "surefire:nextentity-jdbc,surefire:nextentity-tests-jdbc,failsafe:nextentity-tests-jdbc,static:nextentity-jdbc,static:nextentity-tests-jdbc,static:nextentity-testing" \
         ./mvnw -B -pl nextentity-tests-jdbc -am verify -Dnextentity.requireContainer=true
     # PG / SQL Server 方言容器通道：`-Pjdbc-postgres` / `-Pjdbc-sqlserver` 在 profile 里把 failsafe
     # 的 include 切到本方言类、reportsDirectory 切到 `failsafe-pg-reports` / `failsafe-mssql-reports`
     # （凭证按目录认成 `failsafe-pg:` / `failsafe-mssql:` 独立通道），并固化 requireContainer=true。
-    # 不申报 STEP_MAX_SKIP = 预算 0。floor = 2026-10-28 容器首跑实测：PG 502 / MSSQL 501（各 31 类全绿、skip 0；含 lock 契约用例）。
-    STEP_MIN_TESTS="failsafe-pg:nextentity-tests-jdbc=512"
+    # 不申报 STEP_MAX_SKIP = 预算 0。floor = 2026-10-30 容器实测 PG 544 / MSSQL 544（各 34 类全绿、skip 0；
+    # 含 golden schema 与 extended capabilities 镜像，PG 侧补齐了 MySQL 已有的 StringOperator/Extended 两个类）。
+    STEP_MIN_TESTS="failsafe-pg:nextentity-tests-jdbc=544"
     step ci-jdbc-pg \
         "failsafe-pg:nextentity-tests-jdbc,static:nextentity-jdbc,static:nextentity-tests-jdbc" \
         ./mvnw -B -pl nextentity-tests-jdbc -am verify -Pjdbc-postgres
-    STEP_MIN_TESTS="failsafe-mssql:nextentity-tests-jdbc=511"
+    STEP_MIN_TESTS="failsafe-mssql:nextentity-tests-jdbc=544"
     step ci-jdbc-mssql \
         "failsafe-mssql:nextentity-tests-jdbc,static:nextentity-jdbc,static:nextentity-tests-jdbc" \
         ./mvnw -B -pl nextentity-tests-jdbc -am verify -Pjdbc-sqlserver
@@ -481,6 +495,18 @@ tier_ci() {
     # 随后的 `ci-pit-core` 又被判「PIT 前没有 install 步骤」。两道红连着出，`ci` 档一直是红的。
     # `-Djacoco.check.skip=true`：`-DskipTests` 不产生 jacoco exec 数据，check 目标会把 install 判红。
     step ci-install "" ./mvnw -B -q install -DskipTests -Djacoco.check.skip=true -pl nextentity-api -am
+    # examples 是「0 调用点」检验器：它按真实调用方的写法把 API 面跑一遍，用来证明能力面没有
+    # 靠「没人调用」悄悄缩小。此前 ci/night 的每个步骤都是 `-pl`，没有一步会跑 examples 的测试
+    # （只有 night/release 的整仓 `install -DskipTests` 会**编译**它）——不把它排进权威档，
+    # 本轮「0 调用点」这条论据就是纸面的。
+    # 命令带 `-am`：守卫拒绝「带 -pl 却没有 -am」（那会从 ~/.m2 解析依赖模块，陈旧产物会让
+    # 结论失真）；`-am` 反应堆 = api/core/jpa/spring + examples，四个上游模块的 surefire 通道
+    # 必须一并写进 `--require`，否则它们的失败不进凭证（同 ci-container 的理由）。
+    # `STEP_MAX_SKIP` 不申报 = 预算 0：examples 侧一条跳过都不许有。
+    STEP_MIN_TESTS="surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-jpa=82 surefire:nextentity-spring=14 surefire:nextentity-examples=130"
+    step ci-examples \
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-examples,static:nextentity-examples" \
+        ./mvnw -B -pl nextentity-examples -am test
     step ci-pit-core "pit:nextentity-core" ./mvnw -B -pl nextentity-core test-compile pitest:mutationCoverage
 }
 
@@ -497,7 +523,7 @@ tier_pr() {    # 容器通道在本档明确不跑（-DskipITs）。凭证会把
     # `nextentity-arch` 不在 tests-jpa 的依赖链上，`-am` 带不上它：不显式写进 `-pl`，
     # 本档就一条架构规则都不跑。`fast` 档跑它、`pr` 档不跑，等于「提交前红、推之前绿」——
     # 谁只跑 `pr` 自查谁就漏掉架构门禁。本档要严格覆盖 `fast`，所以补上。
-    STEP_MIN_TESTS="surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-arch=24 surefire:nextentity-jpa=82 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=587 surefire-pg:nextentity-tests-jpa=577"
+    STEP_MIN_TESTS="surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-arch=24 surefire:nextentity-jpa=82 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=645 surefire-pg:nextentity-tests-jpa=645"
     STEP_EXPECTED_FAILURES="tools/expected-failures/h2-postgresql.txt"
     step pr-h2 \
         "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-arch,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa,static:nextentity-api,static:nextentity-core,static:nextentity-arch,static:nextentity-jpa,static:nextentity-spring,static:nextentity-testing,static:nextentity-tests-jpa" \
@@ -514,7 +540,7 @@ tier_pr() {    # 容器通道在本档明确不跑（-DskipITs）。凭证会把
     step pr-jdbc-unit \
         "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jdbc" \
         ./mvnw -B -pl nextentity-jdbc -am test
-    STEP_MIN_TESTS="surefire:nextentity-jdbc=329 surefire:nextentity-tests-jdbc=528"
+    STEP_MIN_TESTS="surefire:nextentity-jdbc=329 surefire:nextentity-tests-jdbc=577"
     step pr-tests-jdbc \
         "surefire:nextentity-jdbc,surefire:nextentity-tests-jdbc,static:nextentity-jdbc,static:nextentity-tests-jdbc" \
         ./mvnw -B -pl nextentity-tests-jdbc -am verify -DskipITs
@@ -522,11 +548,17 @@ tier_pr() {    # 容器通道在本档明确不跑（-DskipITs）。凭证会把
 
 tier_night() {
     # PIT 不带 -am，依赖从 ~/.m2 解析；先整仓 install 把快照刷到当前 HEAD。
-    EXPECT_STEPS=(night-install night-container night-jdbc-unit night-tests-jdbc-h2 night-tests-jdbc-it night-jdbc-it-pg night-jdbc-it-mssql night-legacy night-pit-api night-pit-core night-pit-jdbc night-pit-jpa night-pit-spring)
+    EXPECT_STEPS=(night-install night-examples night-container night-jpa-pg night-jdbc-unit night-tests-jdbc-h2 night-tests-jdbc-it night-jdbc-it-pg night-jdbc-it-mssql night-legacy night-pit-api night-pit-core night-pit-jdbc night-pit-jpa night-pit-spring)
     # `-Djacoco.check.skip=true`：`-DskipTests` 下没有 jacoco exec 数据，check 目标会把 install 判红。
     step night-install "" ./mvnw -B -q install -DskipTests -Djacoco.check.skip=true
+    # examples 的测试此前不在任何步骤里（整仓 `install -DskipTests` 只编译不跑）。理由同 ci-examples：
+    # 它是「0 调用点」检验器，night 是最强档，不能比 ci 少跑它。`-am` 是守卫要求（禁止无 -am 的 -pl）。
+    STEP_MIN_TESTS="surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-jpa=82 surefire:nextentity-spring=14 surefire:nextentity-examples=130"
+    step night-examples \
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-examples,static:nextentity-examples" \
+        ./mvnw -B -pl nextentity-examples -am test
     STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* failsafe:nextentity-tests-jpa=1:*MySqlTemporalWriteIntegrationTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* surefire-pg:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadPreserveTheInstant*"
-    STEP_MIN_TESTS="surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-arch=24 surefire:nextentity-jpa=82 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=587 failsafe:nextentity-tests-jpa=559 surefire-pg:nextentity-tests-jpa=577"
+    STEP_MIN_TESTS="surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-arch=24 surefire:nextentity-jpa=82 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=645 failsafe:nextentity-tests-jpa=590 surefire-pg:nextentity-tests-jpa=645"
     STEP_EXPECTED_FAILURES="tools/expected-failures/h2-postgresql.txt"
     # 带 -am：`-pl` 不带 `-am` 时反应堆里只有 tests-jpa，api/core/jpa/spring 的单测与静态检查
     # 本档就一条都不跑（night 是最强档，不能比 pr 弱）。night-install 仍然保留——PIT 步骤
@@ -539,6 +571,13 @@ tier_night() {
     step night-container \
         "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-arch,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa,static:nextentity-api,static:nextentity-core,static:nextentity-arch,static:nextentity-jpa,static:nextentity-spring,static:nextentity-testing,static:nextentity-tests-jpa" \
         ./mvnw -B -pl nextentity-tests-jpa,nextentity-arch -am verify -Dnextentity.requireContainer=true -Pdialect-pg
+    # PostgreSQL 容器通道（JPA 侧）：night 是最强档，方言容器必须真跑（requireContainer 在
+    # profile 里固化）。floor/skip 口径与 ci-jpa-pg 相同：590 条 / 49 类 / 1 条 H2 专属跳过（Lose 那条）。
+    STEP_MAX_SKIP="failsafe-pg:nextentity-tests-jpa=1:*PostgresTemporalWriteIntegrationTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode*"
+    STEP_MIN_TESTS="failsafe-pg:nextentity-tests-jpa=590"
+    step night-jpa-pg \
+        "failsafe-pg:nextentity-tests-jpa,static:nextentity-jpa,static:nextentity-testing,static:nextentity-tests-jpa" \
+        ./mvnw -B -pl nextentity-tests-jpa -am verify -Pjpa-postgres
     # JDBC 后端三条：H2 单测/快照、tests-jdbc 的 H2 通道、tests-jdbc 的容器通道。
     # night 是最强档，三条都必须真跑（容器那条带 requireContainer=true，无 Docker 直接红）。
     # 条数下限按 2026-10-28 本机首跑：jdbc 模块 329、tests-jdbc H2 528、tests-jdbc 容器 512；
@@ -547,21 +586,21 @@ tier_night() {
     step night-jdbc-unit \
         "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jdbc" \
         ./mvnw -B -pl nextentity-jdbc -am test
-    STEP_MIN_TESTS="surefire:nextentity-jdbc=329 surefire:nextentity-tests-jdbc=528"
+    STEP_MIN_TESTS="surefire:nextentity-jdbc=329 surefire:nextentity-tests-jdbc=577"
     step night-tests-jdbc-h2 \
         "surefire:nextentity-jdbc,surefire:nextentity-tests-jdbc,static:nextentity-jdbc,static:nextentity-tests-jdbc" \
         ./mvnw -B -pl nextentity-tests-jdbc -am verify -DskipITs
-    STEP_MIN_TESTS="surefire:nextentity-jdbc=329 surefire:nextentity-tests-jdbc=528 failsafe:nextentity-tests-jdbc=512"
+    STEP_MIN_TESTS="surefire:nextentity-jdbc=329 surefire:nextentity-tests-jdbc=577 failsafe:nextentity-tests-jdbc=544"
     step night-tests-jdbc-it \
         "surefire:nextentity-jdbc,surefire:nextentity-tests-jdbc,failsafe:nextentity-tests-jdbc,static:nextentity-jdbc,static:nextentity-tests-jdbc" \
         ./mvnw -B -pl nextentity-tests-jdbc -am verify -Dnextentity.requireContainer=true
     # PG / SQL Server 容器通道（night 是最强档：两条都必须真跑；requireContainer 在 profile 里固化）。
     # floor = 2026-10-28 容器首跑实测 PG 502 / MSSQL 501（31 类全绿、skip 0）。
-    STEP_MIN_TESTS="failsafe-pg:nextentity-tests-jdbc=512"
+    STEP_MIN_TESTS="failsafe-pg:nextentity-tests-jdbc=544"
     step night-jdbc-it-pg \
         "failsafe-pg:nextentity-tests-jdbc,static:nextentity-jdbc,static:nextentity-tests-jdbc" \
         ./mvnw -B -pl nextentity-tests-jdbc -am verify -Pjdbc-postgres
-    STEP_MIN_TESTS="failsafe-mssql:nextentity-tests-jdbc=511"
+    STEP_MIN_TESTS="failsafe-mssql:nextentity-tests-jdbc=544"
     step night-jdbc-it-mssql \
         "failsafe-mssql:nextentity-tests-jdbc,static:nextentity-jdbc,static:nextentity-tests-jdbc" \
         ./mvnw -B -pl nextentity-tests-jdbc -am verify -Pjdbc-sqlserver
@@ -581,7 +620,7 @@ tier_night() {
 }
 
 tier_release() {
-    EXPECT_STEPS=(release-verify release-jdbc-it-pg release-jdbc-it-mssql release-legacy release-install release-pit-api release-pit-core release-pit-jdbc release-pit-jpa release-pit-spring release-compat)
+    EXPECT_STEPS=(release-verify release-jpa-pg release-jdbc-it-pg release-jdbc-it-mssql release-legacy release-install release-examples release-pit-api release-pit-core release-pit-jdbc release-pit-jpa release-pit-spring release-compat)
     # 与 ci/night 同一条申报：`TemporalWriteContract` 那对用例按 H2 兼容模式互斥，
     # 默认参数下必有 1 条跳过。此前漏了这一档，导致 AGENTS「发版前 ./tools/gate.sh release」
     # 恒红——本机制的主题是「无理由跳过不能被预算静默吸收」，那就每一档都得说清这 1 条是谁。
@@ -592,17 +631,25 @@ tier_release() {
     # `clean verify` 是整仓反应堆，除 tests-jpa 外还跑 api/core/arch/jpa/spring 与 tests-legacy，
     # 全部产能报告都要进 --require（否则那几处的失败不进凭证，退出码又被基线降级分支吸收）。
     # jdbc 三个通道的下限同上（本机首跑：jdbc 329 / tests-jdbc H2 528 / tests-jdbc 容器 512）。
-    STEP_MIN_TESTS="surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-arch=24 surefire:nextentity-jpa=82 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=587 surefire:nextentity-tests-legacy=727 failsafe:nextentity-tests-jpa=559 surefire-pg:nextentity-tests-jpa=577 surefire:nextentity-jdbc=329 surefire:nextentity-tests-jdbc=528 failsafe:nextentity-tests-jdbc=512"
+    STEP_MIN_TESTS="surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-arch=24 surefire:nextentity-jpa=82 surefire:nextentity-spring=14 surefire:nextentity-tests-jpa=645 surefire:nextentity-tests-legacy=727 failsafe:nextentity-tests-jpa=590 surefire-pg:nextentity-tests-jpa=645 surefire:nextentity-jdbc=329 surefire:nextentity-tests-jdbc=577 failsafe:nextentity-tests-jdbc=544"
     step release-verify \
         "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-arch,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-tests-jpa,surefire:nextentity-tests-legacy,failsafe:nextentity-tests-jpa,surefire-pg:nextentity-tests-jpa,surefire:nextentity-jdbc,surefire:nextentity-tests-jdbc,failsafe:nextentity-tests-jdbc,static:nextentity-api,static:nextentity-core,static:nextentity-arch,static:nextentity-jpa,static:nextentity-spring,static:nextentity-testing,static:nextentity-tests-jpa,static:nextentity-jdbc,static:nextentity-tests-jdbc,static:nextentity-bom" \
         ./mvnw -B clean verify -Dnextentity.requireContainer=true -Pdialect-pg
+    # PostgreSQL 容器通道（JPA 侧）：`clean verify` 的整仓反应堆只跑默认 MySQL failsafe，
+    # 方言通道必须单独真跑（profile 固化 requireContainer=true）。
+    # floor = 2026-10-30 容器实测 590 条 / 49 类，skip 1（H2 专属的 Lose 那条）。
+    STEP_MAX_SKIP="failsafe-pg:nextentity-tests-jpa=1:*PostgresTemporalWriteIntegrationTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode*"
+    STEP_MIN_TESTS="failsafe-pg:nextentity-tests-jpa=590"
+    step release-jpa-pg \
+        "failsafe-pg:nextentity-tests-jpa,static:nextentity-jpa,static:nextentity-testing,static:nextentity-tests-jpa" \
+        ./mvnw -B -pl nextentity-tests-jpa -am verify -Pjpa-postgres
     # PG / SQL Server 容器通道：`clean verify` 的整仓反应堆只跑默认（MySQL）failsafe，
     # 两条方言通道必须单独真跑；floor = 2026-10-28 容器首跑实测 PG 502 / MSSQL 501（31 类全绿、skip 0）。
-    STEP_MIN_TESTS="failsafe-pg:nextentity-tests-jdbc=512"
+    STEP_MIN_TESTS="failsafe-pg:nextentity-tests-jdbc=544"
     step release-jdbc-it-pg \
         "failsafe-pg:nextentity-tests-jdbc,static:nextentity-jdbc,static:nextentity-tests-jdbc" \
         ./mvnw -B -pl nextentity-tests-jdbc -am verify -Pjdbc-postgres
-    STEP_MIN_TESTS="failsafe-mssql:nextentity-tests-jdbc=511"
+    STEP_MIN_TESTS="failsafe-mssql:nextentity-tests-jdbc=544"
     step release-jdbc-it-mssql \
         "failsafe-mssql:nextentity-tests-jdbc,static:nextentity-jdbc,static:nextentity-tests-jdbc" \
         ./mvnw -B -pl nextentity-tests-jdbc -am verify -Pjdbc-sqlserver
@@ -611,6 +658,13 @@ tier_release() {
         "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-tests-legacy" \
         ./mvnw -B -pl nextentity-tests-legacy -am test -Ddbc=h2,mysql -Dnextentity.requireContainer=true
     step release-install "" ./mvnw -B -q install -DskipTests -Djacoco.check.skip=true
+    # examples 的测试此前不在任何步骤里（整仓 `install -DskipTests` 只编译不跑）。理由同 ci-examples：
+    # examples 是「0 调用点」检验器——它按真实调用方写法跑 API 面，证明能力面没有靠「没人调用」
+    # 悄悄缩小。发版前不跑它，这条论据就是纸面的。`-am` 是守卫要求（禁止无 -am 的 `-pl`）。
+    STEP_MIN_TESTS="surefire:nextentity-api=148 surefire:nextentity-core=303 surefire:nextentity-jpa=82 surefire:nextentity-spring=14 surefire:nextentity-examples=130"
+    step release-examples \
+        "surefire:nextentity-api,surefire:nextentity-core,surefire:nextentity-jpa,surefire:nextentity-spring,surefire:nextentity-examples,static:nextentity-examples" \
+        ./mvnw -B -pl nextentity-examples -am test
     local module
     for module in api core jdbc jpa spring; do
         step "release-pit-$module" "pit:nextentity-$module" \
