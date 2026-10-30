@@ -91,14 +91,9 @@ S  （后端语句）
 
 微调预算与破坏性变更的前置条件见 [AGENTS.md](../AGENTS.md)「公开 API 是契约」。
 
-**这条红线当前没有执法者**（实测，2026-10）：`nextentity-api/pom.xml` 的 `api-compat` profile 用 `nextentity-core:${japicmp.oldVersion}` 作基线（2.2.3 没发布过 `nextentity-api`，`io.github.nextentity.api.*` 的类在 core 的 jar 里），并开了 `breakBuildBasedOnSemanticVersioning`。该开关的语义是「主版本号上跳就允许破坏」，于是 `3.0.0-SNAPSHOT ← 2.2.3` 这个跃迁下**任何破坏都放行**：跑 `-Djapicmp.oldVersion=2.2.3` 实测报告里 624 处不兼容标记（`---! REMOVED INTERFACE` / `===! UNCHANGED INTERFACE` 一整片）而 `BUILD SUCCESS`。所以它现在只是「影响面报告生成器」，不是门禁。
+**这条红线现在有执法者**（2026-10 起）：`nextentity-api/pom.xml` 的 `api-compat` profile 用 `nextentity-api:${japicmp.oldVersion}` 作基线（默认值 = 上一发布版；3.0.0 起 api 独立发布，当前基线 3.0.0；对照 2.2.3 的历史报告要同时传 `-Djapicmp.oldArtifactId=nextentity-core`，那时 `io.github.nextentity.api.*` 的类在 core 的 jar 里），并开了 `breakBuildBasedOnSemanticVersioning`。该开关的语义是「主版本号上跳就允许破坏」：`3.0.0-SNAPSHOT ← 2.2.3` 这种跃迁放行（历史实测 624 处不兼容仍 `BUILD SUCCESS`），而 `3.0.1 ← 3.0.0` 这种补丁/次版本跃迁下任何破坏都会让 `verify` 判红——所以「破坏性变更每版 ≤ 5 处」从 3.0.0 之后的下一个版本起真正生效，要破契约必须发 `x.0.0`（例外口径见上文「主版本跃迁」）。本地实测：pom 版本 3.0.1 + 默认基线 3.0.0 → `BUILD SUCCESS`（报告 383 条 `UNCHANGED`、无破坏条目）；普通 `verify` 走 `<skip>` 不跑这个 goal，只有 `-Papi-compat` 才跑。
 
-同时有两个**看起来绿、其实什么都没校验**的坑，写在这里免得下一个人再踩：
-
-- 把 `oldVersion` 填成 `nextentity-api:1.2.1`（而不是 core 的基线）同样是绿——旧 jar 里根本没有 `io.github.nextentity.api.*` 这些类，japicmp 看到的全是「新增」，天然无不兼容。**基线的 artifact 与版本两者都必须对，错一个就静默变成空检查。**
-- `3.0.0` 这个版本号从未发布，抄进命令只会得到「artifact 无法解析」，与兼容性无关。
-
-要让红线真的生效，得把判据从「japicmp 退出码」换成「不兼容条目数 ≤ 预算」：解析 `target/japicmp/japicmp.xml` 计数、与一份逐条台账比对（与 `tools/equivalents/`、`tools/expected-failures/` 同款双向判据），预算按「同一主版本内相邻发布版之间」计。3.0.0 发布后基线挪到 `3.0.0` 才有意义——**在此之前别声称兼容门禁在管**。
+门禁的两个前提写在这里免得下一个人踩：（1）只在 pom 版本 > 基线时有意义——在刚发版的 HEAD（版本 = 基线）上，japicmp 会拿本模块 `target/` 里的 jar 与自身比较，报 `Versions of archives indicate no API changes but found API changes`，先 bump 版本再跑；（2）旧 jar 里若没有 `io.github.nextentity.api.*`（基线 artifact 或版本配错），看到的全是「新增」，天然无不兼容，同样静默变成空检查——基线的 artifact 与版本必须都对。
 
 **已知的待收敛项**（实施时按此处理，均不破坏现有调用点）：
 

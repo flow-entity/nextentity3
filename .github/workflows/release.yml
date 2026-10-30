@@ -37,12 +37,12 @@ jobs:
     timeout-minutes: 180
     steps:
       # fetch-depth 0：tag 校验要 `git tag --points-at HEAD`，浅克隆拿不到 tag。
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           distribution: temurin
           java-version: "25"
@@ -114,11 +114,13 @@ jobs:
 
       # 门禁先行：release 档 = clean verify（容器强制）+ JDBC 方言通道 + 遗留回归 + install
       # + 5 个 PIT 通道 + api 兼容。判据只认它落盘的 receipt.json，不以日志末行为准。
-      # OLD_VERSION 是 api 兼容基线的版本号（2.2.3，Central 上真实存在的那版）。
+      # OLD_VERSION 是 api 兼容基线的版本号 = 上一发布版（当前 3.0.0，Central 上可解析）。
+      # 发 3.0.x 时保持 3.0.0；发 3.1.0 时改成 3.0.1 之类——不能等于本次要发的版本，否则
+      # japicmp 会把本模块 jar 与自身比较并误报（见 AGENTS.md「公开签名变更」）。
       - name: Gate (release tier + receipt)
         timeout-minutes: 120
         env:
-          OLD_VERSION: "2.2.3"
+          OLD_VERSION: "3.0.0"
         run: |
           GATE_ROOT="$PWD" tools/gate.sh release --require-clean
 
@@ -133,7 +135,7 @@ jobs:
       # 凭证与 bundle 都是构建产物：红的时候更需要它们来解释「为什么红」。
       - name: Upload gate receipt
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: gate-receipt
           path: tmp/gate/**/receipt.json
@@ -141,7 +143,7 @@ jobs:
 
       - name: Upload Central bundle
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: central-bundle
           path: target/central-publishing/**
@@ -149,7 +151,7 @@ jobs:
 
       - name: Upload gate logs on failure
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: gate-logs
           path: tmp/gate/

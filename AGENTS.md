@@ -31,7 +31,7 @@
 | `core` / `jpa` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-<模块> pitest:mutationCoverage`，变异分数不得低于模块 pom 的阈值（**PIT 不带 `-am`**，跑前先 `mvn install -DskipTests` 刷 `~/.m2`，理由见下表 api 行） |
 | `spring` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-spring pitest:mutationCoverage`（阈值 95，同样先 install）。注意 PIT 不变异注解，`@ConditionalOnProperty` 的开关语义由 `NextEntityAutoConfigurationTest` 的用例兜，不看分数 |
 | `api` 新增或修改**生产代码** | 额外 `mvn -pl nextentity-api pitest:mutationCoverage`（api 有自己的线格式用例，门禁自足，阈值 95）。api 的语义同时被 `core` 的用例执行，所以 `core` 的 PIT 也要跑；**跑任何 PIT 之前必须先 `mvn install -DskipTests`**——`pitest:mutationCoverage` 不带 `-am`，它从 `~/.m2` 解析依赖模块，陈旧快照会让依赖新语义的用例集体报「未变异就不通过」，看着像测试坏了，其实是产物旧了 |
-| 公开签名变更 | 额外 `mvn -Papi-compat -Djapicmp.oldVersion=2.2.3 -pl nextentity-api -am verify`。两个坑：①基线 artifact 是 **`nextentity-core`**（2.2.3 没发布过 `nextentity-api`，`io.github.nextentity.api.*` 的类在 `nextentity-core-2.2.3.jar` 里）；②示例版本号必须是中央仓库**真能解析到**的（`3.0.0` 从未发布，抄下来只会报「artifact 无法解析」）。**当前这条只产报告、不判红**：`breakBuildBasedOnSemanticVersioning=true` 在 `3.0.0-SNAPSHOT ← 2.2.3` 这种主版本跃迁下允许一切破坏（实测 624 处不兼容仍 `BUILD SUCCESS`），所以「破坏性变更每版 ≤ 5 处」这条红线**现在没有执法者**，3.0.0 发布后基线挪到 `3.0.0` 才真正生效（主版本跃迁的例外口径见「行为约束」的「主版本跃迁」一条） |
+| 公开签名变更 | 额外 `mvn -Papi-compat -Djapicmp.oldVersion=<上一发布版> -pl nextentity-api -am verify`。基线 artifact 是 **`nextentity-api` 的上一发布版**（3.0.0 起 api 独立发布，当前基线 3.0.0，Central 上可解析）；对照 2.2.3 的历史报告要显式加 `-Djapicmp.oldArtifactId=nextentity-core`（2.2.3 没发过 `nextentity-api`，`io.github.nextentity.api.*` 的类在 core 的 jar 里），artifact 与版本缺一个就静默变成空检查。`breakBuildBasedOnSemanticVersioning=true` **现在会真的判红**：在 3.0.0 基线上删/改公开签名，cmp 以「需要主版本跃迁」失败，破 API 必须伴随 `x.0.0`（例外口径见「行为约束」的「主版本跃迁」一条）。门禁只在 pom 版本 > 基线时有意义——在刚发版的 HEAD（版本 = 基线）上会拿本模块 `target/` 的 jar 与自身比较，报 `Versions of archives indicate no API changes but found API changes`，先 bump 版本再跑 |
 | 发版前 | `./tools/gate.sh release`（档位构成见 [docs/DESIGN.md](docs/DESIGN.md) §5「执行凭证」），并更新 CHANGELOG |
 | 文档里的代码示例（`*.md` 的代码块） | 先把示例**原样**抄进 `tmp/scripts/probe/DocExamples.java`，`javac` 对相关模块真实 `target/classes` 编译通过后才写进文档；文档声称的能力必须能在源码里指到 `文件:行`，指不到就删掉或移入「不提供的能力」表 |
 
@@ -83,7 +83,7 @@
 ./mvnw -pl nextentity-jdbc -am test       # JDBC 后端单测 + SQL 快照（H2，无容器）
 ./mvnw -pl nextentity-tests-jdbc -am verify   # JDBC 落库测试：H2 走 surefire + MySQL 容器走 failsafe（-DskipITs 只跳容器通道）
 ./mvnw -pl nextentity-jdbc test-compile pitest:mutationCoverage   # 变异测试：jdbc，阈值 95%（跑前先 install -DskipTests -Djacoco.check.skip=true）
-./mvnw -Papi-compat -Djapicmp.oldVersion=2.2.3 -pl nextentity-api -am verify   # API 兼容报告（基线是 nextentity-core:2.2.3；主版本跃迁下只产报告不判红，见验证规范）
+./mvnw -Papi-compat -Djapicmp.oldVersion=3.0.0 -pl nextentity-api -am verify   # API 兼容门禁（基线=上一发布版，当前 3.0.0；须在 pom 版本 > 基线的开发版本上跑，历史 2.2.3 报告加 -Djapicmp.oldArtifactId=nextentity-core）
 ./mvnw -pl nextentity-api test-compile pitest:mutationCoverage    # 变异测试：api，阈值 95%（门禁自足，用例在本模块）
 ./mvnw -pl nextentity-core test-compile pitest:mutationCoverage   # 变异测试：core，阈值 95%
 ./mvnw -pl nextentity-jpa test-compile pitest:mutationCoverage    # 变异测试：jpa 全模块，阈值 95%
@@ -113,7 +113,7 @@
 2. **合入发布分支**：改动合进 `release/<major>.<minor>`，等 CI（`pr` 档）绿。
 3. **在干净 HEAD 跑发布门禁**（40–70 分钟）：
    ```bash
-   OLD_VERSION=2.2.3 ./tools/gate.sh release
+   OLD_VERSION=<上一发布版> ./tools/gate.sh release   # 例：发 3.0.1 时填 3.0.0；发 3.0.0 时填 2.2.3
    ```
    `OLD_VERSION` 必须是上一发布版（Central 上真实存在、能解析到的版本）。**判绿只认** `tmp/gate/<commit>-<ts>/receipt.json`，不以日志末行为准。
 4. **打 tag 并推送**（tag 名 = `v` + pom 版本）：
