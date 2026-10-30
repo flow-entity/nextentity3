@@ -9,7 +9,7 @@
 - **版本语义**：`api` 包遵循语义化版本，删除/收窄签名即主版本；`core`/`jpa`/`spring` 内部包标记 `@Internal`，不承诺兼容。
 - **依赖方向单向**：只允许 `api ← core ← jpa ← spring`，以及 `api ← core ← jdbc`（第二后端，与 `jpa` 平行、互不依赖）。`api` 零三方依赖；`core` 不得 import `jakarta.persistence` / `hibernate` / `spring`。反向依赖与循环依赖由 enforcer + ArchUnit 拒绝。执法者：各模块 `bannedDependencies`（编译期）+ `nextentity-arch` 的 `MODULES_FREE_OF_CYCLES` / `CORE_PACKAGES_FREE_OF_CYCLES` / `JDBC_IS_A_BACKEND_ONLY`。
 - **新能力只落一处**：新谓词 = `spec` 加节点 + 编译器加分支；新终止符 = `exec` 加方法；不得在 builder 里拼 SQL 或拼 Criteria。新增节点必须让编译期穷尽性检查报错，以此逼出全部分支。
-- **接口要窄**：新增公开接口的方法数 ≤ 6；超过说明边界切错了。执法者：`nextentity-arch` 的 `API_INTERFACES_STAY_NARROW`。
+- **接口要窄**：新增公开接口的方法数 ≤ 6；超过说明边界切错了。执法者：`nextentity-arch` 的 `API_INTERFACES_STAY_NARROW`。**既有接口恢复历史方法**造成的例外逐条列在 `ArchitectureTest.WIDE_INTERFACE_ALLOWLIST`（值即精确上限，只许持平不许增长；加条目必须先在 DESIGN §7.2 有决策，现行条目见 DEC-26）——这是可审计的例外，不是把全局上限放宽。
 - **可测试性**：时间/随机必须经 `Clock` / `IdGenerator` 注入，禁止直调 `System.currentTimeMillis()` / `Instant.now()` / `new Random()`；禁止静态可变字段；禁止 catch 后返回默认值。执法者：`nextentity-arch` 的 `NO_AMBIENT_CLOCK_OR_RANDOM` / `NO_MUTABLE_STATIC_STATE`，以及 `rules/checkstyle.xml` 的 catch 规则。
 - **能力必须有测试**：每个能力至少 1 条 SQL 快照（`nextentity-tests-jpa`）+ 1 条一致性用例（`nextentity-testing`）；只加功能不加测试不得合入。
 - **一个 MR 一件事**：破坏性 API 变更不得夹带功能变更。

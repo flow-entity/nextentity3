@@ -213,6 +213,43 @@ query().where(Order::getAmount).notBetween(min, max).list();
 query().where(Order::getOrderNo).like("A%").list();
 ```
 
+### 3.8 前缀/后缀与取反匹配
+
+3.1.0 起恢复 `startsWith` / `endsWith` / `notLike` 与取反族（2.2.3 的 `EmployeeRepository.java` 在用：`.startsWith(prefix)`、`.endsWith(suffix)`、`.notLike(pattern)`、`.notStartsWith(...)`、`.notEndsWith(...)`、`.notContains(...)`）。
+
+**入口只有 `where(...)`**：这些方法挂在 `where(...)` 返回的 `StringOperator` 上，`Path.of(...)` / `EntityPath...get(...)` 得到的 `StringPath` 没有它们（保持原有 `StringOps`）。所以写 `query().where(Employee::getName).startsWith(prefix)`，不要写 `Path.of(Employee::getName).startsWith(...)`——后者编译不过，属于**不提供**（理由与代价见 §15.2）。
+
+通配符由 api 默认方法拼（`startsWith(v)` 等价 `like(v + "%")`，`notContains(v)` 等价 `notLike("%" + v + "%")`），`notLike` 编译成 `NOT(LIKE)`，后端只认 `LIKE` / `NOT LIKE`，与上一节的纯 `like` 共用渲染路径：
+
+```java
+// 前缀 / 后缀 / 取反：替你拼通配符
+query().where(Order::getOrderNo).startsWith("A").list();
+query().where(Order::getOrderNo).endsWith("9").list();
+query().where(Order::getOrderNo).notContains("X").list();
+
+// 纯 NOT LIKE：模式自带 % / _
+query().where(Order::getOrderNo).notLike("_A%").list();
+```
+
+NULL 语义照 SQL：`NOT LIKE` 对 `null` 列求值为 `UNKNOWN`，所以 `notContains(v)` **不匹配**该列为 `null` 的行；要连 `null` 行一起算，写 `or(notContains(v), isNull())`。`*IfNotNull` / `*IfNotEmpty` 变体在参数为 `null`（或空串）时短路成「不加这条条件」，**不是**匹配 `null` 行——`startsWithIfNotEmpty("")` 必须短路，不能退化成 `LIKE '%'`（否则静默放宽查询范围）。
+
+### 3.9 字符串函数
+
+3.1.0 起恢复 `lower` / `upper` / `trim` / `substring` / `length`（2.2.3 的 `EmployeeRepository.java` 里有 `.lower().contains(...)`；2.2.3 用例 `StringExpressionImplTest` 覆盖全部五函数）。函数是算子主语的一部分，可以继续链式比较：
+
+```java
+// 转小写后包含
+query().where(Order::getOrderNo).lower().contains("a").list();
+
+// 截取后相等：substring(offset, length)，offset 从 0 起算
+query().where(Order::getOrderNo).substring(0, 3).eq("A01").list();
+
+// 长度比较：length() 返回数字算子，可继续 gt / between 等
+query().where(Order::getOrderNo).length().gt(5).list();
+```
+
+每层函数各是一个 spec 节点，谓词主语由内到外组装（`lower().trim().contains("ann")` 的主语是 `TRIM(LOWER(name))`）；`substring(int)` 省略长度时上界取 `StringFunctions.MAX_SUBSTRING_LENGTH`（沿用 2.2.3 `StringExpression` 的取值）。两条边界：函数结果**不能**再接 `in` / `notIn` / `isNull` / `isNotNull`（`in`/`isNull` 的语义针对属性，对函数结果没有确定的 SQL 对应物，命中抛 `UnsupportedOperationException`）；`length()` 返回 `NumberOperator`，只能继续比较/区间，**不能**作为 `select(...)` 的投影列——要投影长度先自己查出来再在内存计算。
+
 ## 4. 排序与分页
 
 ```java
@@ -232,11 +269,15 @@ Slice<Order> slice = query().where(Order::getStatus)
         .desc()
         .slice(pageable.offset(), pageable.size());
 
+// 取本次请求的参数，分页组件不必另存一份
+int offset = slice.offset();
+int limit = slice.limit();
+
 // 映射成消费方自己的分页类型
 Page<Order> page = slice.to(s -> new Page<>(pageable, s.data(), s.total()));
 ```
 
-`slice(offset, limit)` 会额外发一条 count；`total()` 是满足条件的总行数。
+`slice(offset, limit)` 会额外发一条 count；`total()` 是满足条件的总行数。`Slice.offset()` / `limit()` 返回**本次入参的原值**——包括 `offset >= total` 的短路路径（那里不再执行列表查询，但参数照样保留）；3.0.0 没有这两个访问器，3.1.0 恢复（2.2.3 的调用点：`PaginationOrderingIntegrationTest.java:273-274`、`:296-297`）。二者是 `Slice` 上的 `default` 方法：自己实现 `Slice` 时若不覆盖，`offset()` 取 `0`、`limit()` 取 `data().size()`；内置分页返回的实现一律覆盖成入参原值。
 
 ## 5. 终止符
 
@@ -251,7 +292,7 @@ boolean exists = query().exists();
 
 `single()` 命中多于一条时抛 `IllegalStateException("found more than one result, expected one")`，不做静默取首条。
 
-聚合或分组规格上的 `count()` 会抛 `UnsupportedOperationException`（SQL 需子查询计数，3.x 未实现）；`exists()` 不受影响，语义是「有行」。
+**聚合投影**（`select(sum).count()` 这类，SQL 需要子查询计数）的 `count()` 仍抛 `UnsupportedOperationException`；**分组规格**上的 `count()` / `exists()` / `list(offset, limit)` 已在 3.1.0 恢复（见 §7.4），两者口径不同，不要混用。
 
 ## 6. 投影
 
@@ -363,7 +404,37 @@ final class OrderTotalMapper implements ProjectionMapper<Order, BigDecimal> {
 BigDecimal total = query().project(new OrderTotalMapper()).single();
 ```
 
-本库不做反射/注解自动映射（`select(OrderRow.class)` 那类，见 §15）：映射代码由调用方手写，编译期可查、IDE 可跳转。
+本库不做注解自动装配列集（列随 DAO 需求变时用 `project(ProjectionMapper)`，见 §6.1）；列集写死在 DTO 上时用 §6.3 的 `select(OrderRow.class)`，那是 3.1.0 起提供的显式类型投影。
+
+`expressions()` 里可以放**嵌套路径**（`EntityPath.of(Order::getShop).get(Shop::getName)`）——它就是 2.2.3 `@EntityPath("department.name")` 那种「列来自关联表」的等价形态（`core.builder.ValueProjections` 接受任意 `Path`，渲染时由后端把嵌套路径解析成 join）。所以 `select(Class)` 不覆盖嵌套/改名只是**入口形状不同**，能力仍可达。
+
+### 6.3 按类型投影：`select(OrderRow.class)`
+
+列集在编译期就固定、并且想要自己的结果类型时，用 `select(Class)`（3.1.0 恢复；2.2.3 的 `EmployeeRepository.java` 在用：`select(EmployeeSummary.class)`、`select(EmployeeWithDept.class)`、`selectDistinct(EmployeeInfo.class)`）：
+
+```java
+// record：属性名取规范构造器参数名，列序即参数序
+record OrderRow(Long id, OrderStatus status, BigDecimal amount) {}
+
+List<OrderRow> rows = query().select(OrderRow.class)
+        .where(Order::getStatus).eq(OrderStatus.PAID)
+        .orderBy(Order::getId).asc()
+        .list();
+
+// 去重投影：distinct() 在前、select(Class) 在后（3.1.0 没有单独的 selectDistinct(Class) 重载）
+List<OrderRow> uniq = query().distinct().select(OrderRow.class).list();
+```
+
+装配契约（以 3.1.0 实现为准）：
+
+- **record**：属性名取 record component 名，按名匹配实体的单层属性；构造器用规范构造器，列序即参数序；
+- **普通类**：属性名由公开的 `setXxx` 按 JavaBeans 规则推导（`setName` → `name`，`setURL` → `URL`），需要无参构造器，**列序按属性名排序**（反射方法序不保证稳定）；
+- **只做扁平映射**：属性名必须是实体的**单层**属性（`name` 可以，`department.name` 不行）。2.2.3 的 `@EntityPath("department.name")` 这类嵌套/改名声明在 3.1.0 的 `select(Class)` 里**不提供**——嵌套、改名、计算列改用 `project(ProjectionMapper)` 手写映射器；
+- 接口与抽象类不支持（接口投影要靠运行期代理）：抛 `IllegalArgumentException` 并提示改用映射器；DTO 无可映射属性、普通类缺无参构造器同样在 `select(...)` 阶段抛 `IllegalArgumentException`；
+- 属性名写错**无法在编译期校验**（实体属性清单不在编译期可见），会在后端渲染/装配时失败，不会静默跳过；
+- 目标类型恰好是实体类型本身时退化为整实体查询；此时 `distinct()` 不可用——`SELECT DISTINCT 实体` 表达不出来，运行期抛 `UnsupportedOperationException`，不让旗标静默失效。
+
+> 边界：`select(Class)` 只负责「列 → 对象」的装配，不负责懒加载——它查的是列，不是实体图；要预取关联仍用 §8.1 的 `fetch(...)`。
 
 ## 7. 聚合与分组
 
@@ -424,9 +495,39 @@ List<Tuple3<OrderStatus, Long, Long>> perStatusAndCustomer = query().select(
 
 ### 7.3 边界
 
-- 聚合 / 分组规格上的 `count()` 抛 `UnsupportedOperationException`（见 §5）；`exists()` 仍可用，语义是「有行」。
+- **聚合投影**上的 `count()` 抛 `UnsupportedOperationException`（见 §5），因为它数的是「总行数」而查询问的是「聚合值」；**分组规格**上的 `count()` / `exists()` / `list(offset, limit)` 见 §7.4。
 - 需要「组内实体行数」时请投影主键等非空列：`count(列)` 不数 `NULL`（与 2.2.3 相同）。
 - `avg()` 是 `Double`；跨方言的精度/舍入差异由数据库决定，不要拿它做金额结算。
+
+### 7.4 分组之后的 `count()` / `exists()` / 分页
+
+3.1.0 起，`groupBy(...)`（及 `having(...)`）之后的终止符按**分组结果**语义执行（2.2.3 的 `HavingClauseIntegrationTest` 整类 22 条都是这种写法）：
+
+```java
+// 组数：满足 having 的分组个数，不是「总行数」
+long busyGroups = query().select(Path.of(Order::getCustomerId), Path.of(Order::getId).count())
+        .groupBy(Order::getCustomerId)
+        .having(Path.of(Order::getId).count().gt(5L))
+        .count();
+
+// 是否存在任何满足 having 的分组
+boolean any = query().select(Path.of(Order::getCustomerId), Path.of(Order::getId).count())
+        .groupBy(Order::getCustomerId)
+        .having(Path.of(Order::getId).count().gt(5L))
+        .exists();
+
+// 对分组结果分页：offset/limit 作用在「组」上
+List<Tuple2<Long, Long>> page = query().select(
+                Path.of(Order::getCustomerId), Path.of(Order::getId).count())
+        .groupBy(Order::getCustomerId)
+        .having(Path.of(Order::getId).count().gt(5L))
+        .orderBy(Path.of(Order::getId).count()).desc()
+        .list(10, 10);
+```
+
+`count()` / `exists()` 的语义是**分组结果的行数 / 是否存在任何分组**（即「组数」「有没有组」），不是「组内行数」，也不是「总行数」；两者都必须把 `groupBy` 与 `having` 一起渲染（只渲染 `where` 会把总行数当组数、或把被 `having` 滤空的组答成「有行」，结论正好相反）——这是 3.0.0 拒绝它们的理由，也是 3.1.0 恢复时必须有 SQL 快照钉住的原因。分组后 `list(offset, limit)` 与 `slice(...)` 都可用：窗口作用在「组」上，`slice(...)` 的 `total` 就是组数（与 `count()` 同一口径，因此同样依赖上面那条 JPA 组计数实现）。**没有 `groupBy` 的聚合形态**（只有聚合投影或只有 `having`）仍由后端拒绝 `count()` / `exists()`：这种查询恒为一行，计数/存在性给不出稳定答案——这是 JDBC 与 JPA 共同的后端契约，与 `list` / `slice` 的取行路径无关（渲染顺序把窗口放在 `groupBy`/`having` 之后，见 `nextentity-jdbc` 的 `SqlRenderer#render()`；JPA 侧是 `setFirstResult`/`setMaxResults`）。
+
+> **后端差异（JPA）**：标准 JPA Criteria 表达不了「`FROM` 子查询」，JPA 侧的分组 `count()` 选定为反射 Hibernate 的 `JpaCriteriaQuery#createCountQuery()`，在 **Hibernate 6+ 下单条 SQL** 实现。换成其它 JPA provider 会 **fail-fast 抛 `UnsupportedOperationException`（文案指名 provider）**，不会静默数错；此时用 `exists()`（不涉及计数）或改走 JDBC 后端。JDBC 侧是派生表原生表达，不受这条限制。
 
 ## 8. 关联
 
@@ -445,7 +546,36 @@ query().where(customer.get(Customer::getOrgId))
 query().where(orgName).eq("总部").list();
 ```
 
-3.x **没有显式 `fetch(...)`**：需要避免 N+1 时用 `@EntityGraph` / Hibernate 原生 API，或直接查询所需的投影列。
+**集合关联与反侧关联不在查询路径上提供**：`@OneToMany`/`@ManyToMany`/`@ElementCollection` 以及 `@OneToOne(mappedBy=...)` 反侧，写入列集里会被跳过（见 DESIGN §7.1 CUT-18）；查询路径穿过它们（例如 `EntityPath.of(Order::getItems).get(Item::getName)`）由**两个后端都显式拒绝**——JPA 在 `JpaPaths`、JDBC 在 `SqlPaths` 抛 `UnsupportedOperationException`（集合 join 出来是子行，`list()` 会重复、分页与 `total` 也会失去意义）。这不是「静默忽略」：静默只发生在写入列集上，查询路径是 fail-fast 的。
+
+### 8.1 显式 `fetch(...)`：把 N+1 消掉
+
+3.0.0 没有显式预取，注释里写「用 `@EntityGraph` 或自己查投影列」；3.1.0 恢复 `fetch(...)`（2.2.3 的 `EmployeeRepository.java` 在用：`fetch(Employee::getDepartment)` 等，`ProductRepository.java` 的 `fetch(Product::getCategory)` 同形）。签名已定稿（`FetchStep` 共 6 个方法）：
+
+```java
+// 单个关联（方法引用形态走 PathRef 重载）
+List<Order> orders = query()
+        .fetch(Order::getCustomer)
+        .where(Order::getStatus).eq(OrderStatus.PAID)
+        .list();
+
+// 多个关联一次传（重载最多 3 条 Path）；嵌套关联用 Path 逐段 get
+List<Order> loaded = query()
+        .fetch(Path.of(Order::getCustomer),
+                Path.of(Order::getCustomer).get(Customer::getOrg),
+                Path.of(Order::getShop))
+        .where(Order::getStatus).eq(OrderStatus.PAID)
+        .list();
+```
+
+与 2.2.3 的四个形状差异（照抄 2.2.3 示例会编译不过）：
+
+- `FetchStep` 共 6 个方法：抽象 `fetch(Collection<? extends Path<T, ?>>)` + 1/2/3 条 `Path` 与 1/2 条 `PathRef` 的 `default` 重载。3.x 刻意不让 `Path` 继承 `PathRef`（避免给 `Path` 的实现方增加源码义务），两种形态靠 `Path.of(...)` 互转。
+- 2.2.3 的 7 个方法里 `fetch(PathRef, PathRef, PathRef)` 不在 3.1.0（撞「接口方法数 ≤ 6」的窄度规则）；三个关联写 `fetch(Path, Path, Path)`。
+- **不能链两次 `fetch`**：`fetch(...)` 返回 `BaseWhereStep`，它没有 `fetch`；多个关联一次多参传。2.2.3 Javadoc 里的 `.fetch(a).fetch(b)` 本身编译不过，不要照抄。
+- `select(...)` / `project(...)` 之后没有 `fetch`：投影行不是实体，没有关联可填。
+
+`fetch(...)` 收的是关联路径（`@ManyToOne` / `@OneToOne` 等），普通列用 `select(...)`。语义上它改变「发几条 SQL」，不改变结果集：JPA 后端渲染为 join fetch / `EntityGraph`；**JDBC 后端调用 `fetch(...)` 抛 `UnsupportedOperationException`**——JDBC 不组装实体图、没有懒加载代理，`fetch` 在该后端没有可兑现的语义，与其静默 no-op 让用户拿到 `null` 关联，不如 fail-fast（理由类型=架构约束，见 §13.4.3）。替代路径：用 `project(ProjectionMapper)` 显式取关联列（LEFT JOIN 可用），或改用 JPA 后端。验证「真的没有 N+1」请用 SQL 条数对照（同一查询 fetch 前后各数一次语句数），不要只看结果有没有值。
 
 ## 9. 锁
 
@@ -456,9 +586,24 @@ Order pessimistic = query().where(Order::getId).eq(id).lock(LockMode.PESSIMISTIC
 
 `lock(...)` 必须跟在产生条件的算子之后（例如 `.eq(id).lock(...)`），返回终止符。`LockMode` 的 5 个常量与 `jakarta.persistence.LockModeType` 同名（同名只为可读，`api` 并不依赖 jakarta），由 `nextentity-jpa` 映射成后端的锁模式。
 
+3.1.0 起 JDBC 后端也提供 `PESSIMISTIC_READ`（JPA 后端自 3.0.0 起已按名字映射五种锁模式，本版只补验证与文档；2.2.3 在 MySQL + PostgreSQL 双容器验证过这套读锁用法，写法与 `PESSIMISTIC_WRITE` 同形）：JDBC 后端由方言 `lock` 钩子渲染共享锁（MySQL = `for share`，容器实测通过；PostgreSQL 代码同样出 `for share`，但 PG 容器通道待 tester 波验证、发布前按「未实测」披露；H2 没有 `FOR SHARE`，用 `for update` 兜底——比 FOR SHARE 锁更强，是安全方向的近似，不是等价降级；SQL Server 方言不做行锁，显式拒绝；未实现的方言显式拒绝，**不静默降级成写锁**）。JDBC 后端只接受 `PESSIMISTIC_WRITE` 与 `PESSIMISTIC_READ`，其余三种模式显式拒绝（`UnsupportedOperationException`，不静默降级成写锁）。
+
+`lock(...)` 之后还能继续分页（3.1.0 在 `Collector` 上加的重载，`lock(...)` 返回类型没变）：
+
+```java
+// 只锁本页的行，不是整表
+List<Order> page = query()
+        .where(Order::getStatus).eq(OrderStatus.PAID)
+        .orderBy(Order::getId).asc()
+        .lock(LockMode.PESSIMISTIC_WRITE)
+        .list(20, 20);   // offset, limit（Collector 的 list(int, int) 重载）
+```
+
+锁只适用于**实体查询**：值选择（`select(...)`）或聚合规格上调用 `lock(...)` 抛 `UnsupportedOperationException`（H2 不接受 `FOR UPDATE` + `DISTINCT`/`GROUP BY`，方言行为不一致，本库不猜）；SQL Server 方言不做行锁，`lock` 在该方言上显式拒绝（理由见 [DESIGN.md](DESIGN.md) §7.1 CUT-20/CUT-22）。
+
 ## 10. 写入
 
-写入走 `core.exec.PersistExecutor`（`EntityOperations` 即实现它），只有四个方法：
+写入走 `core.exec.PersistExecutor`（`EntityOperations` 即实现它）：四个实体写入方法，加上 3.1.0 新增的两个按条件写入入口（§10.1）：
 
 ```java
 EntityOperations<Order> operations = factory.operations(Order.class);
@@ -468,7 +613,41 @@ operations.update(order);       // 含 @Version 校验，并把新版本号回�
 operations.updateAll(orders);
 ```
 
-`@Version` 字段的实体走乐观锁：版本冲突抛 `OptimisticLockException`，由调用方决定重试策略。**不提供** `update().set().where()` / `delete().where()` 这类按条件写入（见 §15）。
+`@Version` 字段的实体走乐观锁：版本冲突抛 `OptimisticLockException`，由调用方决定重试策略。
+
+### 10.1 按条件更新与删除
+
+3.1.0 恢复 2.2.3 的批量写入步骤（2.2.3 examples 在用：`EmployeeRepository.java` 的 `update().set(...).set(...).where(...).execute()` 与 `delete().where(...).execute()`）。入口在 `PersistExecutor`：`update()` 返回 `UpdateSetStep`、`delete()` 返回 `DeleteWhereStep`，`execute()` 返回受影响行数。签名已定稿——`set(...)` 有两个重载：`PathRef`（方法引用形态）与 `Path`（嵌套列 / 关联外键）：
+
+```java
+// 一条 UPDATE ... WHERE ...，不是「先查出来逐行改」
+int deactivated = operations.update()
+        .set(Employee::getActive, false)
+        .set(Employee::getStatus, EmployeeStatus.INACTIVE)
+        .where(Employee::getDepartmentId).eq(departmentId)
+        .execute();
+
+// 一条 DELETE ... WHERE ...
+int purged = operations.delete()
+        .where(Employee::getStatus).eq(EmployeeStatus.INACTIVE)
+        .execute();
+
+// set 的 Path 重载：嵌套 @Embedded 列，以及把关联外键置空
+int relocated = operations.update()
+        .set(Path.of(Employee::getAddress).get(Address::getCity), "Platform")
+        .where(Employee::getStatus).eq(EmployeeStatus.INACTIVE)
+        .execute();
+int clearedFk = operations.update()
+        .set(Path.of(Employee::getDepartment).get(Department::getId), null)
+        .where(Employee::getStatus).eq(EmployeeStatus.INACTIVE)
+        .execute();
+```
+
+`set(...)` 的方法引用重载只接受标量列；嵌套列与「把外键置空」必须用 `Path` 重载（`PathRef` 表达不了 `null` 与逐段路径）。右值只支持**字面量**：不支持「列 = 列」或引用了其它列的表达式；`value = null` 表示置 `NULL`。条件面复用 §3 的谓词（含 §3.1 的可选条件与 §3.6 的组合），且条件在语句里直接求值，不先取行。`execute()` 返回受影响行数，批量写不经过实体快照，因此不触发级联、也不带「读-改-写」的乐观锁语义（需要行级 `@Version` 校验时用 `update(entity)` 形态）。写操作必须在调用方事务里执行（§11）。
+
+> ⚠️ **不写 `where(...)` 就是整表更新/删除**（`update()` / `delete()` 没有「空条件拒绝」的保护）；批量语句请始终显式给出条件，Javadoc 也写了同一句警告。
+
+**不提供**对 `fetch(...)` 或投影规格的条件写入：`update()` / `delete()` 只从实体根进入，投影/DTO 没有可写的列集。
 
 ## 11. 事务
 
@@ -503,13 +682,13 @@ EntityOperationsFactory factory = new JdbcEntityOperationsFactory(dataSource);
 EntityOperations<Order> orders = factory.operations(Order.class);
 ```
 
-- 单参构造器在构造期取一条连接、读 `DatabaseMetaData.getDatabaseProductName()` 探测方言后立即关闭（`nextentity-jdbc/src/main/java/io/github/nextentity/jdbc/JdbcEntityOperationsFactory.java:34`）；`operations(Class)` 见同文件 `:56`。
-- 工厂**不持有连接、不开事务**：每次操作独立 `getConnection()`，事务边界归调用方（同文件类级 Javadoc；取连接点见 `exec/JdbcExecutor.java:59`、`exec/JdbcPersistExecutor.java:98`/`:131`/`:163`）。所以 `DataSource` 必须「每次返回可用连接」，或包装连接的 `close()` 是 no-op——「close 真关连接」的数据源上第二条 SQL 就会报 `The object is already closed`（`docs/DESIGN.md:469`）。
+- 单参构造器 `JdbcEntityOperationsFactory(DataSource)` 在构造期取一条连接、读 `DatabaseMetaData.getDatabaseProductName()` 探测方言后立即关闭；`operations(Class)` 定义在同文件。取连接与执行分别在 `exec/JdbcExecutor` 与 `exec/JdbcPersistExecutor`。
+- 工厂**不持有连接、不开事务**：每次操作独立 `getConnection()`，事务边界归调用方（类级 Javadoc 有同样说明；取连接点在 `exec/JdbcExecutor`、`exec/JdbcPersistExecutor` 的各个执行方法里）。所以 `DataSource` 必须「每次返回可用连接」，或包装连接的 `close()` 是 no-op——「close 真关连接」的数据源上第二条 SQL 就会报 `The object is already closed`（见 [DESIGN.md](DESIGN.md) §6.1「装配面契约」）。
 - Spring 自动配置只注册 JPA 侧的 `EntityOperationsFactory`（`nextentity-spring` 不引用 `jdbc`）：用 JDBC 后端时自己 `new` 工厂，或自己注册 bean。
 
 ### 13.2 方言
 
-方言是渲染钩子 `JdbcDialect`，8 个成员里只有 `name()` 必须实现（`nextentity-jdbc/src/main/java/io/github/nextentity/jdbc/dialect/JdbcDialect.java:18`），其余是 default 钩子（例如 `:53` `quote`、`:99` `lock`）。内置 H2 / MySQL / PostgreSQL / SQL Server 四种。
+方言是渲染钩子 `JdbcDialect`（`io.github.nextentity.jdbc.dialect`），10 个成员里只有 `name()` 必须实现：8 个 `default` 钩子（`quote` / `selectHead` / `limitClause` / `lock` / `averageOf` / `likeEscape` / `lengthOf` / `substring`）+ 静态 `of(String)`。内置 H2 / MySQL / PostgreSQL / SQL Server 四种，钩子语义见 [DESIGN.md](DESIGN.md) §6.1「方言接缝」。
 
 两种选法——交给工厂探测，或显式指定（显式指定不探测）：
 
@@ -518,7 +697,7 @@ JdbcDialect dialect = JdbcDialect.of("PostgreSQL 16.2");
 EntityOperationsFactory factory = new JdbcEntityOperationsFactory(dataSource, dialect);
 ```
 
-`JdbcDialect.of(...)` 的匹配规则：MySQL/H2 全等、PostgreSQL 前缀、Microsoft SQL Server 前缀（忽略大小写）；认不出抛 `UnsupportedOperationException` 并提示自定义方言（`dialect/JdbcDialect.java:25`）。双参构造器见 `JdbcEntityOperationsFactory.java:42`。
+`JdbcDialect.of(...)` 的匹配规则：MySQL/H2 全等、PostgreSQL 前缀、Microsoft SQL Server 前缀（忽略大小写）；认不出抛 `UnsupportedOperationException` 并提示自定义方言（规则见 [DESIGN.md](DESIGN.md) §6.1「方言接缝」）。双参构造器 `JdbcEntityOperationsFactory(DataSource, JdbcDialect)` 显式注入、不探测，是自定义方言唯一保证生效的路径。
 
 自研方言只实现 `name()`，需要时再覆写钩子：
 
@@ -536,7 +715,7 @@ JdbcDialect custom = new JdbcDialect() {
 };
 ```
 
-注意 `quote` 只对**被反引号标记**的标识符生效（注解名用反引号包裹 ⇒ 需要引用，渲染字符由方言决定；`docs/DESIGN.md:446`、`:464`）。
+注意 `quote` 只对**被反引号标记**的标识符生效（注解名用反引号包裹 ⇒ 需要引用，渲染字符由方言决定；见 [DESIGN.md](DESIGN.md) §6.1「标识符引用」）。
 
 ### 13.3 同一套 DSL
 
@@ -558,24 +737,78 @@ orders.insertAll(List.of(order));
 orders.updateAll(List.of(order));
 ```
 
-写入仍只有这四个方法（`nextentity-core/src/main/java/io/github/nextentity/core/exec/PersistExecutor.java:13`），事务语义同 §11：边界归调用方。
+写入仍走 `core.exec.PersistExecutor` 的方法（见 §10），事务语义同 §11：边界归调用方。
 
 ### 13.4 JDBC 后端的支持边界
 
-下列限制是这一轮 JDBC 后端的显式契约（命中即抛 `UnsupportedOperationException`，不是静默降级）：
+3.1.0 起，JDBC 后端的能力面按**三类**陈述，不再用一句话概括：**支持**（下列矩阵）、**识别但忽略**（集合关联，不参与 SQL、不抛异常）、**拒绝**（fail-fast，抛 `UnsupportedOperationException` / `IllegalArgumentException` 并带可操作文案）。「拒绝」与「忽略」是两种不同契约，混写成「命中即抛 UOE」会让读者以为集合关联也会炸——3.0.0 的旧表就是这个毛病。
 
-| 限制 | 证据 |
+#### 13.4.1 支持的类型与注解（3.1.0）
+
+| 面 | 3.1.0 支持 |
 |---|---|
-| 时间类型（`LocalDate`/`LocalDateTime`/`Instant`/`java.sql.*`）本轮全部拒绝 | `docs/DESIGN.md:503` |
-| 写入不支持关联属性：关联值非 `null` 抛 UOE，`null` 则跳过该列 | `docs/DESIGN.md:496` |
-| 继承、复合主键、`@Access(PROPERTY)`、`@Embedded`、`@Convert` 拒绝 | `nextentity-jdbc/src/main/java/io/github/nextentity/jdbc/meta/JdbcEntityRules.java:63`/`:66`/`:70`/`:115`/`:118`/`:121` |
-| `@ManyToOne` 必须带 `@JoinColumn(name)` | 同上 `:174` |
-| 集合与一对一关联字段被静默忽略（不进 `attributes()`、不参与 SQL） | 同上 `:162-168` 的 `ignored(...)` |
-| 锁只映射 `PESSIMISTIC_WRITE → for update`；值选择/聚合规格带锁拒绝；SQL Server 不行锁 | `docs/DESIGN.md:497`/`:505`/`:512` |
-| 聚合规格与多列 distinct 的 `count`/`exists` 显式拒绝 | `docs/DESIGN.md:500` |
-| 分页 `limit = 0` 视为不限行 | `docs/DESIGN.md:498` |
-| 不生成 DDL：表结构自己建（测试按方言引号建表） | `docs/DESIGN.md:446`、`:464` |
-| `SQLException` 统一包成 `PersistenceException("SQL 执行失败: " + sql, e)` | `docs/DESIGN.md:504` |
+| 字符串 | `String` |
+| 数值 | `Integer`/`int`、`Long`/`long`、`Short`/`short`、`Double`/`double`、`Float`/`float`、`BigDecimal`、`BigInteger`（主要服务于生成键；普通列同样可用，绑定走 `BigDecimal`、读回精确转回 `BigInteger`） |
+| 布尔 | `Boolean`/`boolean` |
+| 枚举 | 任意 `enum`；`@Enumerated(STRING)` 存名字、`@Enumerated(ORDINAL)` 存序号，缺省 `ORDINAL`（与 JPA 默认一致） |
+| 时间 | `LocalDate`、`LocalDateTime`、`LocalTime`、`Instant`、`java.sql.Date`/`Time`/`Timestamp` |
+| 生成键策略 | `@GeneratedValue(strategy = IDENTITY)` 与 `AUTO`（按方言落到 `IDENTITY`） |
+| 生成键类型 | `short`/`Short`、`int`/`Integer`、`long`/`Long`、`BigInteger`（按 `id.type()` 转换，窄类型做范围校验） |
+| `@Version` 类型 | `int`/`long`/`short`/`Integer`/`Long`/`Short`（应用侧 +1 写回；`WHERE id [AND version]` 0 行抛 `OptimisticLockException`） |
+| `@Column` / `@JoinColumn` 的 `insertable/updatable=false` | 支持：读回照常；`insertable=false` 不进 `INSERT` 列集、`updatable=false` 不进 `UPDATE SET`；该列仍可出现在 `WHERE`/`ORDER BY`（2.2.3 examples 用的是 `@JoinColumn` 形态） |
+| `@Embedded`/`@Embeddable` | 支持**扁平**嵌入：列名默认 `<嵌入字段名>_<嵌套字段名>`（与 JPA 默认命名一致），可用 `@AttributeOverride` 覆盖；嵌套 `@Embedded`、点号形式的嵌套 `@AttributeOverride` 不提供（见 13.4.3） |
+| `@Convert` | 支持**显式** `@Convert(converter = ...)`（`AttributeConverter` 无参实例化；`convertsTo` 的列类型必须落在上表内，否则拒绝并提示改用受支持类型） |
+| 关联写入 | `@ManyToOne`/`@OneToOne`（持有外键一侧）可写：关联值非 `null` 时读关联对象 `@Id` 写外键列；缺 `@JoinColumn(name)` 时按 JPA 默认命名 `字段名_被引用列名` 推断；`@OneToOne(mappedBy=...)` 反侧不写（见 13.4.2） |
+| 无参构造 | 实体必须有可调用的无参构造（`private`/`protected` 会 `setAccessible`）；缺失抛 `IllegalArgumentException`（消息含实体类名）；**record 实体不支持**（无无参构造、字段 final） |
+| 3.1.0 新查询/写入节点 | 字符串函数（`LOWER`/`UPPER`/`TRIM`/`LENGTH`/`SUBSTRING`）、`startsWith`/`endsWith`/`notLike` 族（折成 `LIKE`/`NOT LIKE`）、`groupBy` 之后的 `count()`/`exists()`、条件 `update`/`delete` 都有渲染分支；**`fetch(...)` 在 JDBC 后端显式拒绝（`UOE`）**（JDBC 无实体图/懒加载，见 13.4.3）；SQL Server 的长度/截取形态差异见 13.4.5 |
+
+**写关联的 null 语义与 JPA 不同（必须知道）**：JDBC 后端在关联值为 `null` 时**跳过该列**（不写 `NULL`），因此不能通过 `update(entity)` 把外键置空。等价写法是条件更新 + `Path` 重载的 `set(..., null)`：`update().set(Path.of(Employee::getDepartment).get(Department::getId), null).where(...).execute()`（见 §10.1）。另外，JDBC 读回只装外键列与标量列，**不填充关联对象**（关联字段为 `null`；显式 `project(...)` 投影除外）。
+
+#### 13.4.2 识别但忽略：集合关联与反侧一对一
+
+`@OneToMany`、`@ManyToMany`、`@ElementCollection`，以及 `@OneToOne(mappedBy = ...)`（反侧，本表没有外键列），在**写入列集**上会被扫描到但**忽略**：不进 `attributes()`、不参与任何 SQL、不抛异常；`@OneToOne` 的持有外键一侧按「关联写入」支持。**查询路径**是另一回事：穿过集合关联（如 `EntityPath.of(Order::getItems).get(Item::getName)`）时 JDBC 与 JPA 都显式抛 `UOE`（`SqlPaths` / `JpaPaths`），不静默——避免 join 出的子行让 `list()` 重复、分页与 `total` 失真。级联写需要调用方显式先写子实体（或自行在 DB 侧用触发器）；是否恢复由 DESIGN §7.1 CUT-18 的触发器决定。
+
+#### 13.4.3 拒绝（fail-fast，不静默写坏数据）
+
+| 拒绝项 | 行为 | 理由类型 | 用户可走的替代路径 |
+|---|---|---|---|
+| `@Inheritance` 继承映射 | `UnsupportedOperationException` | 自设规则（当前只支持单表扁平映射） | 拆成独立实体 + 标量列；或换 JPA 后端 |
+| `@IdClass` / 复合主键 / `@EmbeddedId` | `UOE` | 自设规则 | 增加单列代理主键；复合唯一约束交给 DB |
+| `@Access(PROPERTY)` / 把映射注解写在 getter 上 | `UOE`（只支持字段访问） | 自设规则 | 把 `@Id`/`@Column` 等注解移到字段上 |
+| 缺 `@Entity` / 无 `@Id` / 多 `@Id` / 多 `@Version` | `IllegalArgumentException`（实体结构错误） | 自设规则 | 按 JPA 实体规则修正模型 |
+| `byte`/`Byte`、`char`/`Character`、`byte[]` 列类型 | `UOE` | 尚未验证（`char` 的定长补空格语义、`byte[]` 的 BLOB/VARBINARY 各方言类型名与流式读写未实测） | 改用受支持列类型，或 `@Convert` 转成 `String`/`byte[]` 之外的表示 |
+| `@GeneratedValue(strategy = SEQUENCE)` | `UOE` | 尚未验证（无跨方言取号钩子；autocommit 下取号有空洞；各方言取号形态未实测） | 应用侧发号（`IdGenerator`）后手动赋值 id；或改用 `IDENTITY`/`AUTO` |
+| `@GeneratedValue(strategy = TABLE)` | `UOE` | 外部约束（需要序列表 DDL，本模块不生成 DDL） | 应用侧发号或换 `IDENTITY`/`AUTO` |
+| `@Version` 为 `Timestamp` | `UOE` | 尚未验证（应用侧取当前时间需 `Clock` 注入，JPA 侧本轮未同步，两端口径会分叉） | 改用六种数值型版本 |
+| 嵌套 `@Embedded` / 点号形式的嵌套 `@AttributeOverride` | `UOE` | 尚未验证 | 拍平成一层的嵌入字段或标量列，覆盖只写单层属性名 |
+| 依赖 `@Convert(autoApply = true)`（字段上没有显式 `@Convert`） | 不自动应用；该字段按原 Java 类型走列类型校验（不被自动转换） | 尚未验证（扫描成本 + 无正例） | 在字段上显式标 `@Convert(converter = ...)` |
+| 锁模式：`PESSIMISTIC_READ`/`PESSIMISTIC_WRITE` 之外的三种 | `UOE` | 外部约束（无标准 SQL 形态） | 只使用这两种锁模式，或走原生 SQL |
+| SQL Server 上的行锁（两种模式） | `UOE` | 外部约束：T-SQL 没有 `FOR SHARE`，也没有标准 `FOR UPDATE` 行锁；`with (rowlock)` 是索引提示、不是锁语义（未实测） | 应用层锁（悲观锁表 / 串行队列）、快照隔离（`READ COMMITTED SNAPSHOT`）、或原生 SQL |
+| 条件更新/删除命中 `@Column(updatable=false)` 列 | `UOE`（消息点名列；fail-fast，不会静默跳过该列） | 自设规则：批量写入的赋值列集必须显式可写，静默跳过会让「更新了但某列没变」难以察觉 | 去掉该列标志；或换用条件更新之外的方式（如 `update(entity)`）；或换 JPA 后端 |
+| `fetch(...)`（JDBC 后端） | `UOE`（fail-fast，不静默 no-op） | 架构约束：JDBC 后端不组装实体图、无懒加载代理，`fetch` 没有可兑现的语义；静默接受只会让调用方拿到 `null` 关联 | `project(ProjectionMapper)` 显式取关联列（LEFT JOIN 可用），或改用 JPA 后端 |
+
+#### 13.4.4 与 JPA 的语义差异（不是拒绝，但结果可能不同）
+
+| 差异点 | JDBC 行为 | 与 JPA 的差别 |
+|---|---|---|
+| 关联置空 | 关联 `null` 时跳过列，`update(entity)` 无法置空外键 | JPA 按 `nullable`/级联语义写 `NULL`；JDBC 用条件更新 `set(Path.of(X::getDept).get(Dept::getId), null)` 表达 |
+| 读回关联对象 | 只装标量列，关联字段为 `null` | JPA 按映射/预取加载关联 |
+| `@Version` 自增 | 应用侧读取后 +1 写回 | JPA 由提供方管理版本并可 DB 侧生成 |
+| 生成键回读 | 单列结果集取第 1 列；多列按列标签/列名匹配 id 列名；`BigInteger` 走 `getBigDecimal` 转换；窄类型做范围校验 | JPA 由提供方回填 |
+| 分组 `count()`（`groupBy` + `count()`） | 派生表原生支持（子查询计数） | JPA 侧依赖 Hibernate 6+ 的 `createCountQuery()`（单条 SQL）；其它 provider 抛 `UOE`（文案指名 provider），见 §7.4 |
+| `fetch(...)` 预取 | 显式拒绝：`UOE`（JDBC 不组装实体图、无懒加载代理，没有可兑现的语义；不静默 no-op） | JPA 渲染为 join fetch / `EntityGraph`，消除 N+1；JDBC 侧要读关联列请用 `project(...)` 投影或原生 SQL |
+| 分页 `limit = 0` | 视为不限行 | 与 JPA 一致（api 契约），单列在此说明避免误读 |
+| 事务 | 边界归调用方；无事务时 `update` 抛 `TransactionRequiredException`、`insertAll` 不落库（§11） | 同约定 |
+| DDL | 不生成，表结构自己建（测试按方言引号建表） | 不生成 |
+| 异常 | `SQLException` 包成 `PersistenceException("SQL 执行失败: " + sql, e)` | 同 JPA 顶层异常族 |
+
+#### 13.4.5 方言差异（可能出现「会算错」的项）
+
+- **共享锁**：MySQL 渲染 `for share` 并通过容器实测；PostgreSQL 代码同样出 `for share`，但 **PG 容器通道待 tester 波验证，发布前按「未实测」披露**；H2 没有 `FOR SHARE`，用 `for update` 兜底——**比 FOR SHARE 锁更强，是安全方向的近似，不是等价降级**。SQL Server 不提供行锁（13.4.3）。
+- **字符串长度**：默认渲染 `length(x)`；SQL Server 用 `len(x)`，而 `LEN` 会**裁掉尾随空格**（`LEN('ab ')` 与标准 `CHAR_LENGTH` 不等价），是已披露的方言语义差异、不是缺陷——**跨库依赖长度的查询在 SQL Server 上会少算尾随空格**。
+- **`substring` 省略长度**：H2/MySQL/PostgreSQL 可下发 `substring(x, pos)`；SQL Server 的 `SUBSTRING` 必须带长度参数，实现用 `substring(x, pos, 2147483647)`（int 上界）表达「到结尾」，该上界形态**已在 SQL Server 容器实测通过**（方言惯用法，语义为截取到结尾）。
+- **生成键策略**：四种内置方言都只支持 `IDENTITY`/`AUTO`；`SEQUENCE`/`TABLE` 统一拒绝（13.4.3）。
+- 以上差异的渲染钩子集中在 `JdbcDialect`，自定义方言必须遵守 [DESIGN.md](DESIGN.md) §6.1「方言接缝」的不变量；语义差异列入 §7.1 对应 CUT 的代价与触发器，而不是当作「实现细节」。
 
 ## 14. 何时不用本库
 
@@ -583,19 +816,39 @@ orders.updateAll(List.of(order));
 - 复杂报表 SQL（窗口函数、多表聚合、方言函数）→ 用 `@Query` 原生查询。
 - 需要实体图/级联策略深度控制 → 用 Hibernate 原生 API。
 
-## 15. 3.x 不提供的能力
+## 15. 3.1.0 起提供的能力与仍不提供的能力
 
-下面这些在 2.2.3 存在但在 point-mall / id-generator 零调用点，3.x 一律不提供（逐条理由见 [CHANGELOG.md](../CHANGELOG.md)）：
+3.0.0 的「不提供」清单是按**内部证据缺席**裁的：point-mall 零调用点、共享测试套件没有正例。但证据面当时已经被整体删掉了——2.2.3 的 `nextentity-examples`（37 个 Java 文件 = 20 主 + 17 测试）从未移植到 3.0.0，而它用遍了下面这些 API。拿一个被删除的语料证成「没人用」是循环论证；3.1.0 按**恢复**处理（逐条理由、代价与 revisit 触发器见 [DESIGN.md](DESIGN.md) §7.1，具体调用点见 [CHANGELOG.md](../CHANGELOG.md) `[3.1.0]` 节）。纯加性恢复按语义化版本属 MINOR，故本版是 3.1.0 而不是补丁版。
 
-| 能力 | 2.2.3 写法 | 3.x 替代 |
-|---|---|---|
-| 静态元模型 | `where(Order_.status)` | `where(Order::getStatus)` |
-| 显式 fetch | `.fetch(Order::getCustomer)` | `@EntityGraph` / 原生 API / 投影 |
-| DTO/record 投影 | `select(OrderRow.class)` | `project(mapper)` 手写映射（§6.1）；或 `Tuple2`/`Tuple3`/`ProjectionMappers` + `andThen`（§6、§6.2） |
-| 按条件更新/删除 | `update().set(..).where(..)` / `delete().where(..)` | `@Modifying @Query` |
-| 子查询 | `toSubQuery()` | `@Query` 原生/JPQL |
-| `*IfPresent` 命名 | `eqIfPresent(..)` | `eqIfNotNull(..)`（语义相同） |
-| `notLike` / `startsWith` / `endsWith` | 字符串算子 | `contains(...)` / `like("v%")` / `like("%v")` |
-| `sliceWithoutCount` | 免 count 分页 | 用 `@Query` 取 `List` 自己算 |
+### 15.1 3.1.0 起提供
+
+| 能力 | 2.2.3 写法 | 3.1.0 用法 | 详见 |
+|---|---|---|---|
+| 显式 fetch | `.fetch(Order::getCustomer)` | 同形（`FetchStep` 6 个方法；不能链两次、最多 3 条 `Path`，见 §8.1） | §8.1 |
+| DTO / record 投影 | `select(OrderRow.class)` | 同形；只覆盖扁平映射（属性名 = 实体单层属性名），去重用 `distinct().select(OrderRow.class)`；嵌套/改名仍用 `project(ProjectionMapper)` | §6.3 |
+| 按条件更新 / 删除 | `update().set(..).where(..).execute()` / `delete().where(..).execute()` | 同形，返回受影响行数 | §10.1 |
+| `startsWith` / `endsWith` / `notLike`（及取反族、`IfNotNull` / `IfNotEmpty` 变体） | `where(..).startsWith("A")` | 同形 | §3.8 |
+| `lower` / `upper` / `trim` / `substring` / `length` | `where(..).lower().contains("a")` | 同形 | §3.9 |
+| `groupBy` 之后的 `count()` / `exists()` / 分页取行 | `.groupBy(..).having(..).count()` | 同形 | §7.4 |
+| `Slice.offset()` / `limit()` | `slice.offset()` | 同形 | §4 |
+| `PESSIMISTIC_READ` | `.lock(LockMode.PESSIMISTIC_READ)` | 同形 | §9 |
+| `lock(...)` 之后分页 | `.lock(..).list(offset, limit)` | 同形（`Collector` 上的重载） | §9 |
+| JDBC 后端的列类型 / 映射 / 生成键 / 写关联 | — | 见 §13.4 的 3.1.0 支持面 |
+
+### 15.2 仍不提供
+
+| 能力 | 2.2.3 写法 | 3.1.0 替代 | 为什么仍不提供 / 何时重审 |
+|---|---|---|---|
+| 静态元模型 | `where(Order_.status)` | `where(Order::getStatus)` | 注解处理器不在本库目标内；重审触发：出现必须脱离方法引用生成查询的消费方 |
+| 子查询 | `toSubQuery()` | `@Query` 原生 / JPQL | DSL 只覆盖平坦查询，子查询的跨方言渲染与对拍成本远高于收益；重审触发：需要 DSL 内子查询且能给出跨方言差分用例 |
+| `*IfPresent` 命名 | `eqIfPresent(..)` | `eqIfNotNull(..)`（语义相同） | 纯命名别名，没有新语义；重审触发：4.0 允许破坏性重命名时 |
+| `sliceWithoutCount` | 免 count 分页 | `Collector.list(offset, limit)`（`lock` 后的分页靠它），或自己取 `List` 再算总数 | `Slice` 的语义绑定 `total`，免 count 是另一个返回类型；重审触发：免 count 分页成为消费方热点并给出用例 |
+| 多列 `distinct` 的 `count()` / `exists()` | `.distinct().select(a, b).count()` | `distinct().select(a, b).list()` 后内存去重计数 | `COUNT(DISTINCT a, b)` 在 MySQL / PostgreSQL / SQL Server 形状不同，单列近似会静默错数；重审触发：给出跨方言差分 oracle 与口径 |
+| 字符串算子/函数挂在 `Path.of(...)` 上 | `Path.of(Employee::getName).startsWith(prefix)` | 从 `where(Employee::getName)` 进入算子（§3.8、§3.9） | 这些方法只在 `StringOperator` 上，`StringPath` 保持原 `StringOps`；给 `Path` 的所有实现方（含 JPA/JDBC/自定义路径）加方法会制造源码义务。重审触发：真实消费方需要在 `select(...)` 的路径上调用这些函数 |
+| 函数结果上的 `in` / `notIn` / `isNull` / `isNotNull` | `where(..).lower().in(...)` | 等价改写为显式条件，或在内存里过滤 | `in` / `isNull` 的语义针对**属性**，对函数结果没有确定的 SQL 对应物；命中抛 `UnsupportedOperationException`。重审触发：SQL 方言给出可移植的函数结果 NULL/IN 语义 |
+| 计算列投影（函数结果进 `select`） | `select(Path.of(name).lower())` | 原生 `@Query` 或后端 SQL（§6.3 的 `select(Class)` 只装属性列） | 投影管线只接受属性路径（`NumberOperator` 不 extends `Expression`），不是外部约束；代价是函数计算结果无法直接映射到 DTO 字段。重审触发：examples 或真实消费方出现该用法 |
+| 七列以上的 `select(...)` | `select(c1..c8)` | `ProjectionMappers` 封顶六列；七列以上自定义 `ProjectionMapper` | `ExcessiveParameterListSix` 把参数上限定在 6；重审触发：语言/规则允许更多参数或出现不可拆的宽投影 |
+
+「聚合投影上的 `count()`」仍被显式拒绝（见 §5、§7.3）：SQL 需要子查询计数；`groupBy` / `having` 之后的 `count()` / `exists()` / 分页**已恢复**（§7.4），两者不是一回事，不要混用口径。
 
 
