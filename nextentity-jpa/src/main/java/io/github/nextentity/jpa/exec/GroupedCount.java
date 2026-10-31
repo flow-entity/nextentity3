@@ -80,7 +80,13 @@ final class GroupedCount {
         try {
             return (CriteriaQuery<Long>) createCountQuery.invoke(grouped);
         } catch (InvocationTargetException e) {
-            throw unsupported(provider, CREATE_COUNT_QUERY + " 抛异常: " + e.getCause());
+            // 走到这里说明类型与方法都已解析成功，provider 就是 Hibernate 6+：失败来自这次求值本身，
+            // 不能归因成「provider 不支持」——那样三条处置（换 provider / 改 exists / 换 JDBC）都治不了真原因。
+            // 原始异常必须挂成 cause，否则根因堆栈只剩一行 toString。
+            throw new UnsupportedOperationException(
+                    "「组数统计」不可用：provider 已解析，" + CREATE_COUNT_QUERY + "() 求值失败: " + e.getCause()
+                            + "；可用 exists() 判断是否有组，或改用 JDBC 后端；已用 provider=" + provider,
+                    e.getCause());
         } catch (ReflectiveOperationException e) {
             throw unsupported(provider, "调用 " + CREATE_COUNT_QUERY + " 失败: " + e);
         }

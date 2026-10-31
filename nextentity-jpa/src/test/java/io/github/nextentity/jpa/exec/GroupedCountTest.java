@@ -58,10 +58,14 @@ class GroupedCountTest {
                     return null;
                 });
 
+        // 构造到这里类型与方法都已解析成功（provider 就是 Hibernate 6+），失败发生在求值阶段：
+        // 文案不能再把原因归给「provider 不支持」，原始异常也必须挂成 cause，否则根因堆栈丢失。
         assertThatThrownBy(() -> counter.countQuery(exploding))
                 .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessageContaining("createCountQuery 抛异常")
-                .hasMessageContaining("boom");
+                .hasMessageContaining("createCountQuery() 求值失败")
+                .hasMessageContaining("boom")
+                .hasMessageNotContaining("当前 JPA provider 不支持")
+                .hasCauseInstanceOf(IllegalStateException.class);
     }
 
     /// 只用来喂「入口方法抛异常」分支：真实 provider 的入口不会抛。
