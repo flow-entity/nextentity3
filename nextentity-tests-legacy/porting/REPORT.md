@@ -148,6 +148,11 @@
 合计 +227（727 → 954），与注解总账一致；本轮**没有从已有文件里再删任何用例**——剩下的 101 条缺口
 都是前两轮已删项，本轮逐条复核并给出「仍然缺」的当前依据。
 
+> **后续（第三轮之后，`select(Class)` 补上 `@Embedded` 同名叶子回找）**：`EmbeddedProjectionIntegrationTest`
+> 的 12 条保留用例里 11 条已改回上游 `.select(<Dto>.class)` 形态（断言逐行未动），只剩跨层「DTO 字段名 ≠
+> 叶子名」那条继续用 `project(PERSON_CROSS_LAYER_BASIC)`；用例总数不变（仍 954）。知识面更新见
+> [`NOT-PORTED-round3-port-c.md`](NOT-PORTED-round3-port-c.md) 顶部「后续更新」。
+
 ## 这批语料抓到的生产代码缺陷（4 条）
 
 移植用例的价值就在这里：2.2.3 的期望值 + 3.x 的实现，跑红的地方就是缺陷。以下四条都已在

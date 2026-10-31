@@ -74,7 +74,11 @@ public interface SelectStep<T> extends DistinctStep<T> {
     ///
     /// 接口与抽象类不支持：接口投影要靠运行期代理，本轮不提供——改用 [#project(ProjectionMapper)] 手写映射器。
     ///
-    /// 属性名必须是实体的**单层**属性（`name` 可以，`department.name` 不行）：嵌套映射不属本形态。
+    /// 属性名按名匹配实体属性，先找直接属性；命不中时再到实体的 `@Embedded` 组件（可多级）里找同名叶子，
+    /// 所以嵌平投影（DTO 的 `street` ↔ 实体的 `address.street`）也属本形态。2.2.3 用 `@EntityPath`
+    /// 显式给这个映射指路，3.x 没有注解面，按名回找是唯一能表达的形态。
+    ///
+    /// 关联属性（`department.name` 那种跨表路径）仍不属本形态，用 [#project(ProjectionMapper)]；
     /// 属性名无法与实体属性做编译期校验，写错会在后端渲染时失败。
     ///
     /// 这是显式 opt-in 的按名自动映射，不是"凡是 DTO 就自动反射"：不调用本方法时行为完全不变。
@@ -86,7 +90,8 @@ public interface SelectStep<T> extends DistinctStep<T> {
     /// @param <R> 结果类型
     /// @return 后续步骤，结果类型为 `R`
     /// @throws IllegalArgumentException 目标类型没有可映射的属性（record 无组件、类无 `setXxx`），
-    ///     普通类缺无参构造器，或目标类型是接口/抽象类
+    ///     普通类缺无参构造器，目标类型是接口/抽象类，或同名叶子出现在多个 `@Embedded` 组件里
+    ///     （无法唯一确定列；用 [ProjectionMapper] 显式给路径）
     /// @throws UnsupportedOperationException 目标类型是实体类型本身却又调了 [DistinctStep#distinct()]
     <R> BaseWhereStep<T, R> select(Class<R> type);
 }

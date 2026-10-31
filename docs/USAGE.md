@@ -429,7 +429,9 @@ List<OrderRow> uniq = query().distinct().select(OrderRow.class).list();
 
 - **record**：属性名取 record component 名，按名匹配实体的单层属性；构造器用规范构造器，列序即参数序；
 - **普通类**：属性名由公开的 `setXxx` 按 JavaBeans 规则推导（`setName` → `name`，`setURL` → `URL`），需要无参构造器，**列序按属性名排序**（反射方法序不保证稳定）；
-- **只做扁平映射**：属性名必须是实体的**单层**属性（`name` 可以，`department.name` 不行）。2.2.3 的 `@EntityPath("department.name")` 这类嵌套/改名声明在 3.1.0 的 `select(Class)` 里**不提供**——嵌套、改名、计算列改用 `project(ProjectionMapper)` 手写映射器；
+- **属性名先按直接属性匹配，命不中再回找 `@Embedded` 组件里的同名叶子**（3.2.0 起，JPA 后端）：DTO 属性 `city` 会解析成 `address.city`，可多级（`zone` → `address.geo.zone`）。2.2.3 的 `@EntityPath("address.city")` 这类**声明式指路不恢复**——不提供注解面（api 零注解）；
+- **改名与计算列仍不覆盖**：DTO 属性名必须与某个叶子属性名相同，2.2.3 `@EntityPath` 里「DTO 字段名 ≠ 叶子名」的写法（如字段 `zipCode` 指向叶子 `code`）表达不出来，改用 `project(ProjectionMapper)` 手写列集；
+- **同名叶子出现在多个 `@Embedded` 组件里时显式失败**：抛 `IllegalArgumentException` 并点名属性与实体、提示改用映射器——不静默挑第一个（挑错只是让结果看着像数据问题）；
 - 接口与抽象类不支持（接口投影要靠运行期代理）：抛 `IllegalArgumentException` 并提示改用映射器；DTO 无可映射属性、普通类缺无参构造器同样在 `select(...)` 阶段抛 `IllegalArgumentException`；
 - 属性名写错**无法在编译期校验**（实体属性清单不在编译期可见），会在后端渲染/装配时失败，不会静默跳过；
 - 目标类型恰好是实体类型本身时退化为整实体查询；此时 `distinct()` 不可用——`SELECT DISTINCT 实体` 表达不出来，运行期抛 `UnsupportedOperationException`，不让旗标静默失效。
@@ -823,6 +825,7 @@ orders.updateAll(List.of(order));
 | 生成键回读 | 单列结果集取第 1 列；多列按列标签/列名匹配 id 列名；`BigInteger` 走 `getBigDecimal` 转换；窄类型做范围校验 | JPA 由提供方回填 |
 | 分组 `count()`（`groupBy` + `count()`） | 派生表原生支持（子查询计数） | JPA 侧依赖 Hibernate 6+ 的 `createCountQuery()`（单条 SQL）；其它 provider 抛 `UOE`（文案指名 provider），见 §7.4 |
 | `fetch(...)` 预取 | 显式拒绝：`UOE`（JDBC 不组装实体图、无懒加载代理，没有可兑现的语义；不静默 no-op） | JPA 渲染为 `LEFT JOIN FETCH`（同一条 SQL 载入关联），消除 N+1；JDBC 侧要读关联列请用 `project(...)` 投影或原生 SQL |
+| `select(Class)` 的 `@Embedded` 同名叶子回找 | **未实现**：DTO 属性名必须是实体的直接属性名；嵌入叶子改用 `select(EntityPath.of(X::getEmbedded).get(E::getLeaf))` 单列投影或 `project(...)`（见 §6.3） | **不同（能力差异）**：JPA 后端 3.2.0 起按名回找到 `@Embedded` 组件（可多级），多个组件同名叶子显式 `IAE` |
 | 分页 `limit = 0` | 视为不限行 | 与 JPA 一致（api 契约），单列在此说明避免误读 |
 | 事务 | 写入建立在 JDBC 自动提交上：无事务时 `update` 立即生效、不抛异常；`insertAll` 同走自动提交（`insertAll` 证据同上，见 §11） | **不同约定**（理由类型=外部约束：自动提交是 JDBC 连接层的默认行为）：JPA 侧无事务 `update` 抛 `TransactionRequiredException`、`insertAll` 静默不落库（证据在 `nextentity-tests-jpa`）。需要原子性时两个后端都用 `TransactionTemplate` 或 Spring `@Transactional` 包住（§11） |
 | DDL | 不生成，表结构自己建（测试按方言引号建表） | 不生成 |

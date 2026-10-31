@@ -4,6 +4,7 @@ import io.github.nextentity.api.model.Tuple;
 import io.github.nextentity.core.builder.TupleValue;
 import io.github.nextentity.core.spec.RowMapper;
 import io.github.nextentity.jpa.entity.AllReadOnlyFlags;
+import io.github.nextentity.jpa.entity.AmbiguousEmbeddedHolder;
 import io.github.nextentity.jpa.entity.Article;
 import io.github.nextentity.jpa.entity.Branch;
 import io.github.nextentity.jpa.entity.Customer;
@@ -89,6 +90,7 @@ abstract class JpaTestSupport {
         configuration.addAnnotatedClass(VersionedEntry.class);
         configuration.addAnnotatedClass(DerivedRecord.class);
         configuration.addAnnotatedClass(Shipment.class);
+        configuration.addAnnotatedClass(AmbiguousEmbeddedHolder.class);
         configuration.addAnnotatedClass(PriceWindow.class);
         configuration.addAnnotatedClass(Warehouse.class);
         configuration.addAnnotatedClass(Article.class);

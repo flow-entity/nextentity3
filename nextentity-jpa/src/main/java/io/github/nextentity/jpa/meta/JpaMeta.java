@@ -31,12 +31,14 @@ public final class JpaMeta {
 
     private final Metamodel metamodel;
     private final Map<Class<?>, JpaEntityType<?>> cache = new ConcurrentHashMap<>();
+    private final JpaEmbeddedPaths embeddedPaths;
 
     /// 用实体管理器工厂构建元模型。
     ///
     /// @param entityManagerFactory 实体管理器工厂，非 `null`；元模型从这里取一次
     public JpaMeta(EntityManagerFactory entityManagerFactory) {
         this.metamodel = entityManagerFactory.getMetamodel();
+        this.embeddedPaths = new JpaEmbeddedPaths(metamodel);
     }
 
     /// 取实体元数据（首次解析后缓存）。
@@ -107,6 +109,28 @@ public final class JpaMeta {
         }
         OneToOne oneToOne = annotated.getAnnotation(OneToOne.class);
         return oneToOne == null || oneToOne.mappedBy().isEmpty();
+    }
+
+    /// 该 managed type 上是否有名为 `attribute` 的属性。
+    ///
+    /// 路径解析用它在「直接命中」与「按 `@Embedded` 展开」之间分流：属性存在时行为与之前完全一样，
+    /// 只有不存在时才去嵌入组件里找同名叶子。
+    ///
+    /// @param managedType 当前所在 managed type，非 `null`
+    /// @param attribute   属性名
+    /// @return 属性存在返回 `true`
+    public boolean hasAttribute(Class<?> managedType, String attribute) {
+        return attribute(managedType, attribute) != null;
+    }
+
+    /// 嵌入路径解析器：`select(Dto.class)` 的嵌平列靠它把 DTO 属性名回找成多段路径。
+    ///
+    /// 独立成类而不是塞在这里：回找是「列名 → 多段路径」的独立算法，且本类的 PMD 圈复杂度
+    /// 已贴着类上限（60，见根 pom 的 PMD 配置）。
+    ///
+    /// @return 嵌入路径解析器，应用级共享（只读元模型，线程安全）
+    public JpaEmbeddedPaths embeddedPaths() {
+        return embeddedPaths;
     }
 
     /// 判断「某 managed type 的某段属性是不是 `@Embedded`」。

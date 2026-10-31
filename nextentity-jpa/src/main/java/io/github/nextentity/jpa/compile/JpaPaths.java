@@ -11,6 +11,7 @@ import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Order;
 import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Root;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,10 +46,27 @@ final class JpaPaths {
     }
 
     /// 把属性路径渲染成 Criteria 路径；最后一段取 `get`，前面的关联段取 `join`。
+    ///
+    /// 末段是该类型上不存在的属性时，按 `@Embedded` 组件回找同名叶子（`street` → `address.street`）：
+    /// `select(Dto.class)` 的列名就是 DTO 属性名，嵌平字段在实体上没有同名属性，只能这样接上。
+    /// 2.2.3 靠 `@EntityPath` 显式指路，3.x 没有注解面，按名回找是唯一可表达的形态。
+    ///
+    /// 回找只作用于**末段**：条件、排序的路径是调用方显式写的多段路径，不该被隐式改写。
+    /// 同名叶子在多个嵌入组件里出现时由 [io.github.nextentity.jpa.meta.JpaEmbeddedPaths] 显式拒绝。
     Path<?> path(AttributePath attributePath) {
         List<String> names = attributePath.names();
         Path<?> parent = navigate(names.subList(0, names.size() - 1));
         String attribute = names.getLast();
+        if (!meta.hasAttribute(parent.getJavaType(), attribute)) {
+            List<String> embedded = meta.embeddedPaths().resolve(parent.getJavaType(), attribute);
+            if (!embedded.isEmpty()) {
+                List<String> flattened = new ArrayList<>(names.subList(0, names.size() - 1));
+                flattened.addAll(embedded);
+                names = flattened;
+                parent = navigate(names.subList(0, names.size() - 1));
+                attribute = names.getLast();
+            }
+        }
         rejectPluralAssociation(parent.getJavaType(), attribute);
         return parent.get(attribute);
     }

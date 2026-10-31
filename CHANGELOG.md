@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`select(Class)` 支持 `@Embedded` 同名叶子回找（JPA 后端）**：DTO 属性名在实体上找不到直接属性时，再到实体的 `@Embedded` 组件（可多级）里找同名叶子——`city` → `address.city`、`zone` → `address.geo.zone`；同名叶子出现在多个 `@Embedded` 组件里时显式 `IllegalArgumentException`（不静默挑一个）。2.2.3 靠 `@EntityPath("address.street")` 注解把 DTO 属性指向嵌入列，3.x 没有注解面，按名回找是唯一可表达的形态；此前嵌平投影只能手写 `project(ProjectionMapper)`（列集与取值下标都要自己装），现在同一批 DTO 可以直接 `select(Dto.class)`。实现落点 `nextentity-jpa/src/main/java/io/github/nextentity/jpa/meta/JpaEmbeddedPaths.java`（回找算法）+ `nextentity-jpa/src/main/java/io/github/nextentity/jpa/compile/JpaPaths.java`（末段解析回退）；证据 `nextentity-tests-jpa/src/test/java/io/github/nextentity/tests/jpa/EmbeddedDtoSelectTest.java`（两层嵌入取值 + 整句 SQL + 歧义拒绝）、`nextentity-tests-legacy/src/test/java/io/github/nextentity/integration/EmbeddedProjectionIntegrationTest.java`（2.2.3 用例 11 条改回上游 `select(Dto.class)` 形态）。**边界**：仅按名匹配，改名（DTO 字段名 ≠ 叶子名）与计算列仍需 `project(ProjectionMapper)`；JDBC 后端该回找未实现（见 USAGE §6.3、§13.4.4）。
+
 ### Fixed
 
 - **JDBC `@Embedded` 默认列名与 Hibernate/JPA 不同**：JDBC 扁平化把嵌入列命名成 `<嵌入字段名>_<叶子名>`（`address.street` → `address_street`），而 Hibernate 7.1.8 的 JPA 默认命名是**裸叶子名**（`street`：`ImplicitNamingStrategyJpaCompliantImpl#transformAttributePath` 只取属性路径末段）——同一实体在 JPA 建的表上列不存在，`@Embedded`「同一实体跨后端复用」的理由被击穿，而 USAGE/DESIGN 两处都写着「与 JPA 默认命名一致」。现在默认名对齐裸叶子名；同时补 fail-fast：扁平化后列名重复（两个 `@Embedded` 嵌同一个 `@Embeddable`、或嵌入叶子与标量列同名）抛 `UOE` 并点名实体与列名，否则 `SELECT` 会把同一列读进两个属性、写侧互相覆盖。**迁移**：已按旧默认名建表（或用过该默认名）的库，加 `@AttributeOverride(name = "<叶子名>", column = @Column(name = "<原列名>"))` 保持已有列名。

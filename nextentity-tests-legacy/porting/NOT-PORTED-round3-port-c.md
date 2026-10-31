@@ -10,6 +10,14 @@
 > `project(ProjectionMapper)` 并保留断言，3 条（接口投影 / 嵌套 DTO / 注解类型不匹配静默跳过）删除。
 > 总账见 [`REPORT.md`](REPORT.md)。
 
+> **后续更新（2026-10-31，`select(Class)` 补上 `@Embedded` 同名叶子回找之后）**：3.2.0 的 `select(Class)`
+> 已支持按名回找嵌入叶子（实现 `nextentity-jpa/src/main/java/io/github/nextentity/jpa/meta/JpaEmbeddedPaths.java`
+> + `nextentity-jpa/src/main/java/io/github/nextentity/jpa/compile/JpaPaths.java`），故上表「12 条改写为
+> `project(ProjectionMapper)`」中的 **11 条已改回上游 `.select(Dto.class)` 形态**（断言逐行未动），只有
+> `shouldProjectCrossLayerEmbeddedWithEntityPath` 仍用 `project(PERSON_CROSS_LAYER_BASIC)`——它的
+> `zipCode`/`secondaryCode` 指向叶子 `code`，属「DTO 字段名 ≠ 叶子名」，按名回找表达不了。3 条删除不变。
+> 本节表格保留落盘当时的事实，看当前写法以测试源文件为准。
+
 口径：[`NOT-PORTED-port-c.md`](NOT-PORTED-port-c.md) 同款。3.x api 事实来源：
 `nextentity-api/src/main/java/io/github/nextentity/api/`（下文行号均指这里）。
 编译验证：`bash tmp/scripts/compile-legacy.sh D:/source/java/nextentity3/tmp/legacy/out-c` → **EXIT=0**；
@@ -54,7 +62,7 @@
 | `List<PathRef<Employee, ?>> paths` + `fetch(paths)` | `List<Path<Employee, ?>> paths` + `paths.add(Path.of(...))` + `fetch(paths)` | 集合重载收 `Collection<? extends Path>`（`:52-56`），`PathRef` 不是 `Path` |
 | `where(X::getParentCategory).get(Y::getName)` | `where(EntityPath.of(X::getParentCategory).get(Y::getName))` | 主语从「裸方法引用 + 链式 get」改成嵌套路径值对象（同上 `Path` 无 `get`） |
 | `selectDistinct(Dto.class)` | `distinct().project(<mapper>)` | `api/DistinctStep.java`：`selectDistinct` 一律写作 `distinct().<投影>`，distinct 可修饰 `select(Class)` 与 `project`（`api/SelectStep.java:16` `SelectStep extends DistinctStep`） |
-| `select(Dto.class)`（DTO 属性带 `@EntityPath("address.city")`） | `project(<ProjectionMapper>)`：列 = `EntityPath.of(X::getAddress).get(Address::getCity)` 等，`map(Tuple)` 按列序 new 出同一 DTO | `select(Class)` 只匹配实体**单层**属性名（`api/SelectStep.java:77`；实现 `nextentity-core/src/main/java/io/github/nextentity/core/builder/DtoProjection.java:114-116` 直接 `AttributePath.of(entityType, property)`），不展开 `@Embedded`；`project` 见 `api/SelectStep.java:66`、`api/ProjectionMapper.java`（`expressions()` 列序 + `map(Tuple)`） |
+| `select(Dto.class)`（DTO 属性带 `@EntityPath("address.city")`） | `select(<Dto>.class)`（3.2.0 起；DTO 属性名与嵌入叶子同名时按名回找）；**改名**形态仍用 `project(<ProjectionMapper>)`：列 = `EntityPath.of(X::getAddress).get(Address::getCity)` 等 | `select(Class)` 先匹配实体直接属性，命不中再回找 `@Embedded` 同名叶子（可多级；实现 `nextentity-jpa/.../meta/JpaEmbeddedPaths.java` + `compile/JpaPaths.java`；歧义抛 IAE）；「DTO 字段名 ≠ 叶子名」仍表达不了（`core/builder/DtoProjection.java:114-116` 只产出单段 `AttributePath`）；`project` 见 `api/SelectStep.java:66`、`api/ProjectionMapper.java` |
 | `context.getUpdateExecutor().insert(e, context.getEntityContext(X.class))` / `insertAll(list, ...)` | `context.operations(X.class).insert(e)` / `insertAll(list)` | 3.x 写入入口 `core/repo/EntityOperations extends PersistExecutor`（`PersistExecutor.insert(T)` / `insertAll(Iterable<T>)`），既有的 `EmbeddedCrudIntegrationTest` 同款写法 |
 | `@AfterEach tearDown { getEntityManagerContext().reset(); }` | 省略 | 3.x 装置在交付上下文前自动 `reset()`（`config/IntegrationTestProvider`），生命周期方法无副作用则省略（brief §3） |
 
@@ -63,7 +71,7 @@
 | 文件 | 用例/类 | 判定 | 依据 |
 |---|---|---|---|
 | EmbeddedProjectionIntegrationTest.java | shouldProjectEmbeddedToInterfaceWithEntityPath | 删除 | 目标是接口投影（`PersonAddressInfo`），3.x 接口投影不提供：`api/SelectStep.java:75` 明写「接口与抽象类不支持：接口投影要靠运行期代理，本轮不提供」，`:88-89` 对接口/抽象类抛 `IllegalArgumentException`；上游该用例还依赖 `@EntityPath` 注解，3.x 无此类 |
-| EmbeddedProjectionIntegrationTest.java | shouldProjectNestedEmbeddedDto | 删除 | 目标是**嵌套 DTO**（`PersonWithNestedAddressEmbedded` 里嵌 `AddressDto`），`select(Class)` 只认实体单层属性、不构造嵌套对象（`api/SelectStep.java:77` + `DtoProjection.java:114-116`）。若用 `project` 手工 new 出嵌套 DTO 再 `assertThat(dto.getAddress().getStreet())`，断言的只是映射器自己装的对象（自证循环），属弱化断言，故删 |
+| EmbeddedProjectionIntegrationTest.java | shouldProjectNestedEmbeddedDto | 删除 | 目标是**嵌套 DTO**（`PersonWithNestedAddressEmbedded` 里嵌 `AddressDto`），`select(Class)` 只按名装配扁平字段、不构造嵌套对象（嵌入回找只解决「属性名对应哪个叶子」，不解决「DTO 里有对象字段」）。若用 `project` 手工 new 出嵌套 DTO 再 `assertThat(dto.getAddress().getStreet())`，断言的只是映射器自己装的对象（自证循环），属弱化断言，故删 |
 | EmbeddedProjectionIntegrationTest.java | shouldSkipTypeMismatchInEntityPath | 删除 | 该用例唯一被测语义是「`@EntityPath` 注解声明的属性类型与实体列类型不匹配时静默跳过」（上游注释 `matchProjectionBasicAttribute returns false`）；3.x 没有注解式声明，映射器列类型编译期固定，无对位能力 |
 
 ## 待裁决（改完能跑，但怀疑与 2.2.3 断言不等价）
@@ -73,5 +81,5 @@
 ## 备注
 
 - fetch 前两轮被 `NOT-PORTED-port-d.md` 整类删除，本轮按 `api/FetchStep.java` 事实恢复，避免继续沿用旧结论。
-- `EmbeddedProjectionIntegrationTest` 的 12 条保留用例中，`select(Dto)` 的统一替换点是 `.project(<常量映射器>)`；where / orderBy / `in(...)` / `list(2)` / `getFirst()` / `extracting(...).containsExactlyInAnyOrder(...)` 全部逐行保持上游原样（含 `ProjectEmbeddedOnly` 只投影 `address.city`，使 DISTINCT 真去重这一前提）。
+- `EmbeddedProjectionIntegrationTest` 的 12 条保留用例中，`select(Dto)` 的统一替换点**当时**是 `.project(<常量映射器>)`；3.2.0 补了 `@Embedded` 同名叶子回找后，其中 11 条已改回上游 `.select(<Dto>.class)`，只剩跨层改名那条（`zipCode`/`secondaryCode` → 叶子 `code`）仍用 `project(PERSON_CROSS_LAYER_BASIC)`。where / orderBy / `in(...)` / `list(2)` / `getFirst()` / `extracting(...).containsExactlyInAnyOrder(...)` 始终逐行保持上游原样（含 `ProjectEmbeddedOnly` 只投影 `address.city`，使 DISTINCT 真去重这一前提）。
 - 三轮记档里 `filter by embedded field` 一条的上游写法是 `where(X::getAddress).get(Address::getCity).eq(...)`，迁移后是 `where(EntityPath.of(X::getAddress).get(Address::getCity)).eq(...)`；条件语义（嵌入列等值）与既有 `EmbeddedCrudIntegrationTest.shouldQueryByEmbeddedCity` 同款。
