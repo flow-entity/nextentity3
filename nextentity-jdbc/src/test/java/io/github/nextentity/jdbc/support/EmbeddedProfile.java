@@ -8,7 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 /// `@Embedded` + `@AttributeOverride`：嵌入列扁平化成一列，`city` 覆盖成 `town`，`street` 走默认命名
-/// `address_street`。
+/// `street`（与 Hibernate/JPA 一致）。
 @Entity
 @Table(name = "embedded_profile")
 public class EmbeddedProfile {

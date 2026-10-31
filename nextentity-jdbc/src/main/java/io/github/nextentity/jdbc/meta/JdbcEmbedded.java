@@ -23,7 +23,7 @@ import java.util.Set;
 
 /// `@Embedded`：把嵌入类型的标量字段扁平化成列属性（支持边界见 USAGE §13.4.1）。
 ///
-/// 列名默认 `<@Embedded 字段名>_<嵌套字段名>`（与 JPA 默认命名一致、无表前缀），`@AttributeOverride` 覆盖；
+/// 列名默认取嵌入类型的字段名（与 Hibernate/JPA 默认命名一致），`@AttributeOverride` 覆盖；
 /// 嵌套 `@Embedded`、嵌入内的 `@Id` / `@Version` / `@GeneratedValue` / 关联本轮显式拒绝——扁平化层面
 /// 表达不了这些形态，静默忽略会让实体映射出一张缺列的表。
 final class JdbcEmbedded {
@@ -53,7 +53,7 @@ final class JdbcEmbedded {
                 throw new UnsupportedOperationException("嵌入类型内字段名重复（父类字段被子类遮蔽）: " + path + "." + nested.getName());
             }
             rejectNested(nested, nestedPath);
-            String defaultColumn = field.getName() + "_" + nested.getName();
+            String defaultColumn = nested.getName();
             columns.add(JdbcColumns.scalar(
                             embeddable, nested, nestedPath, overrides.remove(nested.getName()), defaultColumn)
                     .withContainer(field, constructor));

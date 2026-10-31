@@ -29,9 +29,9 @@ import org.junit.jupiter.api.TestInstance;
 class EmbeddedEnumProjectionTest {
 
     private static final String CREATE_TABLE = "create table if not exists embedded_enum_item"
-            + " (id bigint primary key, state varchar(32), profile_status varchar(32))";
+            + " (id bigint primary key, state varchar(32), status varchar(32))";
     private static final String INSERT_ROW =
-            "insert into embedded_enum_item (id, state, profile_status) values (1, 'NEW', 'ACTIVE')";
+            "insert into embedded_enum_item (id, state, status) values (1, 'NEW', 'ACTIVE')";
 
     private final SingleConnectionDataSource dataSource = SingleConnectionDataSource.h2("phasec_embedded_enum");
     private final EntityOperations<EmbeddedEnumItemEntity> items =

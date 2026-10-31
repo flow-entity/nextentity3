@@ -61,7 +61,7 @@ class RowReaderTest {
         execute("create table if not exists status_owner (id bigint primary key, status int)");
         execute("create table if not exists owns_status_owner (id bigint primary key, owner_id bigint)");
         execute("create table if not exists embedded_item (id bigint primary key,"
-                + " details_status varchar(32), details_converted varchar(32))");
+                + " status varchar(32), converted varchar(32))");
         execute("delete from asset");
         execute("delete from owner");
         execute("delete from item");
@@ -80,7 +80,7 @@ class RowReaderTest {
         execute("insert into status_owner (id, status) values (1, 2)");
         execute("insert into owns_status_owner (id, owner_id) values (1, 1)");
         execute("delete from embedded_item");
-        execute("insert into embedded_item (id, details_status, details_converted) values (1, 'DONE', 'ACTIVE')");
+        execute("insert into embedded_item (id, status, converted) values (1, 'DONE', 'ACTIVE')");
     }
 
     private QueryBuilder<SnapshotItem, JdbcQuery> items() {

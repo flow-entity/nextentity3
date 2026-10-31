@@ -25,7 +25,7 @@ drop table if exists flag_column_item;
 drop table if exists short_versioned_item;
 drop table if exists short_generated_item;
 create table extended_item (id bigint primary key, flag_col boolean, ratio_col double precision, weight_col real, count_col smallint, price_col numeric(18,2), serial_col bigint, birth_date date, created_at timestamp, wake_time time, synced_at timestamp, sql_date date, sql_time time, sql_timestamp timestamp);
-create table embedded_profile (id bigint primary key, town varchar(64), address_street varchar(128), label varchar(64));
+create table embedded_profile (id bigint primary key, town varchar(64), street varchar(128), label varchar(64));
 create table converted_item (id bigint primary key, status varchar(32), note varchar(64));
 create table flag_column_item (id bigint primary key, name varchar(64), created_by varchar(64));
 create table short_versioned_item (id bigint primary key, name varchar(255), version smallint not null default 0);

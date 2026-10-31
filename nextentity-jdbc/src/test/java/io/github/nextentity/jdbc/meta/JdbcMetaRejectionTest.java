@@ -199,8 +199,8 @@ class JdbcMetaRejectionTest {
 
         JdbcEntityAttribute address = type.attribute("address");
         assertThat(address.isEmbedded()).isTrue();
-        assertThat(address.embeddedColumn("city").column()).isEqualTo("address_city");
-        assertThat(type.columns()).extracting(JdbcEntityAttribute::column).containsExactly("id", "address_city");
+        assertThat(address.embeddedColumn("city").column()).isEqualTo("city");
+        assertThat(type.columns()).extracting(JdbcEntityAttribute::column).containsExactly("id", "city");
     }
 
     @Test

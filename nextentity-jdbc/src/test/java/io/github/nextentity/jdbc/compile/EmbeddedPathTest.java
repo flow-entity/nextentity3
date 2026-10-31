@@ -44,8 +44,7 @@ class EmbeddedPathTest {
     void entitySelectionListsFlattenedEmbeddedColumnsInDeclarationOrder() {
         SqlStatement statement = compiler.compile(entity(null, List.of())).statement();
 
-        assertThat(statement.sql())
-                .isEqualTo("select t0.id, t0.town, t0.address_street, t0.label from embedded_profile t0");
+        assertThat(statement.sql()).isEqualTo("select t0.id, t0.town, t0.street, t0.label from embedded_profile t0");
         assertThat(statement.columnTypes()).containsExactly(Long.class, String.class, String.class, String.class);
     }
 
@@ -68,8 +67,8 @@ class EmbeddedPathTest {
                 .statement();
 
         assertThat(statement.sql())
-                .isEqualTo("select t0.id, t0.town, t0.address_street, t0.label from embedded_profile t0"
-                        + " where t0.town = ?");
+                .isEqualTo(
+                        "select t0.id, t0.town, t0.street, t0.label from embedded_profile t0" + " where t0.town = ?");
         assertThat(statement.parameters()).containsExactly("Yantai");
     }
 
@@ -80,8 +79,8 @@ class EmbeddedPathTest {
                 .statement();
 
         assertThat(statement.sql())
-                .isEqualTo("select t0.id, t0.town, t0.address_street, t0.label from embedded_profile t0"
-                        + " order by t0.address_street asc");
+                .isEqualTo("select t0.id, t0.town, t0.street, t0.label from embedded_profile t0"
+                        + " order by t0.street asc");
     }
 
     @Test
@@ -97,8 +96,8 @@ class EmbeddedPathTest {
                 null);
 
         assertThat(compiler.compile(spec).statement().sql())
-                .isEqualTo("select t0.id, t0.town, t0.address_street, t0.label from embedded_profile t0"
-                        + " group by t0.address_street");
+                .isEqualTo(
+                        "select t0.id, t0.town, t0.street, t0.label from embedded_profile t0" + " group by t0.street");
     }
 
     @Test

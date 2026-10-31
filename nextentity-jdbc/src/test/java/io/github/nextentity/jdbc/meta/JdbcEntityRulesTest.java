@@ -356,7 +356,7 @@ class JdbcEntityRulesTest {
         assertThat(address.embeddedColumns())
                 .extracting(JdbcEntityAttribute::name)
                 .containsExactly("city");
-        assertThat(type.columns()).extracting(JdbcEntityAttribute::column).containsExactly("id", "address_city");
+        assertThat(type.columns()).extracting(JdbcEntityAttribute::column).containsExactly("id", "city");
     }
 
     @Test
@@ -364,7 +364,7 @@ class JdbcEntityRulesTest {
         JdbcEntityAttribute address = meta.entityType(EmbeddableTypeField.class).attribute("address");
 
         assertThat(address.isEmbedded()).isTrue();
-        assertThat(address.embeddedColumn("city").column()).isEqualTo("address_city");
+        assertThat(address.embeddedColumn("city").column()).isEqualTo("city");
     }
 
     @Test

@@ -144,7 +144,7 @@ class WriteSqlTest {
         SqlStatement statement = WriteSql.insert(meta, meta.entityType(EmbeddedProfile.class), profile, dialect);
 
         assertThat(statement.sql())
-                .isEqualTo("insert into embedded_profile (id, town, address_street, label) values (?, ?, ?, ?)");
+                .isEqualTo("insert into embedded_profile (id, town, street, label) values (?, ?, ?, ?)");
         assertThat(statement.parameters()).containsExactly(5L, "Yantai", "No. 1", "home");
     }
 
@@ -345,8 +345,7 @@ class WriteSqlTest {
 
         SqlStatement statement = WriteSql.update(meta, meta.entityType(EmbeddedProfile.class), profile, dialect);
 
-        assertThat(statement.sql())
-                .isEqualTo("update embedded_profile set town=?, address_street=?, label=? where id=?");
+        assertThat(statement.sql()).isEqualTo("update embedded_profile set town=?, street=?, label=? where id=?");
         assertThat(statement.parameters()).containsExactly("Yantai", "No. 1", "home", 5L);
     }
 

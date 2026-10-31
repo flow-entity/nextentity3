@@ -41,11 +41,11 @@ class JdbcEmbeddedTest {
                 .extracting(JdbcEntityAttribute::name)
                 .containsExactly("city", "street");
         assertThat(address.embeddedColumn("city").column()).isEqualTo("town");
-        assertThat(address.embeddedColumn("street").column()).isEqualTo("address_street");
+        assertThat(address.embeddedColumn("street").column()).isEqualTo("street");
         assertThat(address.embeddedColumn("zip")).isNull();
         assertThat(type.columns())
                 .extracting(JdbcEntityAttribute::column)
-                .containsExactly("id", "town", "address_street", "label");
+                .containsExactly("id", "town", "street", "label");
     }
 
     @Test
@@ -70,7 +70,7 @@ class JdbcEmbeddedTest {
         assertThat(address.embeddedColumns())
                 .extracting(JdbcEntityAttribute::name)
                 .containsExactly("city");
-        assertThat(type.columns()).extracting(JdbcEntityAttribute::column).containsExactly("id", "address_city");
+        assertThat(type.columns()).extracting(JdbcEntityAttribute::column).containsExactly("id", "city");
     }
 
     @Test
@@ -136,9 +136,7 @@ class JdbcEmbeddedTest {
         assertThat(type.attribute("address").embeddedColumns())
                 .extracting(JdbcEntityAttribute::name)
                 .containsExactly("city", "street");
-        assertThat(type.columns())
-                .extracting(JdbcEntityAttribute::column)
-                .containsExactly("id", "address_city", "address_street");
+        assertThat(type.columns()).extracting(JdbcEntityAttribute::column).containsExactly("id", "city", "street");
     }
 
     @Test
@@ -183,7 +181,7 @@ class JdbcEmbeddedTest {
         assertThat(type.attribute("address").embeddedColumns())
                 .extracting(JdbcEntityAttribute::name)
                 .containsExactly("street");
-        assertThat(type.columns()).extracting(JdbcEntityAttribute::column).containsExactly("id", "address_street");
+        assertThat(type.columns()).extracting(JdbcEntityAttribute::column).containsExactly("id", "street");
     }
 
     @Test
@@ -195,7 +193,15 @@ class JdbcEmbeddedTest {
                 .containsExactly("city", "zip", "street");
         assertThat(type.columns())
                 .extracting(JdbcEntityAttribute::column)
-                .containsExactly("id", "address_city", "address_zip", "address_street");
+                .containsExactly("id", "city", "zip", "street");
+    }
+
+    @Test
+    void duplicateColumnNamesInsideOneEntityAreRejected() {
+        assertThatThrownBy(() -> meta.entityType(DuplicateColumnEntity.class))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessage("同一实体内列名重复: " + DuplicateColumnEntity.class.getName() + " -> city"
+                        + "（同一可嵌入类型多次嵌入请用 @AttributeOverride 指定不同列名）");
     }
 
     // ---------------------------------------------------------------- 夹具
@@ -567,5 +573,19 @@ class JdbcEmbeddedTest {
     static class ShadowedAddress extends ShadowedBase {
 
         private String street;
+    }
+
+    @Entity
+    @Table(name = "embedded_duplicate_column")
+    static class DuplicateColumnEntity {
+
+        @Id
+        private Long id;
+
+        @Embedded
+        private EmbeddedAddressOnly home;
+
+        @Embedded
+        private EmbeddedAddressOnly office;
     }
 }

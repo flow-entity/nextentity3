@@ -30,8 +30,8 @@ final class JdbcColumns {
         return scalar(type, field, path, null, field.getName());
     }
 
-    /// 嵌入列的重载：`overrideColumn` 来自 `@AttributeOverride`（优先，整份列映射替换），`defaultColumn` 是 JPA
-    /// 默认命名 `<@Embedded 字段名>_<嵌套字段名>`；两者都缺时回落 `@Column(name)` / 字段名。
+    /// 嵌入列的重载：`overrideColumn` 来自 `@AttributeOverride`（优先，整份列映射替换），`defaultColumn` 是
+    /// 叶子字段名（与 Hibernate/JPA 默认命名一致）；两者都缺时回落 `@Column(name)` / 字段名。
     static JdbcEntityAttribute scalar(
             Class<?> type, Field field, String path, Column overrideColumn, String defaultColumn) {
         boolean id = field.isAnnotationPresent(Id.class);

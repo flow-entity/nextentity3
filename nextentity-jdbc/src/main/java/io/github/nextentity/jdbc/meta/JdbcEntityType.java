@@ -3,8 +3,10 @@ package io.github.nextentity.jdbc.meta;
 import io.github.nextentity.core.meta.EntityType;
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /// `EntityType` 的注解扫描实现：表名、属性表、`@Id` / `@Version` 句柄。
 ///
@@ -30,7 +32,7 @@ public final class JdbcEntityType<T> implements EntityType<T> {
         this.table = scanned.table();
         this.tableQuoted = scanned.tableQuoted();
         this.attributes = scanned.attributes();
-        this.columns = flattened(scanned.attributes());
+        this.columns = flattened(scanned.type(), scanned.attributes());
         this.attributesByName = scanned.attributesByName();
         this.id = scanned.id();
         this.version = scanned.version();
@@ -103,13 +105,22 @@ public final class JdbcEntityType<T> implements EntityType<T> {
         }
     }
 
-    private static List<JdbcEntityAttribute> flattened(List<JdbcEntityAttribute> attributes) {
+    /// 扁平化后同一列名只允许出现一次：重复会让 SELECT 把同一列读进两个属性、写入互相覆盖（静默错数据）。
+    private static List<JdbcEntityAttribute> flattened(Class<?> type, List<JdbcEntityAttribute> attributes) {
         List<JdbcEntityAttribute> columns = new ArrayList<>();
         for (JdbcEntityAttribute attribute : attributes) {
             if (attribute.isEmbedded()) {
                 columns.addAll(attribute.embeddedColumns());
             } else {
                 columns.add(attribute);
+            }
+        }
+        Set<String> names = new HashSet<>();
+        for (JdbcEntityAttribute column : columns) {
+            String name = column.column();
+            if (name != null && !names.add(name)) {
+                throw new UnsupportedOperationException(
+                        "同一实体内列名重复: " + type.getName() + " -> " + name + "（同一可嵌入类型多次嵌入请用 @AttributeOverride 指定不同列名）");
             }
         }
         return List.copyOf(columns);
