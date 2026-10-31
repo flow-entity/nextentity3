@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// <p>
 /// 唯一例外是跨层嵌入：`PersonCrossLayerBasic.zipCode` / `secondaryCode` 指向叶子 `code`，名字对不上，
 /// 按名回找表达不了，仍用 `project(ProjectionMapper)` 显式给列。接口投影、嵌套 DTO、注解类型不匹配
-/// 三例删除，见 `porting/NOT-PORTED-round3-port-c.md`。
+/// 三例删除。
 @DisplayName("Embedded Projection Integration Tests")
 public class EmbeddedProjectionIntegrationTest {
 

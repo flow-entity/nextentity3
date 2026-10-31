@@ -266,7 +266,7 @@ public final class LegacyHarness implements AutoCloseable {
         ///
         /// 所以条件改删用例按 **调用点显式包事务** 书写：`context.doInTransaction(() -> operations(x).update()…execute())`，
         /// 这与 2.2.3 `TransactionUpdateExecutor` 的"执行器兜住事务"语义等价，是本模块唯一一处
-        /// 「调用形态需要额外包一层」的差异（见 porting/REPORT.md「与上游的形态差异」）。
+        /// 「调用形态需要额外包一层」的差异。
         @Override
         public io.github.nextentity.api.UpdateSetStep<T> update() {
             return delegate.update();

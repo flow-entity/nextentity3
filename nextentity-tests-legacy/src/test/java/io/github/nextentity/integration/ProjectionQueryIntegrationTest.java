@@ -21,9 +21,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// <p>
 /// 3.x 的 DTO 投影只有 `select(Class)` 一种入口，目标形态两类：record（属性名取规范构造器参数名，
 /// 列序即参数序）与普通类（属性名由公开 `setXxx` 定位，需无参构造器，列序按属性名排序）；接口/抽象类
-/// 不支持（要运行期代理，本轮不提供，抛 `IllegalArgumentException`）。证据 `api/SelectStep.java:68-91`
-/// 与 `api/DistinctStep.java`。接口投影共 12 条、LAZY 接口投影 3 条，均删除，见
-/// `porting/NOT-PORTED-round3-port-d.md`。
+/// 不支持（要运行期代理，本轮不提供，抛 `IllegalArgumentException`）。证据 `api/SelectStep`
+/// 与 `api/DistinctStep`。接口投影共 12 条、LAZY 接口投影 3 条，均删除。
 ///
 /// @author HuangChengwei
 @DisplayName("Projection Query Integration Tests")

@@ -80,7 +80,7 @@
 
         <!-- 容器通道的公共开关。放在根 pom 而不是各测试模块里：这套值漏在任何一个模块外，
              那个模块的容器通道就会以「Could not find a valid Docker environment」静默降级
-             （`nextentity-tests-legacy` 就这么漏了一整轮，见 CHANGELOG 3.0.0 条目）。 -->
+             （`nextentity-tests-legacy` 就这么漏了一整轮）。 -->
         <!-- 容器通道要跟 Docker 守护进程说同一个 API 版本：Testcontainers 1.20.4 内置的 docker-java
              把请求钉在 1.32，而 Docker 25 起逐步淘汰旧版本（29.x 直接对 1.32 回 400 Bad Request，
              表现为「Could not find a valid Docker environment」，且**所有**策略都被判无效）。
@@ -363,8 +363,7 @@
                 <!--
                   变异测试（PIT）：刻意不绑生命周期，只在显式 `mvn pitest:mutationCoverage` 时执行。
                   它是「测得够不够」的度量尺，不是每次提交都要跑的关卡——绑进 verify 会让门禁多花几分钟，
-                  而结论一周看一次就够。阈值不在这里设：它随各模块的实测基线定在模块 pom 里，
-                  见 docs/DESIGN.md §5「度量体系」。
+                  而结论一周看一次就够。阈值不在这里设：它随各模块的实测基线定在模块 pom 里。
                 -->
                 <plugin>
                     <groupId>org.pitest</groupId>

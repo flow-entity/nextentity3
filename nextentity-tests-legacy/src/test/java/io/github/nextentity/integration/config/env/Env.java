@@ -11,7 +11,7 @@ import java.util.function.Supplier;
 /// 选择本次要跑的数据库环境：`-Ddbc=h2,mysql`。
 ///
 /// 默认只有 `h2`——遗留用例要进默认门禁，就不能让一次全量构建依赖 Docker。
-/// 加了 `mysql` 才起容器，见模块 README 的"怎么跑"。
+/// 加了 `mysql` 才起容器。
 public class Env {
 
     private static final Map<String, Supplier<DatabaseEnvironmentVariables>> SUPPLIERS = new LinkedHashMap<>();

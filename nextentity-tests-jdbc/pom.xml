@@ -85,7 +85,7 @@
         <!-- 没有 main 字节码，不跑二进制扫描 -->
         <spotbugs.skip>true</spotbugs.skip>
         <!-- `docker.api.version` / `nextentity.requireContainer` / 镜像源集中在根 pom：
-             容器通道的公共开关一处定义，漏注入的模块会静默降级（见根 pom 注释）。 -->
+             容器通道的公共开关一处定义，漏注入的模块会静默降级。 -->
         <!-- jacoco prepare-agent 写 argLine 属性；`-Djacoco.skip=true` 时属性不存在，
              late-replacement `@{argLine}` 会报错，所以先给空默认值（同 nextentity-tests-jpa）。 -->
         <argLine></argLine>
@@ -98,7 +98,7 @@
               failsafe 默认 includes 是 `**/IT*` / `**/*IT` / `**/*ITCase`，与项目约定的 `*IntegrationTest`
               不匹配——不显式覆盖时容器用例会被 surefire 跑掉、failsafe 一条也收不到。
               H2 用例在 MySQL 兼容模式（`MODE=MySQL`）下建库并用的原因：NULL 排序默认值等语义要对齐
-              MySQL 这一侧，否则「H2 绿、MySQL 红」要靠容器通道才发现（见 docs/DESIGN.md §5）。
+              MySQL 这一侧，否则「H2 绿、MySQL 红」要靠容器通道才发现。
             -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

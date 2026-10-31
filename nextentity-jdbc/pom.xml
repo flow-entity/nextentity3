@@ -57,7 +57,7 @@
             <!--
               依赖方向门禁：jdbc 是后端实现，只许依赖 core（+ jakarta.persistence-api）。
               不得依赖 jpa / spring / testing / Hibernate——一旦依赖，加载器就不再是「独立第二实现」，
-              而成了 JPA 后端的分身（DESIGN §2 / §6）。
+              而成了 JPA 后端的分身。
             -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

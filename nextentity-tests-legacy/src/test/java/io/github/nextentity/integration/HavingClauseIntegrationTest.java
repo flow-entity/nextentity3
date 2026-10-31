@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// <p>
 /// 3.x 的 having 入口是 `api/HavingStep#having`（`BaseWhereStep` 继承它），多次 `having(...)` 按 AND 累加，
 /// 条件里的 `AggregateValue` 可以比较与取区间。3.1.0 起 `having` 之后的 `count()` / `exists()` 数的是
-/// **组数**、分页窗口作用在**组**上（`api/Collector.java:13-21`、`api/Collector.java:44-46`），
+/// **组数**、分页窗口作用在**组**上（`api/Collector` 的 `count` / `exists`），
 /// 因此 22 条逐字对位。
 /// <p>
 /// These tests run against MySQL and PostgreSQL using 测试containers.

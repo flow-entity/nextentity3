@@ -27,8 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// 3.x 的对位改动只有调用形态：`.list(offset, limit)` → `.slice(offset, limit).data()`、
 /// `Predicate.and(PathRef)` → `and(Path.of(...).op(...))`、四~五列 → `project(ProjectionMappers.select(...))`、
 /// 多列 `selectDistinct(...)` → `distinct().select(...)`；`select(Class)` 保留——3.2 的目标类型恰为实体类型时
-/// 退化成整实体查询（`nextentity-api/src/main/java/io/github/nextentity/api/SelectStep.java:91`，该分支见
-/// `nextentity-api/src/main/java/io/github/nextentity/api/SelectStep.java:9-12`）。断言原样保留。
+/// 退化成整实体查询（`api/SelectStep` 的目标类型分支）。断言原样保留。
 class EntityQueryIntegrationTest {
 
     // Test data constants - Employees

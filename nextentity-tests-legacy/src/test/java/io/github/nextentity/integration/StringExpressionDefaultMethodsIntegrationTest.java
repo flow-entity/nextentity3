@@ -1106,7 +1106,7 @@ public class StringExpressionDefaultMethodsIntegrationTest {
     @ArgumentsSource(IntegrationTestProvider.class)
     @DisplayName("Should use NOT on string predicate")
     void shouldUseNotOnStringPredicate(IntegrationTestContext context) {
-        // not() 在 3.x 只存在于 Predicate/LogicalOps（api/LogicalOps.java:58），
+        // not() 在 3.x 只存在于 Predicate/LogicalOps（api/LogicalOps），
         // 链式条件用 not* 族算子达到同一语义。
         // When
         List<Employee> employees = context.queryEmployees()

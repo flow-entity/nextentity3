@@ -120,7 +120,7 @@ class NextEntityAutoConfigurationTest {
     ///
     /// 已知且刻意保留的行为：契约要求「全上下文恰好一个」，由调用方保证不重复定义；本库不回退，
     /// 所以重复定义会在注入点抛 `NoUniqueBeanDefinitionException`（早失败好过静默用错的那个）。
-    /// 若哪天加了 `@ConditionalOnMissingBean`，这条会红——那时要改的是契约文档，不是放宽断言。
+    /// 若哪天加了 `@ConditionalOnMissingBean`，这条会红——那时要改的是契约，不是放宽断言。
     @Test
     void doesNotBackOffWhenApplicationDefinesItsOwnFactory() {
         runner.withPropertyValues(ENABLED + "=true")

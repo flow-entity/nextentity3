@@ -17,8 +17,8 @@
     <dependencies>
         <!-- api 零三方依赖：锁模式用自研 api.LockMode，不引入任何持久化/后端类型 -->
         <!--
-          下面两个是 test 作用域，只为变异测试存在：api 的用例住在 core 的测试树
-          （理由见 docs/DESIGN.md §5「api 值层断言的落点」），而 PIT 要在本模块里跑，
+          下面两个是 test 作用域，只为变异测试存在：api 的测试只钉自己产出的线格式
+          （值 → Spec 节点的翻译证据在 core），而 PIT 要在本模块里跑，
           就得让本模块的测试类路径上有 JUnit 5 与 AssertJ。test 作用域不进发布产物。
         -->
         <dependency>
@@ -56,7 +56,7 @@
                                         <exclude>*:*:*:*:provided</exclude>
                                         <exclude>*:*:*:*:system</exclude>
                                     </excludes>
-                                    <message>api 的发布产物必须零三方依赖：compile / runtime / provided 一律下沉到 core 或后端模块。只有 test 作用域可用——它不进 jar，只服务本模块的变异测试（见 docs/DESIGN.md §5）</message>
+                                    <message>api 的发布产物必须零三方依赖：compile / runtime / provided 一律下沉到 core 或后端模块。只有 test 作用域可用——它不进 jar，只服务本模块的变异测试</message>
                                 </bannedDependencies>
                             </rules>
                         </configuration>

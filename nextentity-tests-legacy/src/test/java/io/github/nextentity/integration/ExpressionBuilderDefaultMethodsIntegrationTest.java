@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// （`api/NumberPath` 继承 `api/NumberArithmetic`），但没有 `*IfNotNull` 变体，`null` 短路不可表达，
 /// 因此只移植非空值分支与链式/组合用例；字符串侧可对位的是 `StringOps.likeIfNotNull`。
 /// 第三轮回填 `StringFunctions.substring(int)` / `length()` 两个用例；`*WithNullValue` 与 `likeIfNotEmpty`
-/// 仍删除（见 `porting/NOT-PORTED-port-b.md` 与 `porting/NOT-PORTED-round3-port-b.md`）。
+/// 仍删除。
 ///
 /// @author HuangChengwei
 @DisplayName("ExpressionBuilder Default Methods Integration Tests")

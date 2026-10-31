@@ -270,7 +270,7 @@ public class EdgeCasesIntegrationTest {
     /// 3.x 在 `api/Collector.java` 的 `list(int offset, int limit)` 上明确
     /// `@throws IllegalArgumentException offset 或 limit 为负数`（`core/spec/Window.java` 构造期就拒绝），
     /// 所以这里保持上游调用形态 `.list(-1, 5)`，只把期望改成断言该契约——负偏移若被静默当成 0，
-    /// 调用方会拿到一页错位的数据却毫无察觉。裁决记录见 `porting/REPORT.md`「本轮裁决」。
+    /// 调用方会拿到一页错位的数据却毫无察觉。
     @ParameterizedTest
     @ArgumentsSource(IntegrationTestProvider.class)
     @DisplayName("Should reject negative offset")

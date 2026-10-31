@@ -23,8 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// Select API integration tests.
 ///
 /// 3.x 投影面：单列 / 两列 `Tuple2` / 三列 `Tuple3` / 四~六列 `ProjectionMappers` / `distinct()`（含多列）/
-/// `select(Class)`（整实体投影，§12）。七列以上、`select(Collection)`、`select(List)` 无对位，对应用例删除
-/// （见 `porting/NOT-PORTED-round3-port-d.md`）。
+/// `select(Class)`（整实体投影）。七列以上、`select(Collection)`、`select(List)` 无对位，对应用例删除。
 ///
 /// @author HuangChengwei
 @DisplayName("Select API Integration Tests")

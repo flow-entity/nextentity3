@@ -350,7 +350,6 @@ public class CrudOperationsIntegrationTest {
     // 而它自己的注释写的是「should not throw exception」——断言与注释自相矛盾。
     // 3.x 的写入接缝按调用点裁掉了 `delete`，删除由消费方的 Spring Data 承担，这里没有被测对象；
     // 若把断言指向测试装置里的 `delete` 辅助方法，证明的只是辅助方法自己，与库无关。
-    // 裁决记录见 `tmp/legacy/ADJUDICATION.md` 第 1 条。
 
     ///
     /// 测试s inserting employee with null email.
