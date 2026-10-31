@@ -23,8 +23,8 @@ import org.junit.jupiter.api.Test;
 /// 标识符引用端到端：注解用反引号标记的保留字表 / 列，经工厂 + 自定义「双引号」方言在 H2 上
 /// 完成 insert / insertAll / update / select / count。
 ///
-/// 约束：H2 里建的是双引号小写标识符，注入的方言 `quote` 也产双引号 —— 与内置 H2 方言的引用字符
-/// （Lead 裁决：双引号）一致，但本用例不依赖内置方言实现，直接用自定义方言把链路走通。
+/// 约束：H2 里建的是双引号小写标识符，注入的方言 `quote` 也产双引号 —— 与内置 H2 方言的引用字符一致，
+/// 但本用例不依赖内置方言实现，直接用自定义方言把链路走通。
 class QuotedIdentifierE2ETest {
 
     private static final String URL = "jdbc:h2:mem:quoted_e2e;MODE=MySQL;DB_CLOSE_DELAY=-1";

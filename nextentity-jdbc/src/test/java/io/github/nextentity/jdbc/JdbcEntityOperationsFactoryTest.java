@@ -22,7 +22,7 @@ import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 
 /// 门面装配：`DataSource` 构造期探测产品名、显式方言注入、四个零件的接线、
-/// 以及探测失败/未知产品名的拒绝（#20）。
+/// 以及探测失败/未知产品名的拒绝。
 class JdbcEntityOperationsFactoryTest {
 
     private static final String URL = "jdbc:h2:mem:factory_probe;MODE=MySQL;DB_CLOSE_DELAY=-1";

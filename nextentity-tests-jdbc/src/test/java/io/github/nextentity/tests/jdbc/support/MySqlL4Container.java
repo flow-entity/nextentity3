@@ -8,7 +8,7 @@ import org.testcontainers.utility.DockerImageName;
 /// L4 的容器：一个 JVM 起一个 MySQL，所有容器用例类共享同一个实例与同一个库。
 ///
 /// 与 `nextentity-tests-jpa` 的容器**复刻不共享**：那边在它的 `src/test` 里（没有 test-jar），
-/// 依赖它会拖进 Hibernate / Spring，违反 AGENTS「jdbc 不得依赖 Hibernate」。
+/// 依赖它会拖进 Hibernate / Spring，违反「jdbc 不得依赖 Hibernate」的分层约定。
 ///
 /// 单例的理由是预算：容器冷启动几十秒，按类起一次会把 31 个类拖成「没人跑」。Docker 不可用时
 /// 由 [L4Gate] 先跳过；只有加了 `-Dnextentity.requireContainer=true` 才会故意放行、让这里

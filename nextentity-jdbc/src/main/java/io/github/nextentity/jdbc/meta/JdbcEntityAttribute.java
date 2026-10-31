@@ -222,7 +222,7 @@ public final class JdbcEntityAttribute implements EntityAttribute {
         }
     }
 
-    /// `@JoinColumn(referencedColumnName)` 是否用反引号包裹过（R5 校验时已剥引号比较，这里只记录形态）。
+    /// `@JoinColumn(referencedColumnName)` 是否用反引号包裹过（校验时已剥引号比较，这里只记录形态）。
     public boolean isReferencedColumnQuoted() {
         return association != null && association.referencedColumnQuoted();
     }

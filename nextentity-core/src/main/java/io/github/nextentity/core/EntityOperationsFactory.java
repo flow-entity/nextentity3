@@ -6,7 +6,7 @@ import io.github.nextentity.core.repo.EntityOperations;
 ///
 /// 包名与类型名是硬约定：point-mall 的 `AppVersionRepository` 直接
 /// `import io.github.nextentity.core.EntityOperationsFactory` 并构造器注入给
-/// `spring.AbstractRepository`（该文件属 D2「零改动」范围），因此这个类型必须叫这个名字、
+/// `spring.AbstractRepository`（这个 import 与构造器注入形态不能改），因此这个类型必须叫这个名字、
 /// 必须在这个包。实现由后端模块提供（JPA 侧一个），`spring` 只负责注册 bean。
 public interface EntityOperationsFactory {
 

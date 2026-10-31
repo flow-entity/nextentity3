@@ -43,7 +43,7 @@ import java.util.random.RandomGeneratorFactory;
 @AnalyzeClasses(packages = "io.github.nextentity", importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureTest {
 
-    /// `api` 接口的公开方法数上限（AGENTS「接口要窄」）。
+    /// `api` 接口的公开方法数上限（接口要窄：超过说明边界切错了）。
     private static final int API_MAX_PUBLIC_METHODS = 6;
 
     /// 允许超过上限的既有接口：类型全名 → **该接口自己的**声明数上限（精确值，不是「放宽到 N」）。
@@ -279,7 +279,7 @@ class ArchitectureTest {
             .dependOnClassesThat()
             .resideInAPackage("jakarta.persistence.criteria..")
             .allowEmptyShould(true)
-            .because("TEAM-CONTRACT §3：Spring 装配与属性归 spring，查询逻辑一律不进 spring");
+            .because("Spring 装配与属性归 spring，查询逻辑一律不进 spring");
 
     /// 一致性测试基类不得被某个后端绑架：`testing` 只准依赖 `api` + `core` 接口。
     ///
@@ -310,14 +310,14 @@ class ArchitectureTest {
             .should()
             .dependOnClassesThat()
             .resideInAnyPackage("jakarta..", "org.hibernate..", "org.springframework..", "java.sql..")
-            .because("DESIGN §5：基类里出现 EntityManager / Criteria / SQL，新后端就得改基类，接缝随之失效");
+            .because("基类里出现 EntityManager / Criteria / SQL，新后端就得改基类，接缝随之失效");
 
     /// 生产代码不得依赖 mock 框架或测试框架。
     ///
     /// 守的是什么：`api` / `core` / `jpa` / `spring` 的 `src/main` 里一旦出现
     /// `org.mockito..` / `org.easymock..` / `org.powermock..` / `org.junit..` / `org.assertj..` /
     /// `com.tngtech.archunit..` 的任何引用即违规。mock 只能证明「调用形状对」
-    /// （AGENTS「mock 只许证形状」），它漏进生产代码就等于线上路径跑在假对象上。
+    /// （mock 只许证明调用形状），它漏进生产代码就等于线上路径跑在假对象上。
     ///
     /// 为什么现在抓：enforcer 的 `bannedDependencies` 只禁了 core 的 `jakarta` / `hibernate` / `spring`
     /// 与 jpa 的 `spring`，没有任何一条禁令阻止把 `mockito-core` 声明成 compile 依赖再 `import` 进

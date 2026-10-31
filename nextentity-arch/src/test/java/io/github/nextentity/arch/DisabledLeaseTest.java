@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
 
 /// 测试纪律门禁：`@Disabled` 必须带租约（`issue=` + `expires=`），过期即红。
 ///
-/// 守的是什么：AGENTS「测试编写红线」——`@Disabled("issue=<链接或编号> expires=<yyyy-MM-dd>")`，
+/// 守的是什么：`@Disabled` 的租约格式——`@Disabled("issue=<链接或编号> expires=<yyyy-MM-dd>")`，
 /// 两个字段缺一即违规；过了 `expires` 仍在禁用同样违规。没有租约的禁用会永久留在代码里，
 /// 变成没人认领的 skip；有租约的禁用在到期那天自己变红，逼人续期或删用例。
 ///
@@ -29,7 +29,7 @@ import org.junit.jupiter.api.Test;
 /// - 换成不带该选项的导入也没用：classpath 上只有 `nextentity-arch` 自己的测试产物，
 ///   `nextentity-core` / `nextentity-jpa` / `nextentity-spring` / `nextentity-tests-jpa` /
 ///   `nextentity-tests-legacy` 的测试类既不在 classpath（本模块 pom 不依赖它们的 test-jar），
-///   也不该靠读它们的 `target/test-classes`——那是「不读陈旧产物」红线明令禁止的做法。
+///   也不该靠读它们的 `target/test-classes`——那里的产物可能落后于当前代码。
 ///
 /// 所以这条纪律只能对**源码**执法：扫描各模块 `src/test/java`，只用 `java.nio.file`，不新增任何依赖。
 /// 代价是路径解析必须自己兜底：解析失败时 `repositoryRoot()` 抛异常、扫描数量不足时断言失败，
@@ -74,7 +74,7 @@ class DisabledLeaseTest {
             }
         }
         assertThat(violations)
-                .as("AGENTS「禁用要有租约」：@Disabled(\"issue=<链接或编号> expires=<yyyy-MM-dd>\")")
+                .as("禁用要有租约：@Disabled(\"issue=<链接或编号> expires=<yyyy-MM-dd>\")")
                 .isEmpty();
     }
 

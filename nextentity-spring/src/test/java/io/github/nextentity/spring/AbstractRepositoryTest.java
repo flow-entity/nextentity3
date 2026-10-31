@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
 /// {@link AbstractRepository} 的**委托形状**证据：泛型解析出哪个实体、两处转发有没有换过对象。
 ///
 /// 这里钉的只是「委托形状」，**不是**业务正确性：假工厂与假 `EntityOperations` 只记录入参、
-/// 不落库、不渲染 SQL，按 AGENTS「mock 只许证形状」，本用例不得被当作任何查询/写入能力的
+/// 不落库、不渲染 SQL，按「mock 只许证形状」的原则，本用例不得被当作任何查询/写入能力的
 /// 正确性证据（正确性证据在 `nextentity-tests-jpa` 的真库对拍里）。
 ///
 /// 本类证明三件事：

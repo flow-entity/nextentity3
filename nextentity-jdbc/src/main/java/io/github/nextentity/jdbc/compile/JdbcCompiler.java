@@ -47,7 +47,7 @@ public final class JdbcCompiler implements Compiler<JdbcQuery> {
     /// 存在性语句。
     ///
     /// @param spec 存在性规格（core 已清排序/窗口/锁）
-    /// @return SqlStatement: `select 1 ... limit 1`
+    /// @return `select 1 ... limit 1`
     public SqlStatement exists(QuerySpec spec) {
         return new SqlRenderer(meta, dialect, requireSpec(spec)).exists();
     }

@@ -182,7 +182,7 @@ public abstract class AssociationWriteConsistencyTest<T extends Asset> {
     }
 
     @Test
-    @DisplayName("置空关联：按 USAGE §13.4.4 披露的后端语义断言（JPA 写 NULL / JDBC 跳过列）")
+    @DisplayName("置空关联：按各自后端语义断言（JPA 写 NULL / JDBC 跳过列）")
     void updateClearingAssociationFollowsDisclosedBackendSemantics() {
         Fixture<T> fixture = fixture();
         fixture.update(BOLT_ID, BOLT_RENAMED_NAME, null);
@@ -207,7 +207,7 @@ public abstract class AssociationWriteConsistencyTest<T extends Asset> {
                     .doesNotContain(BOLT_ID);
         } else {
             assertThat(fixture.foreignKeyOf(BOLT_ID))
-                    .as("JDBC：关联为 null 时跳过该列，外键保持旧值（USAGE §13.4.4）")
+                    .as("JDBC：关联为 null 时跳过该列，外键保持旧值")
                     .isEqualTo(2L);
             assertThat(ids(fixture.query()
                             .where(fixture.ownerNamePath())

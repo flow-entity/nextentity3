@@ -99,7 +99,7 @@ class ItemAggregateTerminalContractTest extends ConsistencyTestBase<ItemEntity> 
     }
 
     /// `slice()` 对聚合/分组规格的拒绝是**级联**，不是它自己的判断：`slice` 先取 `count()` 当总数
-    /// （`nextentity-core` 的 `QueryBuilder#slice` 的第一行就是 `long total = count();`），
+    /// （`nextentity-core` 的 `QueryBuilder#slice` 会先调用 `count()` 取总数），
     /// 于是 `count()` 的拒绝原样冒出来。
     ///
     /// 断言消息是 `count` 的那一条，正是「级联」的证据：若将来有人给 `slice` 加了自己的前置校验，

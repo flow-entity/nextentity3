@@ -8,7 +8,7 @@ import io.github.nextentity.tests.jdbc.OrdinalItemEntity;
 import jakarta.persistence.PersistenceException;
 import org.junit.jupiter.api.Test;
 
-/// 评审发现 R1：越界 ORDINAL 读回应按行数据错误包成 PersistenceException
+/// 越界 ORDINAL 读回应按行数据错误包成 PersistenceException
 /// （`SQL 执行失败: <sql>`），现状是裸 ArrayIndexOutOfBoundsException。
 ///
 /// 复跑：`mvn -pl nextentity-tests-jdbc -am test -Dtest=ReviewR1OrdinalOutOfRangeTest`
@@ -22,7 +22,7 @@ class ReviewR1OrdinalOutOfRangeTest {
             var operations = new JdbcEntityOperationsFactory(support.dataSource()).operations(OrdinalItemEntity.class);
 
             assertThatThrownBy(() -> operations.query().list())
-                    .as("ORDINAL 越界是行数据问题，必须按 #24 包成 PersistenceException 而不是泄漏 AIOOBE")
+                    .as("ORDINAL 越界是行数据问题，必须按行数据错误包成 PersistenceException 而不是泄漏 AIOOBE")
                     .isInstanceOf(PersistenceException.class)
                     .hasMessageContaining("SQL 执行失败");
         }

@@ -14,7 +14,7 @@ import javax.sql.DataSource;
 /// `FOR UPDATE`/乐观锁用例在「开事务的语句」与「改数据的语句」之间会落到两条连接上。
 ///
 /// 交给生产代码的是**代理连接**：`close()` 空操作，其余方法直通。生产侧
-/// `JdbcEntityOperationsFactory` 按「取连接 + try-with-resources」写（决策 3：每次操作独立取连接），
+/// `JdbcEntityOperationsFactory` 按「取连接 + try-with-resources」写（每次操作独立取连接），
 /// 不代理的话第一次操作就会把这条物理连接关掉，后续用例全红。
 public final class SingleConnectionDataSource implements DataSource {
 

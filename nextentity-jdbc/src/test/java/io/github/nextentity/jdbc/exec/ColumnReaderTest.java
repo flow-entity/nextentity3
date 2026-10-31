@@ -20,7 +20,7 @@ import java.sql.Statement;
 import org.junit.jupiter.api.Test;
 
 /// `ColumnReader` 的静态类型收窄：Integer / int / Long / long / Double / double / String /
-/// `getObject` 回退、NULL 走 `wasNull`、枚举两种存储形态与两种脏数据（#26）。
+/// `getObject` 回退、NULL 走 `wasNull`、枚举两种存储形态与两种脏数据。
 class ColumnReaderTest {
 
     private static final String URL = "jdbc:h2:mem:column_reader;MODE=MySQL;DB_CLOSE_DELAY=-1";

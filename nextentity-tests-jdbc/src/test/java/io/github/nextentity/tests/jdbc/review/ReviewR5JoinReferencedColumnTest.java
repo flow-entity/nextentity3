@@ -14,11 +14,11 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import org.junit.jupiter.api.Test;
 
-/// 评审发现 R5（已裁决：拒绝，不支持）：`@ManyToOne @JoinColumn(name=..., referencedColumnName=...)`
-/// 指定非目标主键列时，meta 只认 `name`、JOIN 固定 `t1.<目标 @Id 列> = t0.<joinColumn>`；若不拒绝会静默拼错
+/// `@ManyToOne @JoinColumn(name=..., referencedColumnName=...)` 指定非目标主键列时，meta 只认 `name`、
+/// JOIN 固定 `t1.<目标 @Id 列> = t0.<joinColumn>`（这种形态本轮不支持）；若不拒绝会静默拼错
 /// （H2 报类型比较错，MySQL 8.0.18 隐式转 0 静默 0 行）。
 ///
-/// 裁决（architect）：本轮只支持「@ManyToOne 指向目标 @Id」这一种形态，`referencedColumnName`
+/// 本轮只支持「@ManyToOne 指向目标 @Id」这一种形态：`referencedColumnName`
 /// 非空且不等于目标 @Id 列时在 meta 期抛 `UnsupportedOperationException`。
 ///
 /// 复跑：`mvn -pl nextentity-tests-jdbc -am test -Dtest=ReviewR5JoinReferencedColumnTest`
@@ -33,7 +33,7 @@ class ReviewR5JoinReferencedColumnTest {
             support.execute("insert into review_r5_owner (id, name) values (1, 'alpha'), (2, 'beta')");
             support.execute("insert into review_r5_asset (id, name, owner_name) values (10, 'a1', 'alpha')");
 
-            // 裁决（architect）：不支持 referencedColumnName，meta 期显式拒绝（UOE），
+            // 不支持 referencedColumnName：meta 期显式拒绝（UOE），
             // 不按被引用列拼 JOIN（被引用列不保证唯一，会放大行数、破坏「count/实体行数不放大」契约）。
             assertThatThrownBy(
                             () -> new JdbcEntityOperationsFactory(support.dataSource()).operations(ReviewAsset.class))

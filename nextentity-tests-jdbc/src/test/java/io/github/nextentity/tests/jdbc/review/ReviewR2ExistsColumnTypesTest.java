@@ -12,7 +12,7 @@ import io.github.nextentity.tests.jdbc.ItemEntity;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/// 评审发现 R2：设计契约冻结「exists 的 columnTypes = [Boolean]（占位）」，现状返回空表。
+/// 设计契约冻结「exists 的 columnTypes = [Boolean]（占位）」，现状返回空表。
 ///
 /// 复跑：`mvn -pl nextentity-tests-jdbc -am test -Dtest=ReviewR2ExistsColumnTypesTest`
 class ReviewR2ExistsColumnTypesTest {

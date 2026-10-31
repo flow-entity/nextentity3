@@ -30,7 +30,7 @@ import java.util.List;
 /// 求值语义全部落在 `core.spec`，因此这里每个分支都只是"把运算换成节点"。
 ///
 /// 两个 `switch` 都必须穷尽且**不写 `default`**：api 新增 `Operation` 常量时，
-/// 这里必须编译失败，逼着把新语义补齐（AGENTS「新节点必须让穷尽性检查报错」）。
+/// 这里必须编译失败，逼着把新语义补齐。
 @SuppressWarnings("PMD.CyclomaticComplexity") // 27 个 Operation 常量必须在一个穷尽 switch 里翻译，分支数由 api 面决定，拆开就破坏穷尽性门禁
 final class OpInterpreter {
 

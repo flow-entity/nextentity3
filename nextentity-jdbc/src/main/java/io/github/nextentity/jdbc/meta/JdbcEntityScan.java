@@ -10,7 +10,7 @@ import java.util.Objects;
 
 /// 注解扫描入口：把实体类解析成表名 + 属性表 + id/version + 无参构造器（`JdbcEntityType` 的数据来源）。
 ///
-/// 实现细节分散在 [JdbcEntityRules] / [JdbcColumns] / [JdbcAttributes]，拒绝清单在 [JdbcEntityRules]。
+/// 实现细节与拒绝口径分散在 [JdbcEntityRules]（注解组合与标量列）/ [JdbcNames]（标识符定界符）/ [JdbcColumns] / [JdbcAttributes]。
 final class JdbcEntityScan {
 
     /// 扫描结果：后续查询直接读这些字段，不再解析注解。

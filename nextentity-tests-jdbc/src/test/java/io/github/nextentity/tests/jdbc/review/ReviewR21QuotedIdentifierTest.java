@@ -20,7 +20,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import org.junit.jupiter.api.Test;
 
-/// 评审发现 R21（引用/保留字标识符必须可用）：JPA 的注解里用反引号包住标识符表示「数据库标识符，原样、需要引用」
+/// 引用/保留字标识符必须可用：JPA 的注解里用反引号包住标识符表示「数据库标识符，原样、需要引用」
 /// （`` @Column(name = "`desc`") ``），Hibernate 会按方言渲染成 `"desc"`（H2/PG）或 `` `desc` ``（MySQL）。
 /// 当前 JDBC 后端把名字原样拼进 SQL，反引号会变成 SQL 文本的一部分，查询直接失败。
 ///

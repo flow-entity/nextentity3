@@ -28,7 +28,7 @@ import java.util.Map;
 ///   不再静默早退——「先 insert 再 update」的第二次写入不会因为 `contains` 为真而被吞掉；
 /// - 单值关联（`@ManyToOne` 与 owning 侧 `@OneToOne`）按关联对象写外键列（Hibernate 从关联
 ///   对象取 `@Id`），键值 `null` 写 `NULL`；集合关联与 `@OneToOne(mappedBy=...)` 反侧没有
-///   本表外键列，仍不写。
+///   本表外键列，仍不写（3.1.0 起即如此）。
 ///
 /// 与 2.2.3 的差异：① 异常用标准 JPA 异常（`OptimisticLockException` /
 /// `EntityNotFoundException`）替代 2.2.3 的自定义异常；② `@Version` 支持 Integer 与 Long

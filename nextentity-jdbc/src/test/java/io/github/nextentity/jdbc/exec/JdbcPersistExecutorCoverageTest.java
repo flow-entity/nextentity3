@@ -38,7 +38,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /// `JdbcPersistExecutor` 的写侧契约：批量 insert/insertAll、生成键回填（Long/Integer）、
-/// 版本 NULL→0 回写、update/updateAll 的版本自增与缺行/冲突异常、以及 SQL 失败的统一包装（#24）。
+/// 版本 NULL→0 回写、update/updateAll 的版本自增与缺行/冲突异常、以及 SQL 失败的统一包装。
 class JdbcPersistExecutorCoverageTest {
 
     private final JdbcMeta meta = new JdbcMeta();

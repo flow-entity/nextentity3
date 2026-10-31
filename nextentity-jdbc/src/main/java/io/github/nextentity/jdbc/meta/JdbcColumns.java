@@ -18,14 +18,14 @@ import java.lang.reflect.Type;
 import java.math.BigInteger;
 import java.util.Set;
 
-/// 属性构造规则：标量列的 #4/#5/#6/#12/#14，以及关联属性 / 被忽略关联 / 默认 FK 列名的构造。
+/// 属性构造规则：标量列的注解拒绝规则（见 [JdbcEntityRules]），以及关联属性 / 被忽略关联 / 默认 FK 列名的构造。
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity", "PMD.ExcessiveParameterListSix"
 }) // 规则面与参数面由 JPA 注解族决定，逐条注解处理；参数是反射解析上下文，合并成 record 只是搬运
 final class JdbcColumns {
 
     private JdbcColumns() {}
 
-    /// 标量字段 → 列属性：先按 #4/#5/#6/#12/#14 拒绝，再算列名、可写标志与枚举存储。
+    /// 标量字段 → 列属性：先按标量列的注解拒绝规则拒绝，再算列名、可写标志与枚举存储。
     static JdbcEntityAttribute scalar(Class<?> type, Field field, String path) {
         return scalar(type, field, path, null, field.getName());
     }
@@ -97,7 +97,7 @@ final class JdbcColumns {
                 new JdbcEntityAttribute.Association(field.getType(), null, null, false, false, false, false));
     }
 
-    /// R5：JOIN 固定按目标 `@Id` 列拼，`referencedColumnName` 只允许为空或等于目标 `@Id` 的实际列名
+    /// JOIN 固定按目标 `@Id` 列拼，`referencedColumnName` 只允许为空或等于目标 `@Id` 的实际列名
     /// （`@Column(name)` 优先、否则字段名，忽略大小写，反引号先剥）；其它值显式拒绝，避免静默拼出错误 JOIN。
     static void rejectReferencedColumn(Field field, String path, String referencedColumnName) {
         String referenced = JdbcNames.bare(referencedColumnName, path);

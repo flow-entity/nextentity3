@@ -13,7 +13,7 @@ import org.junit.jupiter.api.TestFactory;
 
 /// 谓词层的属性测试：同一个 seed 生成的**一棵与实现无关的概念树**，分别降给两个互不相邻的渲染器。
 ///
-/// 差分口径（oracle 分层：正确性证据必须来自真库执行与独立内存计算的对拍）：
+/// 差分口径（oracle 分层里的差分这一层：真库执行结果与独立内存计算对拍；另两层是跨方言对拍与变形关系）：
 /// 期望值不手算，由 [Memory] 在 [Fixtures] 的算子夹具上独立做 Kleene 三值求值得到；实际值由
 /// [Backend] 把同一棵树降成 DSL 查询后交给真库执行。两个渲染器都只读概念树，谁也不看对方，
 /// 谁也不回读对方的结果——只有这样才能互相证伪。
@@ -45,7 +45,7 @@ public abstract class PredicateFuzzDifferentialTest<T extends Item> extends Cons
     /// 字符串算子叶子（`Contains` / `Like`）在 60 棵树里出现次数的下限。
     ///
     /// 这两种叶子是**唯一**能钉住「`contains(v)` 渲染成 `%v%` 还是 `v%`」的节点，抽不到就等于没测。
-    /// 上一轮的取值域几乎全是前缀（`app`、`n`），60 个 seed 恰好没抽到非前缀子串，故障注入实验 #10
+    /// 上一轮的取值域几乎全是前缀（`app`、`n`），60 个 seed 恰好没抽到非前缀子串，故障注入实验
     /// 因此从 fuzz 里漏了过去——靠抽签不算覆盖。现在形状 3 用固定配额保证每轮都抽到（见
     /// `Generator#stringSeed`），这条下限守的是「配额还在」。
     ///
@@ -169,7 +169,7 @@ public abstract class PredicateFuzzDifferentialTest<T extends Item> extends Cons
 
     /// 「非前缀取值真的被抽到了」的守卫：把 `contains` 当成前缀匹配之后，期望值必须变。
     ///
-    /// 这条是故障注入实验 #10 的直接产物：当时 60 个 seed 全绿，但把 `contains` 的通配符改错也
+    /// 这条是故障注入实验的直接产物：当时 60 个 seed 全绿，但把 `contains` 的通配符改错也
     /// 全绿——因为夹具里所有名字都以 `app` 开头，`%app%` 与 `app%` 同解。现在要求**至少
     /// [PREFIX_BLIND_SEED_FLOOR] 个 seed 在退化前后给出不同的期望值**，靠运气通过就不可能。
     @Test
