@@ -32,9 +32,9 @@ docker run -d --name nextentity-legacy-mysql \
   -p 13306:3306 mysql:8.0.18
 ```
 
-用例数是**按环境数乘出来的**：`-Ddbc=h2,mysql` 会跑两遍，1,454 条 = 727 条 × 2。
+用例数是**按环境数乘出来的**：`-Ddbc=h2,mysql` 会跑两遍，1,908 条 = 954 条 × 2。
 
-**别省 `-Dnextentity.requireContainer=true`**：不带它时，某个环境不可用只会打一行 `[legacy] 跳过环境 …`，其余用例照旧全绿——方言证据变成纸面。门禁的 `night`/`release` 档都带这个参数，`-Ddbc=h2,mysql` 下的用例数下限也相应抬到 1,454（只跑 H2 是 727，条数差就是证据）。
+**别省 `-Dnextentity.requireContainer=true`**：不带它时，某个环境不可用只会打一行 `[legacy] 跳过环境 …`，其余用例照旧全绿——方言证据变成纸面。门禁的 `night`/`release` 档都带这个参数，`-Ddbc=h2,mysql` 下的用例数下限也相应抬到 1,908（只跑 H2 是 954，条数差就是证据）。
 
 ## 装置
 
@@ -55,11 +55,13 @@ docker run -d --name nextentity-legacy-mysql \
 
 | 文件 | 批次 |
 |---|---|
-| [`porting/NOT-PORTED-port-a.md`](porting/NOT-PORTED-port-a.md) | 谓词 / 条件 / 聚合 / 关联 |
-| [`porting/NOT-PORTED-port-b.md`](porting/NOT-PORTED-port-b.md) | 投影 / select / 分组 / fast 包 |
-| [`porting/NOT-PORTED-port-c.md`](porting/NOT-PORTED-port-c.md) | 排序 / 字符串 / 数值 / 分页 |
-| [`porting/NOT-PORTED-port-d.md`](porting/NOT-PORTED-port-d.md) | 写入 / 锁 / 事务 / 杂项 |
-| [`porting/REPORT.md`](porting/REPORT.md) | 总数、裁决结论、待办 |
+| [`porting/NOT-PORTED-port-a.md`](porting/NOT-PORTED-port-a.md) | 第一/二轮：谓词 / 条件 / 聚合 / 关联 |
+| [`porting/NOT-PORTED-port-b.md`](porting/NOT-PORTED-port-b.md) | 第一/二轮：投影 / select / 分组 / fast 包 |
+| [`porting/NOT-PORTED-port-c.md`](porting/NOT-PORTED-port-c.md) | 第一/二轮：排序 / 字符串 / 数值 / 分页 |
+| [`porting/NOT-PORTED-port-d.md`](porting/NOT-PORTED-port-d.md) | 第一/二轮：写入 / 锁 / 事务 / 杂项 |
+| [`porting/NOT-PORTED-round3-port-a.md`](porting/NOT-PORTED-round3-port-a.md) —— `-port-e.md` | 第三轮五个批次（`b9cc50c` 恢复能力面之后逐条重核） |
+| [`porting/NOT-PORTED-round3-lead.md`](porting/NOT-PORTED-round3-lead.md) | 第三轮批次外裁决：4 个整类不建、四处旧结论反转、唯一形态差异、总账 |
+| [`porting/REPORT.md`](porting/REPORT.md) | 总数、裁决结论、已知问题 |
 
 ## 为什么本模块跳过 spotless / checkstyle / PMD
 

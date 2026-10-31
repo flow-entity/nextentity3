@@ -267,16 +267,17 @@ public class EdgeCasesIntegrationTest {
     /// 负 offset：3.x 契约是**直接拒绝**，2.2.3 是容忍后自行解释。
     ///
     /// 2.2.3 这条只断言「不抛异常、返回非 null」，等于把未定义行为固化成了期望；
-    /// 3.x 在 `api/SliceStep.java` 里明确 `@throws IllegalArgumentException offset 或 limit 为负数`，
-    /// 所以这里改为断言该契约——负偏移若被静默当成 0，调用方会拿到一页错位的数据却毫无察觉。
-    /// 裁决记录见 `tmp/legacy/ADJUDICATION.md` 第 2 条。
+    /// 3.x 在 `api/Collector.java` 的 `list(int offset, int limit)` 上明确
+    /// `@throws IllegalArgumentException offset 或 limit 为负数`（`core/spec/Window.java` 构造期就拒绝），
+    /// 所以这里保持上游调用形态 `.list(-1, 5)`，只把期望改成断言该契约——负偏移若被静默当成 0，
+    /// 调用方会拿到一页错位的数据却毫无察觉。裁决记录见 `porting/REPORT.md`「本轮裁决」。
     @ParameterizedTest
     @ArgumentsSource(IntegrationTestProvider.class)
     @DisplayName("Should reject negative offset")
     void shouldHandleNegativeOffset(IntegrationTestContext context) {
         assertThatThrownBy(() -> context.queryEmployees()
                         .orderBy(Employee::getId).asc()
-                        .slice(-1, 5))
+                        .list(-1, 5))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 

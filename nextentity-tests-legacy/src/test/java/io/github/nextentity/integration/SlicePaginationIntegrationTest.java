@@ -43,6 +43,8 @@ public class SlicePaginationIntegrationTest {
         // Then
         assertThat(slice.data()).hasSize(5);
         assertThat(slice.total()).isEqualTo(TOTAL_EMPLOYEES);
+        assertThat(slice.offset()).isEqualTo(0);
+        assertThat(slice.limit()).isEqualTo(5);
     }
 
     ///
@@ -63,6 +65,7 @@ public class SlicePaginationIntegrationTest {
 
         // Then
         assertThat(slice.data()).hasSize(5);
+        assertThat(slice.offset()).isEqualTo(5);
         assertThat(slice.data().getFirst().getId()).isEqualTo(allEmployees.get(5).getId());
     }
 

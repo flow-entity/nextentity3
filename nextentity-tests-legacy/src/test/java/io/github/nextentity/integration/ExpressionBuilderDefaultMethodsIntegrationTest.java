@@ -17,8 +17,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 ///
 /// 2.2.3 的 `ExpressionBuilder.StringOperator` / `NumberOperator` 在 3.x 已删除：算术算子改挂在数值路径上
 /// （`api/NumberPath` 继承 `api/NumberArithmetic`），但没有 `*IfNotNull` 变体，`null` 短路不可表达，
-/// 因此只移植非空值分支与链式/组合用例；字符串侧可对位的只有 `StringOps.likeIfNotNull`。
-/// `*WithNullValue` 与 `substring` / `length` / `likeIfNotEmpty` 一类删除（见 `porting/NOT-PORTED-port-b.md`）。
+/// 因此只移植非空值分支与链式/组合用例；字符串侧可对位的是 `StringOps.likeIfNotNull`。
+/// 第三轮回填 `StringFunctions.substring(int)` / `length()` 两个用例；`*WithNullValue` 与 `likeIfNotEmpty`
+/// 仍删除（见 `porting/NOT-PORTED-port-b.md` 与 `porting/NOT-PORTED-round3-port-b.md`）。
 ///
 /// @author HuangChengwei
 @DisplayName("ExpressionBuilder Default Methods Integration Tests")
@@ -60,6 +61,40 @@ public class ExpressionBuilderDefaultMethodsIntegrationTest {
 
         // Then - should return all records (filter was skipped)
         assertThat(employees).hasSize((int) totalCount);
+    }
+
+    // ==================== StringFunctions.substring(int) / length Tests ====================
+
+    ///
+    /// 测试s substring(int) with an offset.
+    /// This tests the default 方法 substring(int) which calls substring(int, Integer.MAX_VALUE).
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should use substring with offset for filtering")
+    void shouldUseSubstringWithOffsetForFiltering(IntegrationTestContext context) {
+        // When - use substring(offset) combined with length comparison
+        // substring(1) returns characters starting from position 1 (0-indexed)
+        List<Employee> employees = context.queryEmployees()
+                .where(Employee::getName).substring(1).length().gt(2)
+                .list(5);
+
+        // Then - should find employees with names longer than 3 characters
+        assertThat(employees).isNotEmpty();
+    }
+
+    ///
+    /// 测试s substring(int) with a larger offset combined with like.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should handle substring with like")
+    void shouldHandleSubstringWithLike(IntegrationTestContext context) {
+        // When - use substring(2) to skip first 2 characters and check length
+        List<Employee> employees = context.queryEmployees()
+                .where(Employee::getName).substring(2).length().gt(1)
+                .list(5);
+
+        // Then
+        assertThat(employees).isNotEmpty();
     }
 
     // ==================== NumberOperator.addIfNotNull Tests ====================

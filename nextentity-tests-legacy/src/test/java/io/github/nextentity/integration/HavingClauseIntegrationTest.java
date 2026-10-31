@@ -27,9 +27,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// All paths in select must use get() wrapper.
 /// <p>
 /// 3.x 的 having 入口是 `api/HavingStep#having`（`BaseWhereStep` 继承它），多次 `having(...)` 按 AND 累加，
-/// 条件里的 `AggregateValue` 可以比较与取区间，因此下面 19 条逐字对位。另外 3 条按能力缺口删除，
-/// 不造 Java 侧替代：`having` 之后的 `count()` / `exists()` / 分页在 3.x 被显式拒绝
-/// （见 `porting/NOT-PORTED-port-a.md`）。
+/// 条件里的 `AggregateValue` 可以比较与取区间。3.1.0 起 `having` 之后的 `count()` / `exists()` 数的是
+/// **组数**、分页窗口作用在**组**上（`api/Collector.java:13-21`、`api/Collector.java:44-46`），
+/// 因此 22 条逐字对位。
 /// <p>
 /// These tests run against MySQL and PostgreSQL using 测试containers.
 ///
@@ -324,6 +324,60 @@ public class HavingClauseIntegrationTest {
 
         // Then
         assertThat(results).hasSize(2);
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should combine having with offset")
+    void shouldCombineHavingWithOffset(IntegrationTestContext context) {
+        // When - Find departments with count > 0, page 2 (offset 1, limit 2)
+        List<Tuple2<Long, Long>> results = context.queryEmployees()
+                .select(Path.of(Employee::getDepartmentId), Path.of(Employee::getId).count())
+                .groupBy(Employee::getDepartmentId)
+                .having(Path.of(Employee::getId).count().gt(0L))
+                .orderBy(Employee::getDepartmentId).asc()
+                .slice(1, 2).data();
+
+        // Then
+        assertThat(results).isNotEmpty();
+    }
+
+    // ========================================
+    // 9. HAVING with Count
+    // ========================================
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should count with having clause")
+    void shouldCountWithHavingClause(IntegrationTestContext context) {
+        // When - Count departments with employees > 1
+        long count = context.queryEmployees()
+                .select(Path.of(Employee::getDepartmentId), Path.of(Employee::getId).count())
+                .groupBy(Employee::getDepartmentId)
+                .having(Path.of(Employee::getId).count().gt(1L))
+                .count();
+
+        // Then
+        assertThat(count).isGreaterThanOrEqualTo(1);
+    }
+
+    // ========================================
+    // 10. HAVING with Exist
+    // ========================================
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should check existence with having")
+    void shouldCheckExistenceWithHaving(IntegrationTestContext context) {
+        // When - Check if departments with employees > 3 exist
+        boolean exists = context.queryEmployees()
+                .select(Path.of(Employee::getDepartmentId), Path.of(Employee::getId).count())
+                .groupBy(Employee::getDepartmentId)
+                .having(Path.of(Employee::getId).count().gt(3L))
+                .exists();
+
+        // Then
+        assertThat(exists).isTrue();
     }
 
     // ========================================

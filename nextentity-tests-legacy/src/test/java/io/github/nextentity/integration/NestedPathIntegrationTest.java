@@ -382,4 +382,43 @@ public class NestedPathIntegrationTest {
             }
         }
     }
+
+    @Nested
+    @DisplayName("Nested Path Select Tests")
+    class NestedPathSelectTests {
+
+        ///
+        /// 测试目标: 验证y select with nested path expression.
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should select department name from employees")
+        void shouldSelectDepartmentName_FromEmployees(IntegrationTestContext context) {
+            // When
+            List<String> deptNames = context.queryEmployees()
+                    .distinct().select(EntityPath.of(Employee::getDepartment).get(Department::getName))
+                    .list();
+
+            // Then - 5 distinct department names
+            assertThat(deptNames).hasSize(5);
+            assertThat(deptNames).containsExactlyInAnyOrder(
+                    "Engineering", "Marketing", "Sales", "HR", "Finance");
+        }
+
+        ///
+        /// 测试目标: 验证y select department location from employees.
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should select department location from employees")
+        void shouldSelectDepartmentLocation_FromEmployees(IntegrationTestContext context) {
+            // When
+            List<String> locations = context.queryEmployees()
+                    .distinct().select(EntityPath.of(Employee::getDepartment).get(Department::getLocation))
+                    .list();
+
+            // Then - 4 distinct locations (Building A, B, C, D)
+            assertThat(locations).hasSize(4);
+            assertThat(locations).containsExactlyInAnyOrder(
+                    "Building A", "Building B", "Building C", "Building D");
+        }
+    }
 }

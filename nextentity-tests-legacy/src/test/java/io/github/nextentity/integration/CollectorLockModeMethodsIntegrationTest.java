@@ -266,6 +266,44 @@ public class CollectorLockModeMethodsIntegrationTest {
         assertThat(entities).hasSize(5);
     }
 
+    // ==================== offset(int, LockMode) Tests ====================
+
+    ///
+    /// 测试s offset(int, LockMode) returns results from offset.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should offset with LockMode return results from offset")
+    void shouldOffsetWithLockModeReturnResultsFromOffset(IntegrationTestContext context) {
+        // When
+        List<LockableEntity> entities = context.doInTransaction(() ->
+                context.queryLockableEntities()
+                        .orderBy(LockableEntity::getId).asc()
+                        .lock(LockMode.PESSIMISTIC_READ).list(2, 10)
+        );
+
+        // Then
+        assertThat(entities).isNotEmpty();
+        assertThat(entities.getFirst().getId()).isEqualTo(3L);
+    }
+
+    ///
+    /// 测试s offset(int, LockMode) with pessimistic write lock.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should offset with pessimistic write lock")
+    void shouldOffsetWithPessimisticWriteLock(IntegrationTestContext context) {
+        // When
+        List<LockableEntity> entities = context.doInTransaction(() ->
+                context.queryLockableEntities()
+                        .orderBy(LockableEntity::getId).asc()
+                        .lock(LockMode.PESSIMISTIC_WRITE).list(1, 10)
+        );
+
+        // Then
+        assertThat(entities).isNotEmpty();
+        assertThat(entities.getFirst().getId()).isEqualTo(2L);
+    }
+
     // ==================== limit(int, LockMode) Tests ====================
 
     ///
@@ -337,6 +375,26 @@ public class CollectorLockModeMethodsIntegrationTest {
         // Then
         assertThat(entities).hasSize(5);
     }
+    // ==================== first(int, LockMode) Tests ====================
+
+    ///
+    /// 测试s first(int, LockMode) with offset.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should first with offset and LockMode return value")
+    void shouldFirstWithOffsetAndLockModeReturnValue(IntegrationTestContext context) {
+        // When
+        LockableEntity result = context.doInTransaction(() ->
+                context.queryLockableEntities()
+                        .orderBy(LockableEntity::getId).asc()
+                        .lock(LockMode.PESSIMISTIC_READ).list(2, 1).getFirst()
+        );
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getId()).isEqualTo(3L);
+    }
+
     // ==================== single with lock Tests ====================
 
     ///
@@ -376,6 +434,25 @@ public class CollectorLockModeMethodsIntegrationTest {
         // Then
         assertThat(result).isNotNull();
         assertThat(result.getId()).isEqualTo(3L);
+    }
+
+    ///
+    /// 测试s offset with lock and where clause.
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should offset with LockMode and where clause")
+    void shouldOffsetWithLockModeAndWhereClause(IntegrationTestContext context) {
+        // When
+        List<LockableEntity> entities = context.doInTransaction(() ->
+                context.queryLockableEntities()
+                        .where(LockableEntity::getId).lt(5L)
+                        .orderBy(LockableEntity::getId).asc()
+                        .lock(LockMode.PESSIMISTIC_READ).list(1, 10)
+        );
+
+        // Then
+        assertThat(entities).isNotEmpty();
+        assertThat(entities.getFirst().getId()).isEqualTo(2L);
     }
 
     ///

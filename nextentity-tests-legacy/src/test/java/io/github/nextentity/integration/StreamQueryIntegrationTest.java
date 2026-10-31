@@ -299,6 +299,7 @@ public class StreamQueryIntegrationTest {
 
         // Then
         assertThat(slice.data()).hasSize(5);
+        assertThat(slice.offset()).isEqualTo(5);
     }
 
     // ========================================

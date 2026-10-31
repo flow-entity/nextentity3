@@ -9,6 +9,7 @@ import io.github.nextentity.api.model.Tuple5;
 import io.github.nextentity.api.model.Tuple6;
 import io.github.nextentity.integration.config.IntegrationTestContext;
 import io.github.nextentity.integration.config.IntegrationTestProvider;
+import io.github.nextentity.integration.entity.Department;
 import io.github.nextentity.integration.entity.Employee;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -21,8 +22,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 ///
 /// Select API integration tests.
 ///
-/// 3.x 投影面：单列 / 两列 `Tuple2` / 三列 `Tuple3` / 四~六列 `ProjectionMappers` / `distinct()`（含多列）。
-/// 七列以上、`select(Collection)`、`select(Class)` 无对位，对应用例删除（见 `porting/NOT-PORTED-port-b.md`）。
+/// 3.x 投影面：单列 / 两列 `Tuple2` / 三列 `Tuple3` / 四~六列 `ProjectionMappers` / `distinct()`（含多列）/
+/// `select(Class)`（整实体投影，§12）。七列以上、`select(Collection)`、`select(List)` 无对位，对应用例删除
+/// （见 `porting/NOT-PORTED-round3-port-d.md`）。
 ///
 /// @author HuangChengwei
 @DisplayName("Select API Integration Tests")
@@ -704,5 +706,54 @@ public class SelectApiIntegrationTest {
         // Then
         assertThat(result).isNotNull();
         assertThat(result.get0()).isEqualTo(1L);
+    }
+
+    // ========================================
+    // 12. Projection Type Selection
+    // ========================================
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select with projection type - same entity")
+    void shouldSelectWithProjectionTypeSameEntity(IntegrationTestContext context) {
+        // When
+        List<Employee> employees = context.queryEmployees()
+                .select(Employee.class)
+                .where(Employee::getId).eq(1L)
+                .list();
+
+        // Then
+        assertThat(employees).hasSize(1);
+        assertThat(employees.getFirst().getName()).isEqualTo("Alice Johnson");
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select with projection type - same entity returns same query")
+    void shouldSelectWithProjectionTypeSameEntityReturnsSame(IntegrationTestContext context) {
+        // When - select same type should return entity
+        List<Employee> employees = context.queryEmployees()
+                .select(Employee.class)
+                .orderBy(Employee::getId).asc()
+                .list();
+
+        // Then
+        assertThat(employees).hasSize(12);
+        assertThat(employees.getFirst()).isInstanceOf(Employee.class);
+    }
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should select distinct with projection type")
+    void shouldSelectDistinctWithProjectionType(IntegrationTestContext context) {
+        // When - 3.x 的实体投影不支持 distinct()（整实体列集不是显式列表，运行期抛
+        // UnsupportedOperationException，见 api/DistinctStep.java），故只保留 select(Class)
+        List<Department> departments = context.queryDepartments()
+                .select(Department.class)
+                .orderBy(Department::getId).asc()
+                .list();
+
+        // Then
+        assertThat(departments).hasSize(5);
     }
 }

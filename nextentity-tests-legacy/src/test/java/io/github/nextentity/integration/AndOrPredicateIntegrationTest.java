@@ -135,6 +135,23 @@ public class AndOrPredicateIntegrationTest {
                     e.getDepartmentId() == 1L &&
                     e.getSalary() > LOW_SALARY_THRESHOLD);
         }
+
+        ///
+        /// 测试 AND 与字符串条件。
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should combine string conditions with AND")
+        void shouldCombineStringConditionsWithAnd(IntegrationTestContext context) {
+            // When: name starts with 'A' AND active = true
+            List<Employee> employees = context.queryEmployees()
+                    .where(Employee::getName).startsWith("A")
+                    .where(Employee::getActive).eq(true)
+                    .list();
+
+            // Then
+            assertThat(employees).isNotEmpty();
+            assertThat(employees).allMatch(e -> e.getName().startsWith("A") && e.getActive());
+        }
     }
 
     @Nested
@@ -1132,6 +1149,41 @@ public class AndOrPredicateIntegrationTest {
             assertThat(employees).allMatch(e ->
                     (e.getName().equals(ALICE_NAME) || e.getDepartmentId() == 1L) &&
                     e.getActive());
+        }
+
+        ///
+        /// 测试返回 StringOperator 的 Conjunction.and(StringRef)。
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should chain and(StringRef) returning StringOperator")
+        void shouldChainAndStringRefReturningStringOperator(IntegrationTestContext context) {
+            // Given: active AND name starts with 'A'
+            List<Employee> employees = context.queryEmployees()
+                    .where(Employee::getActive).eq(true)
+                    .where(Employee::getName).startsWith("A")
+                    .list();
+
+            // Then
+            assertThat(employees).isNotEmpty();
+            assertThat(employees).allMatch(e -> e.getActive() && e.getName().startsWith("A"));
+        }
+
+        ///
+        /// 测试带有字符串函数的 Conjunction.and(StringRef)。
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should chain and(StringRef) with string functions")
+        void shouldChainAndStringRefWithStringFunctions(IntegrationTestContext context) {
+            // Given: active AND lower(name) starts with 'a'
+            List<Employee> employees = context.queryEmployees()
+                    .where(Employee::getActive).eq(true)
+                    .where(Employee::getName).lower().startsWith("a")
+                    .list();
+
+            // Then
+            assertThat(employees).isNotEmpty();
+            assertThat(employees).allMatch(e ->
+                    e.getActive() && e.getName().toLowerCase().startsWith("a"));
         }
     }
 }

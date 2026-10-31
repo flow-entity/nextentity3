@@ -119,6 +119,7 @@ public class OrderOperatorDefaultMethodsIntegrationTest {
 
         // Then
         assertThat(slice.data()).hasSize(5);
+        assertThat(slice.offset()).isEqualTo(2);
     }
 
     // ==================== getList(int, int, LockModeType) Tests ====================

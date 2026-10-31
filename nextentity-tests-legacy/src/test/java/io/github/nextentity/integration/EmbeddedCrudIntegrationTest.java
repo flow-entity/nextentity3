@@ -217,6 +217,30 @@ public class EmbeddedCrudIntegrationTest {
         assertThat(result.get(1).getSecondaryZip().getCode()).isEqualTo("10002");
     }
 
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should update cross-layer embedded via conditional update API")
+    void shouldConditionalUpdateCrossLayerEmbedded(IntegrationTestContext context) {
+        PersonWithCrossLayerEmbedded emp = TestDataFactory.createPersonWithCrossLayerEmbedded(
+                400L, "Original Name", "New York", "5th Ave", "10001", "90210");
+        context.operations(PersonWithCrossLayerEmbedded.class).insert(emp);
+
+        context.doInTransaction(() -> {
+            int affected = context.operations(PersonWithCrossLayerEmbedded.class).update()
+                    .set(PersonWithCrossLayerEmbedded::getName, "Updated Name")
+                    .where(PersonWithCrossLayerEmbedded::getId).eq(400L)
+                    .execute();
+            assertThat(affected).isEqualTo(1);
+        });
+
+        List<PersonWithCrossLayerEmbedded> result = context.queryPersonWithCrossLayerEmbedded()
+                .where(PersonWithCrossLayerEmbedded::getId).eq(400L)
+                .list();
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getName()).isEqualTo("Updated Name");
+        assertThat(result.get(0).getAddress().getCity()).isEqualTo("New York");
+    }
+
     // ── 非 id 字段条件查询 ──
 
     @ParameterizedTest

@@ -270,6 +270,23 @@ public class WhereImplIntegrationTest {
             assertThat(result).isNotEmpty();
             assertThat(result).allMatch(e -> e.getName().contains("n"));
         }
+
+        ///
+        /// 测试目标: 验证y that where(StringPath) supports startsWith 操作.
+        @ParameterizedTest
+        @ArgumentsSource(IntegrationTestProvider.class)
+        @DisplayName("Should support startsWith operation with StringPath")
+        void shouldSupportStartsWithOperation_WithStringPath(IntegrationTestContext context) {
+            // When
+            List<Employee> result = context.queryEmployees()
+                    .where(Employee::getName).startsWith("J")
+                    .orderBy(Employee::getId).asc()
+                    .list();
+
+            // Then
+            assertThat(result).isNotEmpty();
+            assertThat(result).allMatch(e -> e.getName().startsWith("J"));
+        }
     }
 
     @Nested

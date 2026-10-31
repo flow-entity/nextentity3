@@ -256,9 +256,17 @@ public final class LegacyHarness implements AutoCloseable {
             });
         }
 
-        /// 条件更新 / 条件删除：3.x 给 `PersistExecutor` 新加的两个入口。移植语料不覆盖这两条路径
-        /// （2.2.3 的 29 条条件改删用例按已披露差异未移植），所以这里只做形状委托、不额外包事务；
-        /// 真被调用时由 3.x 实现自己要求事务，不会静默成功。
+        /// 条件更新 / 条件删除：3.x 给 `PersistExecutor` 新加的两个入口，**不在这里包事务**。
+        ///
+        /// 事务包不在这一层的理由：`UpdateWhereStep extends Whereable<T, UpdateWhereStep<T>>`，而
+        /// `Whereable.where(PathRef)` / `where(StringPath)` 返回的是 `PathOperator` / `StringOperator`，
+        /// 它们的算子（`eq` / `startsWith` / …）返回 core 自己的步骤实例，会绕过任何装饰器；要在装置里
+        /// 自动包事务，就得把 Comparison/Range/Nullness/Membership/Between/StringOps/StringPattern*/
+        /// StringFunctions 约 50 个方法全部包装一遍，harness 里净加几百行样板只为省一层 lambda。
+        ///
+        /// 所以条件改删用例按 **调用点显式包事务** 书写：`context.doInTransaction(() -> operations(x).update()…execute())`，
+        /// 这与 2.2.3 `TransactionUpdateExecutor` 的"执行器兜住事务"语义等价，是本模块唯一一处
+        /// 「调用形态需要额外包一层」的差异（见 porting/REPORT.md「与上游的形态差异」）。
         @Override
         public io.github.nextentity.api.UpdateSetStep<T> update() {
             return delegate.update();

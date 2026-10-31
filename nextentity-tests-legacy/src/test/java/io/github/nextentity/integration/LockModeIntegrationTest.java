@@ -256,7 +256,27 @@ public class LockModeIntegrationTest {
     }
 
     // ========================================
-    // 8. Lock with First
+    // 8. Lock with Offset
+    // ========================================
+
+    @ParameterizedTest
+    @ArgumentsSource(IntegrationTestProvider.class)
+    @DisplayName("Should lock with offset")
+    void shouldLockWithOffset(IntegrationTestContext context) {
+        // When
+        List<LockableEntity> entities = context.doInTransaction(() ->
+                context.queryLockableEntities()
+                        .orderBy(LockableEntity::getId).asc()
+                        .lock(LockMode.PESSIMISTIC_READ).list(2, 3)
+        );
+
+        // Then
+        assertThat(entities).hasSize(3);
+        assertThat(entities.get(0).getId()).isEqualTo(3L);
+    }
+
+    // ========================================
+    // 9. Lock with First
     // ========================================
 
     @ParameterizedTest
@@ -276,7 +296,7 @@ public class LockModeIntegrationTest {
     }
 
     // ========================================
-    // 9. PESSIMISTIC_FORCE_INCREMENT Lock
+    // 10. PESSIMISTIC_FORCE_INCREMENT Lock
     // ========================================
 
     @ParameterizedTest
@@ -295,7 +315,7 @@ public class LockModeIntegrationTest {
     }
 
     // ========================================
-    // 10. Lock with In Condition
+    // 11. Lock with In Condition
     // ========================================
 
     @ParameterizedTest
@@ -315,7 +335,7 @@ public class LockModeIntegrationTest {
     }
 
     // ========================================
-    // 11. Null Lock Mode
+    // 12. Null Lock Mode
     // ========================================
 
     @ParameterizedTest
@@ -335,7 +355,7 @@ public class LockModeIntegrationTest {
     }
 
     // ========================================
-    // 12. Limit with Lock
+    // 13. Limit with Lock
     // ========================================
 
     @ParameterizedTest
@@ -354,7 +374,7 @@ public class LockModeIntegrationTest {
     }
 
     // ========================================
-    // 13. GetList with Lock
+    // 14. GetList with Lock
     // ========================================
 
     @ParameterizedTest
