@@ -13,7 +13,7 @@ import jakarta.persistence.TransactionRequiredException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-/// 事务边界由调用方掌握（USAGE §11「本库不自己开事务」）：本库既不替你 `begin`，也不劫持事务。
+/// 事务边界由调用方掌握（本库不自己开事务）：本库既不替你 `begin`，也不劫持事务。
 ///
 /// 之前所有落库用例都在 `harness.inTransaction(...)` 里跑，等于这句话零证据——把生产代码改成
 /// 「自己开事务并提交」或「自己开事务并回滚」，套件照样全绿。这里刻意**不开**事务：

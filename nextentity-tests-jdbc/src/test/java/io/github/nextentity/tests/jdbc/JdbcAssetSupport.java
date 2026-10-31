@@ -145,7 +145,7 @@ public class JdbcAssetSupport implements AutoCloseable {
 
     /// 原始列读回：`select owner_id from asset where id = ?`。
     ///
-    /// 走原生 SQL 而不是实体查询：JDBC 读回**不填充关联对象**（USAGE §13.4.4），
+    /// 走原生 SQL 而不是实体查询：JDBC 读回**不填充关联对象**，
     /// 写关联的证据需要的是库里的外键原始值。
     ///
     /// @param assetId 主键

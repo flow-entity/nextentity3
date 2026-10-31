@@ -13,7 +13,7 @@ import java.util.List;
 
 /// 条件改删：`UPDATE t SET … WHERE …` / `DELETE FROM t WHERE …`。
 ///
-/// 与查询不同，列引用不带表别名（`UPDATE` / `DELETE` 的别名语法各库不一致，见设计 §7.1 CUT 表）；
+/// 与查询不同，列引用不带表别名（`UPDATE` / `DELETE` 的别名语法各库不一致）；
 /// 赋值值一律参数绑定，`null` 渲染成 `SET c = NULL`，不跳过该列。
 ///
 /// 公开原因同 {@link SqlStatement}：语句由 `exec` 包的写入器执行。

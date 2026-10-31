@@ -32,14 +32,14 @@ import org.junit.jupiter.params.provider.MethodSource;
 /// `where(X::getAge).ge(1)` 的右值是 [Literal]。因此每条用例都断言到节点结构，
 /// 而不是只断言"没抛异常"——右值退化成字面量正是要挡住的错误。
 ///
-/// 守护的重载（行号见 `PathStepOperator.java`）：
-/// - `:48` `eqIfNotNull(U value)`：NumberRef 路径（既有用例只走 StringRef）
-/// - `:53` `ne(U value)`：NumberRef 路径（既有用例只走 StringRef）
-/// - `:58` `:68` `:78` `:88` `:98` `ne/ge/gt/le/lt(Expression<T,U>)`：列对列比较
-/// - `:104` `:114` `:119` `geIfNotNull/leIfNotNull/ltIfNotNull(U value)`：`null` 侧的短路
+/// 守护的重载：
+/// - `eqIfNotNull(U value)`：NumberRef 路径（既有用例只走 StringRef）
+/// - `ne(U value)`：NumberRef 路径（既有用例只走 StringRef）
+/// - `ne/ge/gt/le/lt(Expression<T,U>)`：列对列比较
+/// - `geIfNotNull/leIfNotNull/ltIfNotNull(U value)`：`null` 侧的短路
 ///   （既有用例只走非 `null` 侧）
-/// - `:123` `:128` `isNull()` / `isNotNull()`：NumberRef 路径
-/// - `:165` `between(Expression<T,U>, Expression<T,U>)`：列对列区间
+/// - `isNull()` / `isNotNull()`：NumberRef 路径
+/// - `between(Expression<T,U>, Expression<T,U>)`：列对列区间
 @DisplayName("PathStepOperator：列对列与 NumberRef 路径")
 class PathStepOperatorTest {
 
@@ -49,7 +49,7 @@ class PathStepOperatorTest {
         return new QueryBuilder<>(meta(), backend, backend);
     }
 
-    // ------------------------------------------------ 列对列比较（:58 - :98）
+    // ------------------------------------------------ 列对列比较（`ne/ge/gt/le/lt(Expression)`）
 
     /// 列对列比较的 5 个重载共用一条参数化用例：右值必须是 [AttributePath]。
     @ParameterizedTest(name = "{0}")
@@ -75,7 +75,7 @@ class PathStepOperatorTest {
         assertThat(where()).isEqualTo(new Between(path("age"), path("score"), path("level")));
     }
 
-    // ------------------------------------------- NumberRef 的值/空值算子（:48、:53、:123、:128）
+    // ------------------------------------------- NumberRef 的值/空值算子（`eqIfNotNull` / `ne` / `isNull` / `isNotNull`）
 
     @Test
     @DisplayName("NumberRef 的值版本 ne：右值是字面量")

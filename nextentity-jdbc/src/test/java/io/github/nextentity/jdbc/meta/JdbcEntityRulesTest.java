@@ -38,7 +38,7 @@ import jakarta.persistence.Version;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/// `meta` 的映射规则与拒绝文案（meta 期部分；拒绝口径见 USAGE §13.4.3）：
+/// `meta` 的映射规则与拒绝文案（meta 期部分）：
 /// 表名三级回退、父类遍历、字段注解拒绝、关联元数据、枚举存储、id/version 唯一性。
 class JdbcEntityRulesTest {
 

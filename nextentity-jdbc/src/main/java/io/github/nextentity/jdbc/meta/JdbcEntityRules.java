@@ -31,7 +31,7 @@ import java.util.List;
 
 /// 注解层面的规则：哪些注解组合直接拒绝、哪些字段被静默忽略、以及表名 / 无参构造的解析。
 ///
-/// 映射规则只承认「字段访问」，getter 上的映射注解直接拒绝；拒绝清单见 USAGE §13.4.3（JDBC 实体映射拒绝表）。
+/// 映射规则只承认「字段访问」，getter 上的映射注解直接拒绝。
 @SuppressWarnings("PMD.CouplingBetweenObjects") // 规则要逐条认注解，天然引用 JPA 注解族，与 JpaMeta 侧一致
 final class JdbcEntityRules {
 
@@ -58,7 +58,7 @@ final class JdbcEntityRules {
 
     private JdbcEntityRules() {}
 
-    /// 类级拒绝：`@Inheritance`、`@IdClass`、`@Access(PROPERTY)`（见 USAGE §13.4.3）。
+    /// 类级拒绝：`@Inheritance`、`@IdClass`、`@Access(PROPERTY)`。
     static void rejectClassLevel(Class<?> type) {
         if (type.isAnnotationPresent(Inheritance.class)) {
             throw new UnsupportedOperationException(INHERITANCE + type.getName());
@@ -73,7 +73,7 @@ final class JdbcEntityRules {
     }
 
     /// 字段发现：本类 + 连续的 `@MappedSuperclass` 父类（父类字段在前）；普通父类到此为止，
-    /// 带 `@Entity` 的父类说明用了实体继承，按继承拒绝（见 USAGE §13.4.3）。
+    /// 带 `@Entity` 的父类说明用了实体继承，按继承拒绝。
     static List<Field> fields(Class<?> type) {
         List<List<Field>> levels = new ArrayList<>();
         Class<?> current = type;
@@ -123,7 +123,7 @@ final class JdbcEntityRules {
         return new IllegalArgumentException(ID_REQUIRED + type.getName());
     }
 
-    /// 多个 `@Version` 与不支持的版本类型共用一句文案（支持范围见 USAGE §13.4.1）。
+    /// 多个 `@Version` 与不支持的版本类型共用一句文案。
     static UnsupportedOperationException duplicateVersion(Class<?> type, Field field) {
         return new UnsupportedOperationException(VERSION_UNSUPPORTED + type.getName() + "." + field.getName());
     }
@@ -154,7 +154,7 @@ final class JdbcEntityRules {
         return MAPPING_ANNOTATIONS.stream().anyMatch(method::isAnnotationPresent);
     }
 
-    /// 集合关联与 `@OneToOne(mappedBy=...)` 是唯一「静默忽略」项（见 USAGE §13.4.2）——不进 `attributes()`、
+    /// 集合关联与 `@OneToOne(mappedBy=...)` 是唯一「静默忽略」项——不进 `attributes()`、
     /// 不参与任何 SQL；`mappedBy` 非空表示反侧没有 FK 列，写侧与 JOIN 都无处落列。
     private static boolean ignored(Field field) {
         OneToOne oneToOne = field.getAnnotation(OneToOne.class);

@@ -8,7 +8,7 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import java.util.List;
 
-/// 同时带单值关联与集合关联：`fetch(...)` 拒绝文案要把两类路径分别列出（USAGE §8.1）。
+/// 同时带单值关联与集合关联：`fetch(...)` 拒绝文案要把两类路径分别列出。
 @Entity
 @Table(name = "mixed_association_item")
 public class MixedAssociationItem {

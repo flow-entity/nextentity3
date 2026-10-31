@@ -15,7 +15,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/// `JpaPredicates.withExpression` 的 LIKE 分支（`compile/JpaPredicates.java:83`）。
+/// `JpaPredicates.withExpression` 的 LIKE 分支。
 ///
 /// 公开 api 造不出这个形状：`StringOps#like(String)` 只收字面量，`contains` 也是先拼成
 /// `%v%` 再当字面量。因此这里用 `core.spec` 的 `Comparison` 节点直接拼「列 LIKE 列」，

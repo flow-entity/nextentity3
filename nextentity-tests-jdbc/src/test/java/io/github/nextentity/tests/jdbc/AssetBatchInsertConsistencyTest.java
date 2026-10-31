@@ -64,7 +64,7 @@ class AssetBatchInsertConsistencyTest extends AssociationBatchInsertConsistencyT
             // JDBC 没有持久化上下文：每次查询都直读数据库，无需清理。
         }
 
-        /// 只带主键的关联对象：JDBC 写关联路径只看 `@Id`（USAGE §13.4.4）。
+        /// 只带主键的关联对象：JDBC 写关联路径只看 `@Id`。
         private static OwnerEntity owner(String ownerName) {
             if (ownerName == null) {
                 return null;

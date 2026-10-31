@@ -19,12 +19,12 @@ import org.junit.jupiter.params.provider.CsvSource;
 /// 并单独驱动 `declaringClass` 的放行侧与拒绝侧。
 ///
 /// 守护的变异体：
-/// - `PathRefs.java:61`：`methodName.length() > 3` → `>=`，`"get"` 会被剥成空串，随后在
+/// - `PathRefs#fieldName` 的 `methodName.length() > 3` → `>=`，`"get"` 会被剥成空串，随后在
 ///   `trimmed.charAt(1)` 处越界；用例断言 `"get"` 原样返回。
-/// - `PathRefs.java:63`：`methodName.length() > 2` → `>=`，`"is"` 同上；用例断言 `"is"` 原样返回。
-/// - `PathRefs.java:68-69`：`trimmed.length() == 1` 分支返回 `""`（或改为不改大小写）；
+/// - `PathRefs#fieldName` 的 `methodName.length() > 2` → `>=`，`"is"` 同上；用例断言 `"is"` 原样返回。
+/// - `PathRefs#fieldName` 的 `trimmed.length() == 1` 分支返回 `""`（或改为不改大小写）；
 ///   用例断言 `"getX"` → `"x"`、`"isX"` → `"x"`。
-/// - `PathRefs.java:98`：`kind != REF_invokeVirtual && kind != REF_invokeInterface` 条件取反
+/// - `PathRefs#declaringClass` 的 `kind != REF_invokeVirtual && kind != REF_invokeInterface` 条件取反
 ///   （或 `&&` 改 `||`）；用例既断言实例/接口方法引用被放行，也断言静态/构造引用被拒绝。
 @DisplayName("PathRefs 边界")
 class PathRefsTest {
@@ -32,9 +32,9 @@ class PathRefsTest {
     /// 裸前缀不能被当成前缀剥掉；去前缀后只剩一个字符时直接小写。
     @ParameterizedTest(name = "fieldName(\"{0}\") → \"{1}\"")
     @CsvSource({
-        "get, get", // 长度恰好 3：`length() > 3` 为假，原样返回（PathRefs.java:61）
-        "is, is", // 长度恰好 2：`length() > 2` 为假，原样返回（PathRefs.java:63）
-        "getX, x", // 去前缀后只剩 1 个字符：走小写分支（PathRefs.java:68-69）
+        "get, get", // 长度恰好 3：`length() > 3` 为假，原样返回
+        "is, is", // 长度恰好 2：`length() > 2` 为假，原样返回
+        "getX, x", // 去前缀后只剩 1 个字符：走小写分支（`fieldName` 的 `trimmed.length() == 1`）
         "isX, x" // 同上，走 is 前缀分支
     })
     void fieldNameKeepsBarePrefixAndLowercasesSingleChar(String methodName, String expected) {

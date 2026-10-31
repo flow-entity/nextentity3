@@ -9,9 +9,9 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
-/// JDBC 后端的写入建立在自动提交之上（DESIGN §7.2 的决策口径：事务归调用方）：没有显式事务上下文也照常成功。
+/// JDBC 后端的写入建立在自动提交之上（事务归调用方）：没有显式事务上下文也照常成功。
 /// 对应 tests-jpa 的 `ItemNoTransactionContextTest` 反过来断言：那边要求抛 `TransactionRequiredException`，
-/// 这边语义不同，故重写而非移植（见 DESIGN §7.1 的 CUT 台账）。
+/// 这边语义不同，故重写而非移植。
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class NoTransactionContextTest {
 

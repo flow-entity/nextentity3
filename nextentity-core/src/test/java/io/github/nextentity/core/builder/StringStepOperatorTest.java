@@ -26,8 +26,8 @@ import org.junit.jupiter.api.Test;
 /// `containsIfNotEmpty(null)` 是第二个调用 `isEmpty` 的算子，同样钉住。
 ///
 /// 每个短路用例都配一条正向用例断言到节点：只测「跳过」时，把短路条件改成恒真也能通过，
-/// 那样 `*IfNotEmpty("abc")` 会静默丢掉条件。守护的行（见 `StringStepOperator.java`）：
-/// `:85` `inIfNotNull(Collection)`、`:110` `likeIfNotNull(String)`、`:114` `isEmpty(String)`。
+/// 那样 `*IfNotEmpty("abc")` 会静默丢掉条件。守护的算子：
+/// `inIfNotNull(Collection)`、`likeIfNotNull(String)`、`isEmpty(String)`。
 @DisplayName("StringStepOperator：空值/空串短路与 in 集合")
 class StringStepOperatorTest {
 
@@ -37,7 +37,7 @@ class StringStepOperatorTest {
         return new QueryBuilder<>(meta(), backend, backend);
     }
 
-    // ------------------------------------------------ inIfNotNull（:85）
+    // ------------------------------------------------ inIfNotNull（`Collection` 实参）
 
     @Test
     @DisplayName("inIfNotNull(null)：集合为 null 时跳过条件，WHERE 为空")
@@ -55,7 +55,7 @@ class StringStepOperatorTest {
         assertThat(where()).isEqualTo(new In(path("name"), List.of("PAID", "CREATED"), false));
     }
 
-    // --------------------------------------- isEmpty 的两条路径（:114 与 :44、:94）
+    // --------------------------------------- isEmpty 的两条路径（`eqIfNotEmpty` 与 `containsIfNotEmpty`）
 
     @Test
     @DisplayName("eqIfNotEmpty(null)：isEmpty 的 null 侧命中，条件被跳过")
@@ -89,7 +89,7 @@ class StringStepOperatorTest {
         assertThat(where()).isNull();
     }
 
-    // ---------------------------------------------------- likeIfNotNull（:110）
+    // ---------------------------------------------------- likeIfNotNull（`String` 实参）
 
     @Test
     @DisplayName("likeIfNotNull(null)：三元表达式的 null 侧命中，条件被跳过")

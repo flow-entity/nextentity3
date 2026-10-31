@@ -28,10 +28,10 @@ import org.junit.jupiter.api.Test;
 /// 钉住的形状：三段路径的**投影、条件、排序**全部落在仓库自己的列上（`w1_0.zone`），
 /// 一条 join 都不出现。此前 `JpaPathsNestedTest` 只覆盖两段（`Shipment#address.city`）。
 ///
-/// 关于 `compile/JpaPaths.java:62` 的关联判定：**它不是可观测的**，这里如实记下实测。
+/// 关于 `JpaPaths` 路径解析的关联判定：**它不是可观测的**，这里如实记下实测。
 /// 把判定换成恒真（中段一律 `join`）后，两段与三段嵌入用例**都仍然绿**——
 /// Hibernate 7 的嵌入属性 `join` 是"虚拟"的，渲染成同一批列，语句与结果逐字节不变。
-/// 所以那是一条等价变异（`docs/DESIGN.md` §5 等价变异清单），不是缺口；
+/// 所以那是一条等价变异，不是缺口；
 /// 本类保留的价值是钉住三段嵌入这条路径形状本身。
 class JpaEmbeddedChainTest extends JpaTestSupport {
 

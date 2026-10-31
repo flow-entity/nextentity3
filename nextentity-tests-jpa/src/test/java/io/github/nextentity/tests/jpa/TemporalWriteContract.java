@@ -39,7 +39,7 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 ///    这样两者被混用时会立刻现形。
 /// 3. **`LocalDate` 不得带时刻**：库列是 `date`，比较与排序都按日历日。
 ///
-/// **oracle 分层**（AGENTS.md「测试编写红线」）：查询结果一律与**内存筛选**对拍
+/// **oracle 分层**：查询结果一律与**内存筛选**对拍
 /// （见 `expectedIds`），手算常量只出现在两处已知语义上——闭区间的两端都含、`null` 行不参与
 /// 比较。所有时间常量都取整秒，小数秒精度单独由 [TemporalWriteContract#preservesSubSecondPrecision]
 /// 用 `LocalDateTime` 钉（`Instant` 的小数位精度会撞上 `instantBindingKeepsTheInstant` 说明的
@@ -137,7 +137,7 @@ abstract class TemporalWriteContract {
 
     /// PG 兼容模式的 `Instant` 形态：钉「丢掉的偏移**恰好**是一个 JVM 时区偏移」。
     ///
-    /// 这条只在 opt-in 通道跑，且用显式注解 + `@Tag` 标记（AGENTS.md「方言跳过必须可数」），
+    /// 这条只在 opt-in 通道跑，且用显式注解 + `@Tag` 标记，
     /// 不用 `assumeTrue`：跳过不进任何计数，而这里要证明的恰恰是「该通道上偏移是 8 小时而不是别的量」。
     /// 断言不留容忍带——写成「漂移小于 24 小时」会把所有合法时区差（UTC−12…UTC+14）都放过去，
     /// 对这个用例唯一要抓的缺陷类别（时刻被时区挪动）零区分力。

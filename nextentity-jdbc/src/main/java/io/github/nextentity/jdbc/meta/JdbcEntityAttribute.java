@@ -295,7 +295,7 @@ public final class JdbcEntityAttribute implements EntityAttribute {
         return new JdbcEntityAttribute(targetId.field, fkColumn, null);
     }
 
-    /// 关联列的映射信息：`joinColumn == null` 表示被静默忽略的集合 / `mappedBy` 反侧字段（见 USAGE §13.4.2）。
+    /// 关联列的映射信息：`joinColumn == null` 表示被静默忽略的集合 / `mappedBy` 反侧字段。
     ///
     /// @param target               关联目标 Java 类型
     /// @param idField              目标 `@Id` 字段句柄（写关联时取 FK 值）；被忽略的关联为 `null`

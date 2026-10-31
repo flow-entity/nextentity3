@@ -26,7 +26,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/// `JpaPredicates.between`（`compile/JpaPredicates.java:88-97`）的两条路径。
+/// `JpaPredicates.between` 的两条路径。
 ///
 /// `JpaEndToEndTest#predicatesAcrossOperators` 的区间用例取 `[5,13]`，恰好覆盖全部两行，
 /// 因此「条件整个丢掉」也照样通过——本类改用**能排除行**的区间来钉住条件是否生效：
@@ -182,7 +182,7 @@ class JpaPredicatesBetweenTest extends JpaTestSupport {
         assertThat(widened).containsExactly(1L, 2L, 3L, 4L, 5L, 6L);
     }
 
-    /// 下界字面量、上界表达式：`instanceof Literal` 的短路顺序里最后一格（`JpaPredicates.java:92`）。
+    /// 下界字面量、上界表达式：`instanceof Literal` 的短路顺序里最后一格。
     ///
     /// 下界取 10 使命中集合 `[1,3]` 与「两侧都是列」（`[1,3,4]`）不同，用来证明这一格真的按混合形态
     /// 渲染：把这一格判反、或退化成「两侧都是列」，`value=5` 的第 4 行就会重新命中。

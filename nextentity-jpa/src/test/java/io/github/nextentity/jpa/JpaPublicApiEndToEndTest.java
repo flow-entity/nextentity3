@@ -107,8 +107,8 @@ class JpaPublicApiEndToEndTest extends JpaTestSupport {
         });
     }
 
-    /// `distinct().select(单列)` 的形态：point-mall 的两个真实调用点（`DigitalCardRepository:85`、
-    /// `OrderImportRecordRepository:71`）都是「单列投影 + `.list()`」形态。
+    /// `distinct().select(单列)` 的形态：point-mall 的两个真实调用点（`DigitalCardRepository`、
+    /// `OrderImportRecordRepository`）都是「单列投影 + `.list()`」形态。
     @Test
     void distinctSingleColumn() {
         inTx(entityManager -> {
@@ -135,7 +135,7 @@ class JpaPublicApiEndToEndTest extends JpaTestSupport {
         });
     }
 
-    /// `insertAll` / `updateAll` 的真实调用点：point-mall `AppRepositoryImpl:103/119`。
+    /// `insertAll` / `updateAll` 的真实调用点：point-mall `AppRepositoryImpl`。
     ///
     /// **事务边界是这条用例的前提，不是凑绿**：`updateAll` 走的是 `CriteriaUpdate`（语句级写，
     /// 绕过持久化上下文）。若在同一事务里紧跟一个尚未 flush 的 `persist`，库里还没有那行，

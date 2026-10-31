@@ -178,7 +178,7 @@ final class OpInterpreter {
     /// - `OR` 下它是恒真，**整条 OR 恒真**，必须返回 `Constant.TRUE`（跳过会算错）。
     ///
     /// 判据是 `SkippedCondition` 标记而**不是**"不是 `Op`"：`Path<T, Boolean>` 同样不是 `Op`，但它是
-    /// "把整列当条件"的写法（2.2.3 也不支持，见 `docs/USAGE.md`「布尔字段请写 `.eq(true)`」）。
+    /// "把整列当条件"的写法（2.2.3 也不支持，布尔字段请写 `.eq(true)`）。
     /// 旧实现把这类实参一律当占位，于是 `pred.or(Path.of(Order::getActive))` 返回恒真、
     /// WHERE 整体消失（连租户边界一起），是静默 fail-open。现在当场拒绝。
     ///

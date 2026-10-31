@@ -50,7 +50,7 @@ abstract class EmbeddedOverrideWriteContract {
         resetRows();
     }
 
-    /// 复位（AGENTS.md：集成测试启动容器后须在 `@AfterEach` 复位被改状态）。
+    /// 复位（集成测试启动容器后须在 `@AfterEach` 复位被改状态）。
     @AfterEach
     void resetAfter() {
         resetRows();

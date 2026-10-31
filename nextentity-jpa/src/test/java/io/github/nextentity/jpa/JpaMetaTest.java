@@ -25,8 +25,8 @@ import org.junit.jupiter.api.Test;
 /// - `meta/JpaMeta.java` 的 `pluralAssociation` 整个判定：它是 `JpaPaths` 拒绝集合关联路径的
 ///   唯一依据，恒真/恒假都会造成「过度拒绝」或「静默 join 出错数」，见
 ///   [JpaPluralAssociationRejectionTest]。
-/// - `meta/JpaEntityAttribute.java:41`：`type()` 返回 `null`。属性类型此前没有任何调用点。
-/// - `meta/JpaEntityAttribute.java:22`：`resolveField` 的循环只查实体自身、不向父类上溯。
+/// - `JpaEntityAttribute.type()` 返回 `null`。属性类型此前没有任何调用点。
+/// - `JpaEntityAttribute.resolveField` 的循环只查实体自身、不向父类上溯。
 ///   现有实体的字段都声明在自己身上，继承映射这条路径零覆盖，所以这里用 `@MappedSuperclass`
 ///   声明字段（`DerivedRecord#code`）。
 class JpaMetaTest extends JpaTestSupport {

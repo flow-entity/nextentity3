@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 ///
 /// 这条只放在 `nextentity-tests-jpa`、不进 `nextentity-testing` 的共享基类：断言要看真实下发的
 /// SQL（`for update`），并且查询必须在事务里跑——SQL 抓取与事务装置只存在于 jpa 侧；一致性基类
-/// 按 DESIGN §5 只做结果断言、不带后端依赖（`TESTING_STAYS_BACKEND_FREE` 会拒绝）。
+/// 只做结果断言、不带后端依赖（`TESTING_STAYS_BACKEND_FREE` 会拒绝）。
 ///
 /// 真实调用点：point-mall `LogisticsOrderRepository.findByOrderIdForUpdate`（`eq + lock + single`）。
 class ItemLockConsistencyTest {

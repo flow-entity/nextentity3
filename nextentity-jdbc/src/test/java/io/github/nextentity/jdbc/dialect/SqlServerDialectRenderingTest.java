@@ -15,7 +15,7 @@ import io.github.nextentity.jdbc.support.SnapshotItem;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/// SQL Server 端到端渲染（设计 §6.1）：exists 的 `top (1)` 进 SELECT 头、分页必须带 ORDER BY
+/// SQL Server 端到端渲染：exists 的 `top (1)` 进 SELECT 头、分页必须带 ORDER BY
 /// （无用户排序时补 `order by 1`）、`offset ? rows`、`fetch next ? rows only`、LIKE 显式 ESCAPE、
 /// `avg` 转 float、行锁显式拒绝。
 class SqlServerDialectRenderingTest {
@@ -40,7 +40,7 @@ class SqlServerDialectRenderingTest {
 
     @Test
     void distinctWindowWithoutUserOrderByAddsOrderByOneFallback() {
-        // distinct 投影 + 窗口：core 不补主键序（QueryBuilder.java:358），因此走 MSSQL 的兜底 `order by 1`。
+        // distinct 投影 + 窗口：core 不补主键序，因此走 MSSQL 的兜底 `order by 1`。
         items().distinct().select(Path.of(SnapshotItem::name)).list(5);
 
         assertThat(executor.last.sql())

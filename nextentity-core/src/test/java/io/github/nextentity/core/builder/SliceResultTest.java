@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 
 /// `SliceResult` 的值语义与 `to()` 透传。
 ///
-/// 守护的变异体：`SliceResult.java:21` 的 `to()` 返回 `null`
+/// 守护的变异体：`SliceResult#to` 返回 `null`
 /// （`return mapper.apply(this)` → `return null`）——用例断言映射函数收到的就是自身、
 /// 且返回值原样透传，因此返回 `null` 一定失败。
 @DisplayName("SliceResult")

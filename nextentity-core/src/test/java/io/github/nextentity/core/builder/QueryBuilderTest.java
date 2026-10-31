@@ -140,7 +140,7 @@ class QueryBuilderTest {
         assertThat(backend.last().where()).isNull();
     }
 
-    /// 守护 `QueryBuilder:305` 的 `return current` → `null`：只有「已有条件 + 再追加恒真占位」
+    /// 守护 `QueryBuilder#mergeCondition` 的 `return current` → `null`：只有「已有条件 + 再追加恒真占位」
     /// 才走这条分支，单条件用例碰不到它。
     @Test
     @DisplayName("已有条件 + 恒真占位：原有条件不被丢弃")
@@ -242,7 +242,7 @@ class QueryBuilderTest {
                 .isEqualTo(new ValueSelection(List.of(new PathProjection(path("id"))), false, ROW));
     }
 
-    /// 守护 `QueryBuilder:124` 的 `return applySelection(...)` → `null`：`select(Expression)`
+    /// 守护 `QueryBuilder#select(Expression)` 的 `return applySelection(...)` → `null`：`select(Expression)`
     /// 重载把 api 的值对象路径当投影，返回 null 时链式 `.list()` 直接 NPE。
     @Test
     @DisplayName("select(Expression)：值对象路径作为投影")
@@ -439,7 +439,7 @@ class QueryBuilderTest {
                         new Ordering(path("id"), Ordering.Direction.ASC));
     }
 
-    /// 守护 `QueryBuilder:164` 的 `return orderBy(PathRefs.resolve(...))` → `null`：
+    /// 守护 `QueryBuilder#orderBy(Path)` 的 `return orderBy(PathRefs.resolve(...))` → `null`：
     /// `orderBy(Path)` 重载必须返回可链式的算子，`.desc()` 之后排序项要进规格。
     @Test
     @DisplayName("orderBy(Path)：值对象路径同样产生排序项")
@@ -518,7 +518,7 @@ class QueryBuilderTest {
 
     // ------------------------------------------------------- groupBy / having
 
-    /// 守护 `QueryBuilder:181` 的 `return this` → `null`：变长 `groupBy(refs...)` 只有多列
+    /// 守护 `QueryBuilder#groupBy(PathRef...)` 的 `return this` → `null`：变长 `groupBy(refs...)` 只有多列
     /// 调用才走到，返回 null 时链式 `.list()` 直接 NPE，且两列都要进分组。
     @Test
     @DisplayName("groupBy(refs...)：多列分组按调用顺序累积")
@@ -528,7 +528,7 @@ class QueryBuilderTest {
         assertThat(backend.last().groupBy()).containsExactly(path("orgId"), path("status"));
     }
 
-    /// 守护 `QueryBuilder:189` 的 `return this` → `null` 与 `QueryBuilder:186` 的 instanceof
+    /// 守护 `QueryBuilder#having(Expression)` 的 `return this` → `null` 与其中的 `instanceof Op`
     /// 取反：正常 `having(Op)` 必须翻译成节点并链式返回；取反后整段被跳过，having 变 null。
     @Test
     @DisplayName("having(Op)：条件翻译成节点，且链式可继续")
@@ -539,7 +539,7 @@ class QueryBuilderTest {
                 .isEqualTo(new Comparison(path("age"), ComparisonOperator.GT, Literal.of(1)));
     }
 
-    /// `QueryBuilder:186` 的另一半语义（同 `where(Expression)`）：`*IfNotNull(null)` 短路出来的
+    /// `QueryBuilder#having(Expression)` 的另一半语义（同 `where(Expression)`）：`*IfNotNull(null)` 短路出来的
     /// 谓词不实现 `Op`，是「恒真占位」，不追加 HAVING 节点，而不是被当成恒真去渲染。
     @Test
     @DisplayName("having(恒真占位)：不实现 Op 的谓词被忽略，HAVING 保持为空")
@@ -553,7 +553,7 @@ class QueryBuilderTest {
 
     // ------------------------------------------------------------------- lock
 
-    /// 守护 `QueryBuilder:195` 的 `return this` → `null`：返回 null 时链式调用 `.list()`
+    /// 守护 `QueryBuilder#lock(LockMode)` 的 `return this` → `null`：返回 null 时链式调用 `.list()`
     /// 直接 NPE，且锁模式进不了规格。
     @Test
     @DisplayName("lock(mode)：链式调用可用，锁模式进入查询规格")
@@ -565,7 +565,7 @@ class QueryBuilderTest {
 
     // ------------------------------------------------------------- terminate
 
-    /// 守护 `QueryBuilder:207` 的 `return fetch(...)` → `return List.of()`：limit 版本必须
+    /// 守护 `QueryBuilder#list(int, int)` 的 `return fetch(...)` → `return List.of()`：limit 版本必须
     /// 返回执行器给出的行，而不是恒定空列表。
     @Test
     @DisplayName("list(limit)：返回执行器给出的行，顺序不变")
@@ -618,7 +618,7 @@ class QueryBuilderTest {
         assertThat(backend.last().window()).isEqualTo(new Window(0, 2));
     }
 
-    /// 守护 `QueryBuilder:217` 的 `rows.isEmpty() ? null` 一侧：`Collector.single()` 的 javadoc
+    /// 守护 `QueryBuilder#single()` 的 `rows.isEmpty() ? null` 一侧：`Collector.single()` 的 javadoc
     /// 承诺「无结果时是 `null`，不抛异常」，所以空结果集必须返回 `null`，不是 `NoSuchElementException`。
     @Test
     @DisplayName("single()：无命中行时返回 null（已承诺的契约，不是异常）")
@@ -644,7 +644,7 @@ class QueryBuilderTest {
         assertThat(backend.last().window()).isEqualTo(new Window(null, 1));
     }
 
-    /// 守护 `QueryBuilder:232` 的 `return executor.exists(...)` → `true`：只测 true 时，
+    /// 守护 `QueryBuilder#exists()` 的 `return executor.exists(...)` → `true`：只测 true 时，
     /// 恒 true 的变异也能过，因此必须有一条无命中的 false 用例。
     @Test
     @DisplayName("exists()：无命中时为 false")
@@ -737,7 +737,7 @@ class QueryBuilderTest {
         assertThat(backend.specs).hasSize(1);
     }
 
-    /// 守护 `QueryBuilder:238` 的 `total <= offset` → `total < offset`：边界值 `offset == total`
+    /// 守护 `QueryBuilder#slice(int, int)` 的 `total <= offset` → `total < offset`：边界值 `offset == total`
     /// 必须同样短路——否则会白跑一次列表查询。
     @Test
     @DisplayName("slice()：offset 恰好等于总数时返回空页，且不再跑列表查询")
@@ -950,13 +950,13 @@ class QueryBuilderTest {
     // ------------------------------------------- 条件位置的契约拒绝（fail-closed）
 
     /// `Path<T, Boolean>` 是 `Expression<T, Boolean>` 但不是条件（不是 `Op`）。
-    /// 2.2.3 起就不支持"把字段本身当条件"（`docs/USAGE.md`：布尔字段请写 `.eq(true)`），
+    /// 2.2.3 起就不支持"把字段本身当条件"（布尔字段请写 `.eq(true)`），
     /// 因此送进条件位置必须**当场拒绝**。旧实现用 `instanceof Op` 当唯一入口、其余静默跳过，
     /// 于是 `where(flag)` 会退化成无条件（返回全表），租户/权限边界一起消失。
     ///
     /// 消息里的**实际类型**也要断：`OpInterpreter#notCondition` 把 `null` 与"某个类"分开描述，
     /// 只断前半句时，把 `argument == null` 改成恒真（恒报 `null`）仍然全绿——
-    /// 那正是 `STRONGER` 组里 `OpInterpreter:216` 存活的原因。
+    /// 那正是 `STRONGER` 组里 `OpInterpreter#notCondition` 存活的原因。
     @Test
     @DisplayName("where(布尔字段路径)：拒绝，而不是静默丢掉整条 WHERE")
     void whereBooleanPathRejected() {
@@ -1045,7 +1045,7 @@ class QueryBuilderTest {
     }
 
     /// 路径形态的 `where` 是**步骤**而不是条件：裸写 `where(Order::getActive)` 一条条件都不产生，
-    /// 与"没写这条 where"等价（`docs/USAGE.md`：布尔字段请写 `.eq(true)`）。
+    /// 与"没写这条 where"等价（布尔字段请写 `.eq(true)`）。
     /// 这条用例把该行为钉成契约——它是 `where(Expression)` 的拒绝分支覆盖不到的那半边。
     @Test
     @DisplayName("where(路径) 裸写：只返回算子步骤、不产生条件；链上算子才产生")

@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 /// 一个先插后改的实现照样能抛出异常（插完再撞主键），但库里已经脏了。
 ///
 /// 两种实体各一条：无 `@Version` 抛 `EntityNotFoundException`，有 `@Version` 抛
-/// `OptimisticLockException`（同一个 `verifyAffected` 分支的两种出口，见 USAGE §10）。
+/// `OptimisticLockException`（同一个 `verifyAffected` 分支的两种出口）。
 class ItemMissingRowUpdateTest {
 
     /// 夹具里不存在的主键：更新它等于「改一行没有的行」。

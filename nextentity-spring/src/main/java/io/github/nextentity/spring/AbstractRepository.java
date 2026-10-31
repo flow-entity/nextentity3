@@ -43,7 +43,7 @@ public abstract class AbstractRepository<T> {
 
     /// 插入单个实体。
     ///
-    /// 调用点：point-mall `VersionManager.java:124/137` 调 `appVersionRepository.insert(...)`
+    /// 调用点：point-mall `VersionManager` 调 `appVersionRepository.insert(...)`
     /// （`AppVersionRepository` 自己不声明该方法，2.2.3 里由 `AbstractRepository` 提供）。
     /// 事务边界由调用方的 `@Transactional` 决定，本类不接管。
     ///

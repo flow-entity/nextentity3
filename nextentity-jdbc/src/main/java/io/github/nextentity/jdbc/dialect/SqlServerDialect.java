@@ -81,7 +81,7 @@ public final class SqlServerDialect implements JdbcDialect {
     }
 
     /// T-SQL 的字符串长度函数是 `len`。注意 `LEN` **会裁掉尾随空格**，与 H2 / MySQL / PostgreSQL 的
-    /// `length` / `char_length` 语义不等价（属「会算错」而非「会报错」，USAGE §13.4 已披露）。
+    /// `length` / `char_length` 语义不等价（属「会算错」而非「会报错」）。
     @Override
     public String lengthOf(String operand) {
         return "len(" + operand + ")";

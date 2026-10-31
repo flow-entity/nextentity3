@@ -116,7 +116,7 @@ public abstract class GoldenSchemaLandingContract {
     @Test
     @DisplayName("@OneToMany 的另一侧：订单行按订单分组、可空发货时间真写 NULL")
     void orderLinesRoundTripWithNullableShippedAt() {
-        // JDBC 侧读回只装外键/标量列、不填充关联对象（USAGE §13.4 的披露），所以分组证据走 SQL 计数，
+        // JDBC 侧读回只装外键/标量列、不填充关联对象，所以分组证据走 SQL 计数，
         // 而不是 `line.order().id()`——后者在 JDBC 上本来就是 null，用它当 oracle 会把限制写成失败。
         assertThat(support().queryString("select count(*) from golden_order_line where order_id = 101"))
                 .isEqualTo("2");
@@ -129,7 +129,7 @@ public abstract class GoldenSchemaLandingContract {
                 .isEqualTo("2");
     }
 
-    /// **契约**（3.1.0 定下，见 USAGE §10.1）：批量条件更新只写调用方声明的列，**不自增也不校验
+    /// **契约**（3.1.0 定下）：批量条件更新只写调用方声明的列，**不自增也不校验
     /// `@Version`**；乐观锁只在单实体 `update(entity)` 路径生效。需要并发保护时走单实体 update，
     /// 或自己在 `where(...)` 里显式带上版本列。JPA 侧同名用例钉住同一契约。
     @Test
@@ -237,7 +237,7 @@ public abstract class GoldenSchemaLandingContract {
         assertThat(springfield).extracting(GoldenSchema.Customer::id).containsExactly(1L);
     }
 
-    /// 能力差异（USAGE §13.4.4）：JDBC 的 DTO 投影**不**按名回找 `@Embedded` 叶子。`street` 在
+    /// 能力差异：JDBC 的 DTO 投影**不**按名回找 `@Embedded` 叶子。`street` 在
     /// `Customer` 上不是属性，直接按未知属性拒绝；JPA 侧同名投影是正向用例
     /// （`JpaGoldenSchemaLandingContract#dtoProjectionResolvesEmbeddedLeafByAttributeName`），
     /// 两个后端的行为差异由这两条用例钉住，不靠文档口头交代。

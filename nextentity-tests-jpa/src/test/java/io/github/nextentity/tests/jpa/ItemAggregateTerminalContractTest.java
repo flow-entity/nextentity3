@@ -44,7 +44,7 @@ class ItemAggregateTerminalContractTest extends ConsistencyTestBase<ItemEntity> 
 
     /// 有 `having`、无 `groupBy`、无聚合投影：`count()` 必须显式拒绝，而不是给出一个会误导的数值。
     ///
-    /// 守护 `nextentity-jpa` 的 `jpa/exec/JpaExecutor.java:57-59`。
+    /// 守护 `nextentity-jpa` 的 `JpaExecutor#count` 的拒绝分支。
     @Test
     void countRejectsHavingWithoutGroupByOrAggregateProjection() {
         var havingOnly = query().having(Path.of(idRef()).count().gt(3L));
@@ -72,7 +72,7 @@ class ItemAggregateTerminalContractTest extends ConsistencyTestBase<ItemEntity> 
     /// 多列 `distinct()` 的 `count()` 必须显式拒绝：`COUNT(DISTINCT a, b)` 在 MySQL 与 PostgreSQL
     /// 形态不同，只数第一列会静默给出错数。
     ///
-    /// 守护 `nextentity-jpa` 的 `jpa/exec/JpaExecutor.java:66-72`：消息里带列数，列数算错就会红。
+    /// 守护 `nextentity-jpa` 的 `JpaExecutor#count` 的多列 distinct 拒绝分支：消息里带列数，列数算错就会红。
     @Test
     void countRejectsMultiColumnDistinct() {
         var multiColumnDistinct = query().distinct().select(Path.of(statusRef()), Path.of(noteRef()));
@@ -87,7 +87,7 @@ class ItemAggregateTerminalContractTest extends ConsistencyTestBase<ItemEntity> 
     /// 聚合投影规格的 `exists()` 必须和 `count()` 一样显式拒绝：`HAVING` 能把所有组都过滤掉，
     /// 只渲染 `where` 会给出与查询**相反**的布尔值，静默近似比抛异常危险。
     ///
-    /// 守护 `nextentity-jpa` 的 `jpa/exec/JpaExecutor.java:94-96`。
+    /// 守护 `nextentity-jpa` 的 `JpaExecutor#exists` 的拒绝分支。
     @Test
     void existsRejectsAggregateSpec() {
         var aggregated = query().select(Path.of(idRef()).count());
@@ -99,14 +99,14 @@ class ItemAggregateTerminalContractTest extends ConsistencyTestBase<ItemEntity> 
     }
 
     /// `slice()` 对聚合/分组规格的拒绝是**级联**，不是它自己的判断：`slice` 先取 `count()` 当总数
-    /// （`nextentity-core` 的 `core/builder/QueryBuilder.java:236-242`，第一行就是 `long total = count();`），
+    /// （`nextentity-core` 的 `QueryBuilder#slice` 的第一行就是 `long total = count();`），
     /// 于是 `count()` 的拒绝原样冒出来。
     ///
     /// 断言消息是 `count` 的那一条，正是「级联」的证据：若将来有人给 `slice` 加了自己的前置校验，
     /// 这条用例会红，迫使新分支也补上自己的契约用例。
     ///
-    /// 守护 `nextentity-core` 的 `core/builder/QueryBuilder.java:237`，级联落点在
-    /// `nextentity-jpa` 的 `jpa/exec/JpaExecutor.java:57-59`。
+    /// 守护 `nextentity-core` 的 `QueryBuilder#slice`，级联落点在
+    /// `nextentity-jpa` 的 `JpaExecutor#count`。
     @Test
     void sliceRejectsAggregateSpecViaCascade() {
         var aggregated = query().select(Path.of(idRef()).count());

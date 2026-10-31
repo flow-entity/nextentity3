@@ -16,7 +16,7 @@ import java.util.Locale;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/// `JpaExecutor.list` 的分页边界（`exec/JpaExecutor.java:41`、`:44`）。
+/// `JpaExecutor.list` 的分页边界。
 ///
 /// 现有 `JpaEndToEndTest#orderingAndWindow` 只用 `Window(1, 1)`：`offset=1` 时两行里正好剩一行，
 /// 「`limit` 根本没生效」与「`limit` 生效」的**结果集完全一样**，所以两条边界条件都活了下来。

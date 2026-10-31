@@ -40,7 +40,7 @@ class MySqlAssetWriteAssociationIntegrationTest {
         support.clearSql();
     }
 
-    /// 复位（AGENTS.md：集成测试启动容器后须在 `@AfterEach` 复位被改状态）。
+    /// 复位（集成测试启动容器后须在 `@AfterEach` 复位被改状态）。
     @AfterEach
     void resetAfter() {
         support.truncate("AssetEntity");
@@ -88,7 +88,7 @@ class MySqlAssetWriteAssociationIntegrationTest {
         assertThat(statements("update asset")).hasSize(1).allSatisfy(statement -> assertThat(setClause(statement))
                 .contains("owner_id=?"));
 
-        // 与 JDBC 后端的差异（它跳过 null 关联、无法置空）由 architect 在 USAGE 披露；
+        // 与 JDBC 后端的差异（它跳过 null 关联、无法置空）；
         // JPA 侧这里必须真的清掉，不能为了「对齐」弱化成跳过。
         assertThat(ownerIdOf(1L)).isNull();
         assertThat(nameOf(1L)).isEqualTo("orphaned");

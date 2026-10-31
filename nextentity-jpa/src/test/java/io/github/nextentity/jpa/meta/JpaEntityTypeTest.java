@@ -19,7 +19,7 @@ import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/// `JpaEntityType.of` 的「缺 `@Id`」护栏（`meta/JpaEntityType.java:55-56`）。
+/// `JpaEntityType.of` 的「缺 `@Id`」护栏。
 ///
 /// 为什么用桩元模型而不是真实 Hibernate：Hibernate 7 在**启动期**就拒绝没有标识符的实体
 /// （`No identifier specified for entity`），`hbm2ddl` 都到不了，所以真实元模型里永远拿不到

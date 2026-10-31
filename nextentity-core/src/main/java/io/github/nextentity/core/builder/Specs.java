@@ -18,7 +18,7 @@ import java.util.Collection;
 /// - `api.Op` 值（`Path.of(...)`、`where(...)` 之后由 api 组装的条件）由 {@link OpInterpreter} 翻译；
 /// - 查询链上的算子（`query.where(X::getY).eq(v)`）由 {@link PathStepOperator} 直接调用。
 ///
-/// 空集合语义在这里定死（2.2.3 `ExpressionNode:78-88`）：`IN` 空 → `1=0`、`NOT IN` 空 → `1=1`。
+/// 空集合语义在这里定死（2.2.3 同此口径）：`IN` 空 → `1=0`、`NOT IN` 空 → `1=1`。
 final class Specs {
 
     private Specs() {}
@@ -42,7 +42,7 @@ final class Specs {
         return new Comparison(subject, ComparisonOperator.LIKE, Literal.of(pattern));
     }
 
-    /// 包含子串：`%value%`（2.2.3 `ExpressionBuilder:520-522`）。
+    /// 包含子串：`%value%`（2.2.3 同此口径）。
     ///
     /// @param subject 主语操作数
     /// @param value   子串

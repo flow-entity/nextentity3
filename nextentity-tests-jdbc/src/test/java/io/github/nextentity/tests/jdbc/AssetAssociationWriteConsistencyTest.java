@@ -8,12 +8,12 @@ import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.TestInstance;
 
-/// 写关联（CUT-17）的 JDBC 接线：H2 内存库，走真实的单实体 `insert`/`update` 路径（自动提交语义）。
+/// 写关联的 JDBC 接线：H2 内存库，走真实的单实体 `insert`/`update` 路径（自动提交语义）。
 ///
 /// 空关联语义 = `SKIPS_COLUMN`：JDBC 的写入执行器在关联为 `null` 时**跳过该列**，
-/// 所以 `update(entity)` 不能把外键置空（USAGE §13.4.4 披露的差异）。
+/// 所以 `update(entity)` 不能把外键置空。
 /// 基类的置空用例在这里断言"外键保持旧值、但标量列真的更新了"，
-/// 而不是整条跳过——跳过会让这条已披露的差异变成没人测的灰区。
+/// 而不是整条跳过——跳过会让这条语义差异变成没人测的灰区。
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class AssetAssociationWriteConsistencyTest extends AssociationWriteConsistencyTest<AssetEntity> {
 

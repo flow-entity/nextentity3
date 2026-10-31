@@ -13,7 +13,7 @@ import java.util.Objects;
 
 /// `core.compile.Compiler` 的 JDBC 实现：把 `QuerySpec` 渲染成后端可执行的 SQL。
 ///
-/// 方言在构造期固定，只经设计 §6.1 的方言钩子参与渲染（selectHead / limitClause / lock /
+/// 方言在构造期固定，只经方言钩子参与渲染（selectHead / limitClause / lock /
 /// quote / averageOf / likeEscape）；其余子句四方言同形。
 public final class JdbcCompiler implements Compiler<JdbcQuery> {
 
@@ -47,7 +47,7 @@ public final class JdbcCompiler implements Compiler<JdbcQuery> {
     /// 存在性语句。
     ///
     /// @param spec 存在性规格（core 已清排序/窗口/锁）
-    /// @return `select 1 ... limit 1`
+    /// @return SqlStatement: `select 1 ... limit 1`
     public SqlStatement exists(QuerySpec spec) {
         return new SqlRenderer(meta, dialect, requireSpec(spec)).exists();
     }
@@ -85,7 +85,7 @@ public final class JdbcCompiler implements Compiler<JdbcQuery> {
                 + "；请改用 project(ProjectionMapper) 取关联列，或改用 JPA 后端");
     }
 
-    /// 集合关联在元数据里表现为「关联但无 `@JoinColumn`」（Tooltip: 集合关联被识别却忽略，见 USAGE §13.4）。
+    /// 集合关联在元数据里表现为「关联但无 `@JoinColumn`」，即被识别却忽略。
     private static boolean isCollection(JdbcEntityType<?> entityType, AttributePath path) {
         JdbcEntityAttribute attribute = entityType.attribute(path.names().getFirst());
         return attribute != null && attribute.isAssociation() && attribute.joinColumn() == null;

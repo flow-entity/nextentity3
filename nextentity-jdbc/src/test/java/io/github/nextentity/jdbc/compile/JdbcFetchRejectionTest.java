@@ -18,7 +18,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /// `fetch(...)` 的 JDBC 契约：后端不组装实体图、没有懒加载代理，必须 fail-fast 拒绝并给出替代路径；
-/// 静默忽略会让关联字段保持 `null` 而调用方以为预加载成功（设计 §7.1 CUT 表 / USAGE §8.1）。
+/// 静默忽略会让关联字段保持 `null` 而调用方以为预加载成功。
 class JdbcFetchRejectionTest {
 
     private final JdbcCompiler compiler = new JdbcCompiler(new JdbcMeta(), JdbcDialect.of("H2"));

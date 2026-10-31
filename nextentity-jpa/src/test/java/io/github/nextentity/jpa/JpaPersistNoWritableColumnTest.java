@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 /// 只读列跳过是 3.1.0 的能力（`@Column(updatable=false)` 不进 `UPDATE`），但当所有列都只读时
 /// `SET` 会变空；Hibernate 对空赋值抛的是 `IllegalArgumentException("No assignments specified as
 /// part of UPDATE criteria")`——provider 内部异常，不是本库的拒绝契约。JDBC 后端在
-/// `WriteSql.update` 里已显式抛 `UnsupportedOperationException`（3.0.0 CHANGELOG「无 @Version 且
+/// `WriteSql.update` 里已显式抛 `UnsupportedOperationException`（3.0.0：无 @Version 且
 /// 无可写标量列的 update 明确拒绝（UOE），不静默丢语义」），JPA 侧对齐同一文案。
 class JpaPersistNoWritableColumnTest extends JpaTestSupport {
 

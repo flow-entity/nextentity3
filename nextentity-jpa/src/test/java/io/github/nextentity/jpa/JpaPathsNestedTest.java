@@ -24,7 +24,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/// `JpaPaths.navigate` 的两侧（`compile/JpaPaths.java:62-64`）：中段是关联走 `join`，
+/// `JpaPaths.navigate` 的两侧：中段是关联走 `join`，
 /// 中段不是关联（`@Embedded`）走 `get`；`path()` 再在解析结果上取最后一段。
 ///
 /// 现有嵌套路径用例（`JpaEndToEndTest#nestedPathUsesLeftJoin`）只走 `@ManyToOne` 链，

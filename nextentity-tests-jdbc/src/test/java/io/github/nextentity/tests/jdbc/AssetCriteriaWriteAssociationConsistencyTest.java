@@ -15,7 +15,7 @@ import org.junit.jupiter.api.AfterEach;
 /// 条件写「SET 目标是关联列」的 JDBC 接线：H2 内存库，走真实的 `update()` 条件写路径（自动提交语义）。
 ///
 /// 外键列走嵌套路径 `EntityPath.of(AssetEntity::owner).get(OwnerEntity::id)`，原始列读回走原生 SQL：
-/// JDBC 读回不填充关联对象（USAGE §13.4.4），证据要的是库里的 `owner_id` 原值。
+/// JDBC 读回不填充关联对象，证据要的是库里的 `owner_id` 原值。
 class AssetCriteriaWriteAssociationConsistencyTest extends CriteriaWriteAssociationConsistencyTest<AssetEntity> {
 
     private final JdbcAssetSupport support = new JdbcAssetSupport("assetcriteriawriteassociation");

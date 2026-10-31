@@ -12,8 +12,8 @@ import java.util.Locale;
 
 /// 把方法引用解析成属性路径。
 ///
-/// 2.2.3 的做法是反射调用 lambda 的 `writeReplace()` 拿到 `SerializedLambda`
-/// （`core/PathReference.java:55-74`），属性名由**方法名**去 `get`/`is` 前缀得到，
+/// 2.2.3 的做法是反射调用 lambda 的 `writeReplace()` 拿到 `SerializedLambda`，
+/// 属性名由**方法名**去 `get`/`is` 前缀得到，
 /// 不读字段、不读注解。3.x 沿用同一机制：point-mall 的 762 处 `.where(...)` 全是方法引用，
 /// 换成别的方式就要改消费方代码。
 ///

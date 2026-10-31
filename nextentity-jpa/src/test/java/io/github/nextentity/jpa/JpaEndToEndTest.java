@@ -64,7 +64,7 @@ class JpaEndToEndTest extends JpaTestSupport {
                 executor(entityManager).<ShopOrder>list(compiler(entityManager).compile(byOrg)));
         assertThat(matched).extracting(ShopOrder::getId).containsExactly(100L);
 
-        // 两级嵌套（point-mall OrderRepository:87 的形态）：customer.org.name
+        // 两级嵌套（point-mall OrderRepository 的形态）：customer.org.name
         QuerySpec twoLevels = query(new Comparison(
                 AttributePath.of(ShopOrder.class, "customer", "org", "name"),
                 ComparisonOperator.EQ,
@@ -119,7 +119,7 @@ class JpaEndToEndTest extends JpaTestSupport {
         });
     }
 
-    /// 不带任何 `where` 的 `exists()`：`exec/JpaExecutor.java:102` 的 `where == null` 一侧。
+    /// 不带任何 `where` 的 `exists()`：`where == null` 一侧。
     ///
     /// 此前只用「带条件」的规格测过 exists，因此「无条件时整表有行即真」与「空表为假」都没钉住，
     /// 把该分支判反（`where != null`）也照样通过。空表侧先断言计数为 0，避免表里其实有行时
@@ -144,7 +144,7 @@ class JpaEndToEndTest extends JpaTestSupport {
         });
     }
 
-    /// `count()` 的两条契约拒绝（`exec/JpaExecutor.java:58`、`:69`）。
+    /// `count()` 的两条契约拒绝。
     ///
     /// 公开 api 路径的同一拒绝由 `nextentity-tests-jpa` 的
     /// `ItemAggregateTerminalContractTest#countRejectsGroupBy` 与
@@ -187,7 +187,7 @@ class JpaEndToEndTest extends JpaTestSupport {
         });
     }
 
-    /// `NullCheck` 的 `is not null` 一侧（`compile/JpaPredicates.java:109`）；`is null` 一侧由
+    /// `NullCheck` 的 `is not null` 一侧；`is null` 一侧由
     /// `nestedPathUsesLeftJoin` 覆盖（那里用 customer 为空的订单）。
     @Test
     void isNotNullMatchesRowsWithNonNullAssociation() {
@@ -225,7 +225,7 @@ class JpaEndToEndTest extends JpaTestSupport {
         inTx(entityManager -> {
             JpaCompiler compiler = compiler(entityManager);
             JpaExecutor executor = executor(entityManager);
-            // 文案里必须点名实体类型（`JpaExecutor:96` 的 `getName()`）：只断 "exists" 时，
+            // 文案里必须点名实体类型（`JpaExecutor` 的 `getName()`）：只断 "exists" 时，
             // 把类型名那一段删掉照样绿，排查时看不出是哪个实体被拒
             assertThatThrownBy(() -> executor.exists(compiler.compile(grouped.forExists())))
                     .isInstanceOf(UnsupportedOperationException.class)
@@ -284,7 +284,7 @@ class JpaEndToEndTest extends JpaTestSupport {
             ShopOrder stale = entityManager.find(ShopOrder.class, 100L);
             entityManager.detach(stale);
             stale.setVersion(0);
-            // 影响行数 0 时执行器抛的就是本库的文案（`:111` 拼 `, version=<旧版本值>`）；
+            // 影响行数 0 时执行器抛的就是本库的文案（消息里拼 `, version=<旧版本值>`）；
             // 只断异常类型分不清「版本条件生效」与「主键条件都没生效」这两条路径
             assertThatThrownBy(() -> persister(entityManager).update(stale))
                     .isInstanceOf(OptimisticLockException.class)
@@ -324,8 +324,8 @@ class JpaEndToEndTest extends JpaTestSupport {
 
         Spec paid = comparison("status", ComparisonOperator.EQ, OrderStatus.PAID);
         Spec cheap = comparison("amount", ComparisonOperator.LT, new BigDecimal("6"));
-        // 两个条件各自命中一行、并集恰好是全表时，把 `builder.or` 整行删掉（`JpaPredicates:118`
-        // 的变异体）会让 `where(null)` 退化成不加限制，结果同样是 {100,101}——这就是它一直
+        // 两个条件各自命中一行、并集恰好是全表时，把 `builder.or` 整行删掉的变异体
+        // 会让 `where(null)` 退化成不加限制，结果同样是 {100,101}——这就是它一直
         // 活着的原因。这里把第二个条件换成命中零行的条件，并集只剩一行，删掉 `or` 就会多出 101。
         assertThat(ids(query(new Logical(LogicalOperator.OR, List.of(paid, cheap)))))
                 .containsExactly(100L, 101L);
@@ -415,7 +415,7 @@ class JpaEndToEndTest extends JpaTestSupport {
         assertThat(distinct).containsExactly(2L);
     }
 
-    /// 右值是**表达式**（列而不是字面量）时走 `JpaPredicates.withExpression`（`:72-85`）。
+    /// 右值是**表达式**（列而不是字面量）时走 `JpaPredicates.withExpression`。
     ///
     /// 这一整个方法早先没有用例：`Comparison` 的右值总是 `Literal`，五个 `builder.xxx` 分支全是
     /// NO_COVERAGE——把 `greaterThan` 写成 `lessThan`、或整条分支删掉（返回 null 谓词，等于不加
@@ -439,7 +439,7 @@ class JpaEndToEndTest extends JpaTestSupport {
                 .isEmpty();
         assertThat(ids(query(new Comparison(customerId, ComparisonOperator.LE, orgId))))
                 .isEmpty();
-        // 右值是表达式时 LIKE 没有渲染语义：模式串只能是字面量（`:83`）
+        // 右值是表达式时 LIKE 没有渲染语义：模式串只能是字面量
         assertThatThrownBy(() -> ids(query(new Comparison(customerId, ComparisonOperator.LIKE, orgId))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("LIKE");
@@ -459,8 +459,8 @@ class JpaEndToEndTest extends JpaTestSupport {
         List<ShopOrder> orders = inTx(entityManager ->
                 executor(entityManager).<ShopOrder>list(compiler(entityManager).compile(locked)));
         assertThat(orders).extracting(ShopOrder::getId).containsExactly(100L);
-        // 锁必须真的进语句：只断结果行时，把 `spec.lock()` 的判定（`JpaExecutor:47`）或
-        // `setLockMode`（`JpaExecutor:49`）删掉，结果行一模一样，测试全绿——锁静默消失。
+        // 锁必须真的进语句：只断结果行时，把 `spec.lock()` 的判定或
+        // `setLockMode` 删掉，结果行一模一样，测试全绿——锁静默消失。
         // `for update` 只可能出现在锁语句的句尾，所以按句尾钉住。
         assertThat(normalized(drainSql())).singleElement().asString().endsWith("for update");
     }

@@ -19,8 +19,8 @@ import java.util.List;
 /// 公开原因同 [EnumStorage]：`meta`（列校验）、`compile`（谓词字面量绑定）、`exec`（写入绑定与行读取）三处共用。
 ///
 /// 写侧把 `java.time` / `BigInteger` 转成驱动普遍接受的 `java.sql` / `BigDecimal` 形态：JDBC 4.2 的
-/// `setObject`/`getObject` 对时间类型的支持按驱动而异（MySQL 驱动不支持 `getObject(Instant.class)`，
-/// 见设计 §7.1 CUT-11），统一走 `Timestamp` / `Date` / `Time` 才能跨四方言一致。
+/// `setObject`/`getObject` 对时间类型的支持按驱动而异（MySQL 驱动不支持 `getObject(Instant.class)`），
+/// 统一走 `Timestamp` / `Date` / `Time` 才能跨四方言一致。
 /// 读侧按列的静态 Java 类型收窄；`NULL` 返回 `null`（带类型的 getter 对 `NULL` 直接返回空，不必 `wasNull`）。
 @SuppressWarnings("PMD.CyclomaticComplexity") // 读写分支都按 SUPPORTED 白名单穷尽，分支数由列类型集合决定
 public final class JdbcTypes {

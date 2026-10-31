@@ -11,7 +11,7 @@ import io.github.nextentity.api.model.Tuple2;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/// 「一次查询只有一份投影」的**差分** oracle（USAGE §6.1 契约 3）：同一个查询入口上重复给投影，
+/// 「一次查询只有一份投影」的**差分** oracle：同一个查询入口上重复给投影，
 /// 后给的**整体替换**先给的，两种形态（元组投影 / 映射器投影）互相也替换，不拼接、不报错。
 ///
 /// 为什么需要这一格：契约写在文档里、实现也在（`QueryBuilder` 的 `applySelection` 直接覆盖字段），

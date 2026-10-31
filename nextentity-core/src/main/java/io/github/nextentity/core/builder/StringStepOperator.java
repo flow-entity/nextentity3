@@ -17,7 +17,7 @@ import java.util.function.Supplier;
 
 /// 查询链上的字符串算子：`query.where(X::getName)` 之后的 `contains/...`。
 ///
-/// `CONTAINS` 系列在这里展开成 `%value%` 的 LIKE 模式（2.2.3 `ExpressionBuilder:520-522`），
+/// `CONTAINS` 系列在这里展开成 `%value%` 的 LIKE 模式（2.2.3 同此口径），
 /// 通配符只在这一处拼；`like` / `likeIfNotNull` 原样透传调用方自带的模式。
 ///
 /// 函数算子（`lower/upper/trim/substring`）不立即产生条件，而是把"主语"换成函数节点，

@@ -39,12 +39,12 @@ import org.junit.jupiter.api.TestFactory;
 ///
 /// **空集合是常量，不是 `UNKNOWN`**（这是已声明语义，不是本 oracle 的推测）：
 /// `Membership#in(Collection)` 的 javadoc 写「空集合匹配不到任何行（恒假）」、
-/// `#notIn(Collection)` 写「空集合匹配所有行（恒真）」；实现见 `core/builder/Specs.java` 的
+/// `#notIn(Collection)` 写「空集合匹配所有行（恒真）」；实现见 `Specs` 的
 /// `membership(...)`——`values.isEmpty()` 时直接返回 `Constant.of(negated)`。常量不引用列，
 /// 因此 `notIn(空集合)` **命中包括 `score` 为 `null` 的 id=4 在内的全部 6 行**，`in(空集合)` 一行都不命中。
 /// 这两格就是把「空集合折成 1=0 / 1=1」这个决定钉住。
 ///
-/// **短路算子表示「没有这条条件」**（`docs/USAGE.md` §3.1）：`eqIfNotNull(null)` /
+/// **短路算子表示「没有这条条件」**：`eqIfNotNull(null)` /
 /// `eqIfNotEmpty("")` / `containsIfNotNull(null)` / `inIfNotNull(null)` 都不产生谓词，
 /// 等价于不写这一条，因此命中全部 6 行——不是「匹配 null 行」，也不是「恒假」。
 ///
@@ -57,8 +57,8 @@ import org.junit.jupiter.api.TestFactory;
 /// 的实例（该类是 package-private，公开入口只有 `*IfNotNull(null)` / `*IfNotEmpty("")`）。
 /// 它的三条代数性质单独成格：恒真 ∧ c = c、恒真 ∨ c = 恒真、¬恒真 = 恒假。
 ///
-/// **`startsWith` / `endsWith` 用 `like` 表达**：3.x 不提供这两个算子（`docs/USAGE.md` §14
-/// 「不提供的能力」把替代写成 `like("v%")` / `like("%v")`），所以这两格的后端一侧是
+/// **`startsWith` / `endsWith` 用 `like` 表达**：3.x 不提供这两个算子，替代写法是
+/// `like("v%")` / `like("%v")`，所以这两格的后端一侧是
 /// `like("app%")` / `like("%berry")`，内存一侧是前缀 / 后缀匹配。
 ///
 /// **字符串格刻意避开「全是前缀」的取值**：`contains` 渲染成 `%value%`；如果夹具里所有名字都以该

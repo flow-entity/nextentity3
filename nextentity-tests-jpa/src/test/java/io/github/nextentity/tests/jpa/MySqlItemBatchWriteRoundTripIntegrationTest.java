@@ -65,7 +65,7 @@ class MySqlItemBatchWriteRoundTripIntegrationTest {
         support.clearSql();
     }
 
-    /// 复位（AGENTS.md：集成测试启动容器后须在 `@AfterEach` 复位被改状态）：删掉本轮写入的行，
+    /// 复位（集成测试启动容器后须在 `@AfterEach` 复位被改状态）：删掉本轮写入的行，
     /// 丢掉受管状态与语句账本，容器里的库回到空表。`@BeforeEach` 那条留作兜底——上一条用例
     /// 若崩在复位之前，它保证这一条仍从空表开始。
     @AfterEach

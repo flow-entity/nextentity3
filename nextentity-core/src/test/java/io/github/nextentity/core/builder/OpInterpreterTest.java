@@ -36,13 +36,13 @@ import org.junit.jupiter.api.Test;
 
 /// `OpInterpreter` 三类需要单独构造才会走到的分支：
 ///
-/// - `operand(...)`（`:94` `:95`）：实参自身是 `Op`（算术值）时递归成 [ArithmeticOperand]，
+/// - `operand(Object)`：实参自身是 `Op`（算术值）时递归成 [ArithmeticOperand]，
 ///   而不是被 `Literal` 包一层——"右值是一列算出来的数"与"右值是一个常数"必须可区分；
-/// - `logical(...)`（`:148` `:150` `:151` `:155`）：`and`/`or` 的子条件里混入
+/// - `logical(...)`：`and`/`or` 的子条件里混入
 ///   api 的恒真占位（`AlwaysTrue`，不实现 `Op`）时的折叠语义。恒真占位在 `AND` 下跳过，
 ///   在 `OR` 下让整条 `OR` 恒真（跳过会算错）；一个都不剩时 `AND` 恒真、`OR` 恒假。
-/// - 三个 `switch` 的**拒绝分支**（`:62` `:81` `:124`）：它们是穷尽性检查的结果，不是兜底，
-///   公开调用点进不去，只能手工构造 `Op` 才走得到，见本文件末尾那组用例。
+/// - 三个 `switch` 的**拒绝分支**（`toSpec` / `toProjection` / `value` 三处的 `throw`）：
+///   它们是穷尽性检查的结果，不是兜底，公开调用点进不去，只能手工构造 `Op` 才走得到，见本文件末尾那组用例。
 ///
 /// 折叠结果必须断言到节点：恒真本身在 `where`/`having` 里表现为"没有条件"，
 /// 单看 `where() == null` 分不清"折成恒真"与"解释器返回 null"，
@@ -60,7 +60,7 @@ class OpInterpreterTest {
         return backend.last().where();
     }
 
-    // ------------------------------------------------- 操作数递归（:94 `:95`）
+    // ------------------------------------------------- 操作数递归（`operand(Object)`）
 
     @Test
     @DisplayName("右操作数是算术表达式：递归成 ArithmeticOperand，不包成字面量")
@@ -73,7 +73,7 @@ class OpInterpreterTest {
         assertThat(where()).isEqualTo(new Comparison(path("salary"), ComparisonOperator.GT, expected));
     }
 
-    // ------------------------------------------------ 逻辑折叠（:148 - :155）
+    // ------------------------------------------------ 逻辑折叠（`logical(...)`）
 
     @Test
     @DisplayName("having 的 and 里套 or：or 中的恒真占位使整条 or 折成恒真")
@@ -135,7 +135,7 @@ class OpInterpreterTest {
         assertThat(where()).isEqualTo(Logical.not(once));
     }
 
-    // ----------------------------------------- 穷尽性检查带来的拒绝分支（:62 `:81` `:124` `:155`）
+    // ----------------------------------------- 穷尽性检查带来的拒绝分支（`toSpec` / `toProjection` / `value`）
 
     /// `where`/`having` 只接受 `Expression<T, Boolean>`，聚合值不是谓词，公开调用点走不到这条拒绝分支。
     ///
@@ -199,8 +199,8 @@ class OpInterpreterTest {
         assertThat(OpInterpreter.toSpec(emptyAnd)).isEqualTo(Constant.TRUE);
     }
 
-    /// `NOT` 落在恒假节点上：`negate` 的 `Constant.FALSE → Constant.TRUE`（`:146`-`:147`）与
-    /// `Constant.TRUE → Constant.FALSE`（`:143`-`:144`）两条分支。
+    /// `NOT` 落在恒假节点上：`negate` 的 `Constant.FALSE → Constant.TRUE` 与
+    /// `Constant.TRUE → Constant.FALSE` 两条分支。
     ///
     /// 为什么要单独钉：这两条分支是「取反 + 空集合折叠」的交点。`NOT(or(空))` 必须恒真——
     /// 若 `negate` 漏掉 `FALSE` 一侧而落到 `Logical.not(Constant.FALSE)`，渲染出的 SQL 就变成
@@ -209,7 +209,7 @@ class OpInterpreterTest {
     ///
     /// 这两条分支原先零覆盖：`nextentity-core` 自己的用例里没有一条对恒假/恒真节点取反，
     /// 而 `pitest:mutationCoverage` 按模块跑、不会把 `nextentity-jpa` 的用例算进来，
-    /// 于是 `:147` 长期是 `NO_COVERAGE`（变异体存活、门禁却显示 99%）。
+    /// 于是 `Constant.FALSE → Constant.TRUE` 那一侧长期是 `NO_COVERAGE`（变异体存活、门禁却显示 99%）。
     @Test
     @DisplayName("取反恒假/恒真节点：NOT(空 OR) 恒真，NOT(空 AND) 恒假")
     void negateConstantNodes() {

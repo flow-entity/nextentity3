@@ -7,7 +7,7 @@ import io.github.nextentity.jpa.entity.DerivedRecord;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/// `JpaEntityAttribute.resolveField`（`meta/JpaEntityAttribute.java:21-32`）的两侧。
+/// `JpaEntityAttribute.resolveField` 的两侧。
 ///
 /// 放在 `io.github.nextentity.jpa.meta` 包内是因为被测类的构造器是包私有的：`JpaMeta.entityType`
 /// 只会拿元模型里声明过的属性名来建属性句柄，而元模型里的属性名总能解析到字段——也就是说

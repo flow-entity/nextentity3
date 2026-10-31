@@ -14,7 +14,7 @@ import java.util.function.Function;
 /// 装配器：把后端提供的四个零件组装成 `EntityOperationsFactory`。
 ///
 /// 装配逻辑只有这一份——`spring` 只注册一个 bean，`jpa` 只提供零件，
-/// 将来第二后端（DESIGN §6）换掉这四个入参即可，`first/single/slice/count/exists`
+/// 将来第二后端换掉这四个入参即可，`first/single/slice/count/exists`
 /// 与分页自动排序这些语义不必重写。
 ///
 /// @param <S> 后端语句类型

@@ -9,9 +9,9 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import org.junit.jupiter.api.Test;
 
-/// 评审发现 R3（Lead 裁决 2026-10-28）：只有 @Id 字段（没有可写标量列）的实体，`update` 不得渲染
+/// 评审发现 R3：只有 @Id 字段（没有可写标量列）的实体，`update` 不得渲染
 /// `update ... set  where id=?` 这类非法 SQL，也不得 no-op 静默通过；必须在写入前抛
-/// `UnsupportedOperationException`（拒绝条目与文案见 USAGE §10）。
+/// `UnsupportedOperationException`。
 ///
 /// 复跑：`mvn -pl nextentity-tests-jdbc -am test -Dtest=ReviewR3IdOnlyUpdateTest`
 class ReviewR3IdOnlyUpdateTest {

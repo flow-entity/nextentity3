@@ -86,7 +86,7 @@ class ItemQueryEntrySnapshotTest extends ConsistencyTestBase<ItemEntity> {
             entry.select(idRef(), scoreRef()).orderBy(idRef()).asc().list();
         }));
 
-        // 6. 悲观锁单行查询（USAGE §9 的示例形态）：`lock(...).single()` 的整句骨架——
+        // 6. 悲观锁单行查询：`lock(...).single()` 的整句骨架——
         //    `for update` 必须在语句末尾、`fetch first ? rows only` 在它之前
         actual.add(sqlOf(() -> support.inTransaction(() -> query().where(idRef())
                 .eq(APPLE_ID)

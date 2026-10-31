@@ -87,7 +87,7 @@ class JpaRenderingTest extends JpaTestSupport {
         assertThat(normalized(drainSql())).containsExactly("select (so1_0.id%2) from shop_order so1_0");
     }
 
-    /// 算术算子的 `switch` 是唯一分派点（`compile/JpaOperands.java:59-65`）。早先只覆盖了 `ADD`
+    /// 算术算子的 `switch` 是唯一分派点。早先只覆盖了 `ADD`
     /// 与 `MOD`，`SUB`/`MUL`/`DIV` 三个分支一条用例都没走到——PIT 报的是 NO_COVERAGE：把
     /// `builder.diff` 写成 `builder.sum`、或整条分支删掉，测试全绿。
     ///
@@ -102,7 +102,7 @@ class JpaRenderingTest extends JpaTestSupport {
                 .containsExactly("select (so1_0.id/2) from shop_order so1_0");
     }
 
-    /// `Constant` 两个分支渲染成恒真 / 恒假谓词（`compile/JpaPredicates.java:43`）。
+    /// `Constant` 两个分支渲染成恒真 / 恒假谓词。
     ///
     /// 只断结果行是杀不死这两个分支的：把 `builder.conjunction()` 整行删掉，`where(null)` 等于
     /// 「不加限制」，结果与恒真一模一样。恒真谓词在 SQL 里留下 `where 1=1`，恒假留下 `where 1=0`

@@ -41,7 +41,7 @@ public final class JdbcEntityType<T> implements EntityType<T> {
 
     /// 解析实体类型。
     ///
-    /// @param type 实体类型；映射不合法时按 USAGE §13.4.3 的拒绝表抛异常
+    /// @param type 实体类型；映射不合法时抛异常
     static <T> JdbcEntityType<T> of(Class<T> type) {
         return new JdbcEntityType<>(JdbcEntityScan.scan(type));
     }

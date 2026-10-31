@@ -39,7 +39,7 @@ final class SqlOperands {
     }
 
     /// 操作数的静态类型：算术取左操作数，聚合取函数结果类型，字符串函数按函数定，
-    /// 截取结果恒为 `String`（设计 §7.2 DEC-15 静态类型收窄）。
+    /// 截取结果恒为 `String`。
     ///
     /// @param operand 操作数
     /// @return 静态类型

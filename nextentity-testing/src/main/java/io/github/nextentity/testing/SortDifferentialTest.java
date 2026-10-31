@@ -37,7 +37,7 @@ import org.junit.jupiter.api.TestFactory;
 /// 与这里相反。所以它不是内建在本类里的常量，而是读 {@link ConsistencyTestBase#nullOrdering()}
 /// 这个**显式声明的后端特性**（默认 MySQL 家族：升序 null 当最小值）。换到 null 排序相反的后端时，
 /// 由后端适配器覆盖那一处；**不要**放宽断言（改成「非空部分有序」）——那样 null 行排错位置就再没人管了。
-/// 方言矩阵（DESIGN §5）实测过：把它覆盖成 {@link NullOrdering#NULLS_LAST} 后，同一套 16 格在
+/// 方言矩阵实测过：把它覆盖成 {@link NullOrdering#NULLS_LAST} 后，同一套 16 格在
 /// PostgreSQL 方言下全绿；用默认值跑 PostgreSQL 方言则这 16 格里带可空键的格子全红。
 ///
 /// **枚举键按存储文本排序**：`status` 在 JPA 侧是 `@Enumerated(STRING)`（与 point-mall 的

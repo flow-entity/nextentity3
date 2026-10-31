@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/// `@Embedded`：把嵌入类型的标量字段扁平化成列属性（支持边界见 USAGE §13.4.1）。
+/// `@Embedded`：把嵌入类型的标量字段扁平化成列属性。
 ///
 /// 列名默认取嵌入类型的字段名（与 Hibernate/JPA 默认命名一致），`@AttributeOverride` 覆盖；
 /// 嵌套 `@Embedded`、嵌入内的 `@Id` / `@Version` / `@GeneratedValue` / 关联本轮显式拒绝——扁平化层面

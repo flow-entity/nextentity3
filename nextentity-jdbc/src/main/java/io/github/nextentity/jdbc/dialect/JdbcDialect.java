@@ -9,8 +9,8 @@ import java.util.List;
 /// 共 10 个成员：静态 `of(String)` + 9 个实例钩子（`name` / `quote` / `selectHead` / `limitClause` /
 /// `lock` / `averageOf` / `likeEscape` / `lengthOf` / `substring`）。除 [JdbcDialect#name()] 外全部实例钩子
 /// 有默认实现，默认形态 = H2 / MySQL / PostgreSQL；SQL Server 覆写 `selectHead` / `limitClause` / `lock` /
-/// `averageOf` / `likeEscape` / `lengthOf` / `substring`。钩子语义与绑定契约见设计 §6.1，
-/// 允许的渲染点见各钩子的说明——不在那列的差异不得加钩子。
+/// `averageOf` / `likeEscape` / `lengthOf` / `substring`。允许的渲染点见各钩子的说明，
+/// 不在那列的差异不得加钩子。
 public interface JdbcDialect {
 
     /// 内置名：`"h2"` / `"mysql"` / `"postgresql"` / `"sqlserver"`；自定义方言返回自己的名（仅用于日志/错误）。

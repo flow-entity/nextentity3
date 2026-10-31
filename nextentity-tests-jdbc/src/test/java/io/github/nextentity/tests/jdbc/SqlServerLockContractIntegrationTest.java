@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 
-/// SQL Server 没有等价 `for update`（`with (updlock)` 在 autocommit 下不持锁），方言显式拒绝（见 USAGE §13.4.3）。
+/// SQL Server 没有等价 `for update`（`with (updlock)` 在 autocommit 下不持锁），方言显式拒绝。
 /// 写锁与读锁都在方言层拒绝，其余三种模式由编译期契约拒绝（文案不同，因此分开断言）。
 @ExtendWith(L4Gate.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)

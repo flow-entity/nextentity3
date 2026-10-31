@@ -70,7 +70,7 @@ class JdbcMetaTest {
 
     @Test
     void manyToOneAssociationIsExposedByMeta() {
-        // 属性收集口径：attributes() = 全部持久属性（标量 + @ManyToOne，声明序）；只静默忽略集合/一对一（见 USAGE §13.4.2）。
+        // 属性收集口径：attributes() = 全部持久属性（标量 + @ManyToOne，声明序）；只静默忽略集合/一对一。
         JdbcEntityType<SnapshotAsset> type = meta.entityType(SnapshotAsset.class);
         assertThat(type.attributes()).extracting(JdbcEntityAttribute::name).containsExactly("id", "name", "owner");
 

@@ -172,7 +172,7 @@ public abstract class JpaGoldenSchemaLandingContract {
                 .containsExactly("alice", "alice", "bob");
     }
 
-    /// **契约**（3.1.0 定下，见 USAGE §10.1）：批量条件更新 `update().set().where().execute()` 只写
+    /// **契约**（3.1.0 定下）：批量条件更新 `update().set().where().execute()` 只写
     /// 调用方声明的列，**不自增也不校验 `@Version`**；乐观锁只在单实体 `update(entity)` 路径生效。
     ///
     /// 需要并发保护时，要么走单实体 `update(entity)`，要么自己在 `where(...)` 里显式带上版本列。

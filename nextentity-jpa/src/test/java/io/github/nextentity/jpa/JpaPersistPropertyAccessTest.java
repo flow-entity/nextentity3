@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 /// 写侧只读判定与 `@Embedded` 取值都要跟着 **access type** 走：`@Access(PROPERTY)` 实体把
 /// `@Column` / `@Embedded` 写在 getter 上，字段上是空的。
 ///
-/// USAGE §13.4.3 只把「只支持字段访问」列为 JDBC 的限制（JPA 不受此限），所以 JPA 侧按 getter
+/// 「只支持字段访问」只是 JDBC 的限制（JPA 不受此限），所以 JPA 侧按 getter
 /// 声明的只读列与嵌入属性也必须照常工作。
 class JpaPersistPropertyAccessTest extends JpaTestSupport {
 

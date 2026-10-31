@@ -83,8 +83,7 @@ public interface Collector<T> {
 
     /// 过滤后是否存在任何行（`groupBy(...)` 之后：是否存在任何组）。
     ///
-    /// 普通查询只看条件：没有命中行即为 `false`（与 2.2.3 `WhereImpl.java:134-148` 的
-    /// `SELECT_ANY` + limit 1 逐项一致）。
+    /// 普通查询只看条件：没有命中行即为 `false`（与 2.2.3 的 `SELECT_ANY` + limit 1 一致）。
     ///
     /// `groupBy(...)` 之后看的是**组**：`having` 把所有组都过滤掉时为 `false`，因此 `groupBy` /
     /// `having` 必须一起渲染——只渲染 `where` 会给出与查询**相反**的布尔值。

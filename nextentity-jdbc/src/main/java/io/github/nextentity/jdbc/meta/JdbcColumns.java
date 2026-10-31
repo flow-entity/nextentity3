@@ -89,7 +89,7 @@ final class JdbcColumns {
                         updatable));
     }
 
-    /// 被静默忽略的集合 / `mappedBy` 反侧关联：可被 `attribute(name)` 解析，但不进 `attributes()`（见 USAGE §13.4.2）。
+    /// 被静默忽略的集合 / `mappedBy` 反侧关联：可被 `attribute(name)` 解析，但不进 `attributes()`。
     static JdbcEntityAttribute ignoredAssociation(Field field) {
         return new JdbcEntityAttribute(
                 field,

@@ -39,7 +39,7 @@ import java.util.Objects;
 
 /// 查询构建器：把 api 的步骤接口翻译成不可变 `QuerySpec`，再把执行交给后端。
 ///
-/// 分层（DESIGN §3）：本类只做"步骤 → 节点"，不拼 SQL/Criteria；编译与执行分别由
+/// 分层：本类只做"步骤 → 节点"，不拼 SQL/Criteria；编译与执行分别由
 /// {@link Compiler} 与 {@link Executor} 负责，因此同一个构建器可以驱动任意后端。
 /// 表达式 → 投影节点在 [ValueProjections]，原始行 → 结果对象在 [RowAssembler]；
 /// `select(...)` 的返回形态由 [ValueMappers] 的内置映射器给出，与 `project(...)` 共用同一条装配路径。
@@ -118,7 +118,7 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     /// 这条重载与 [#where(Expression)] 的分工：`where(Order::getAge).gt(3)` 走这里，
     /// `where(Order::getAge.gt(3))` 走那里。裸写 `where(Order::getActive)` 只拿到一个步骤对象、
     /// 一条条件都不产生（等价于没写这条 `where`），不会像 [Path] 当条件那样被拒绝——
-    /// 布尔字段同样要链 `.eq(true)`，见 `docs/USAGE.md`「布尔字段请写 `.eq(true)`」。
+    /// 布尔字段同样要链 `.eq(true)`，不能把整列当条件。
     @Override
     public <N> PathOperator<T, N, ? extends BaseWhereStep<T, T>> where(PathRef<T, N> ref) {
         return new PathStepOperator<>(PathRefs.resolve(ref), this::addConditionStep, this::selfStep);

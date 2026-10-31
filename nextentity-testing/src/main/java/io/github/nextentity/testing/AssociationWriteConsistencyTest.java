@@ -9,14 +9,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/// 写关联（CUT-17）的一致性：外键必须从**写进去的关联对象的 `@Id`** 得出，并且在新会话里读回同一个值。
+/// 写关联的一致性：外键必须从**写进去的关联对象的 `@Id`** 得出，并且在新会话里读回同一个值。
 ///
 /// 这是 3.0.0 裁掉的那块能力面：当时"写关联没有正例"，于是"只读才有用"成了裁剪理由。
 /// 本基类用差分/往返口径把正例钉住，而不是断言某条 SQL 的形状：
 ///
 /// - 写 `asset.owner` → 读回 `owner_id` 等于这个 owner 的 `@Id`，且关联路径查询能重新命中它；
 /// - 改关联 → 旧 owner 不再命中、新 owner 命中，且其它行不动；
-/// - 关联为 `null` 时的后端差异按文档已披露的口径分别断言（见 USAGE §13.4.4）：
+/// - 关联为 `null` 时的后端差异按各自后端语义分别断言：
 ///   JPA 写 `NULL`，JDBC **跳过该列**（所以 `update(entity)` 无法置空外键，需用条件更新 + `Path` 重载）。
 ///   两个分支都在本类里跑，不做整条用例的跳过——跳过会变成"没测也不知道"，而这里两种语义都要可数地钉住。
 ///
@@ -52,11 +52,11 @@ public abstract class AssociationWriteConsistencyTest<T extends Asset> {
 
     protected static final String BOLT_RENAMED_NAME = "bolt-renamed";
 
-    /// 关联为 `null` 时后端的两种语义：都是已披露的行为，不是缺口。
+    /// 关联为 `null` 时后端的两种语义：都是各后端既有的行为，不是缺口。
     public enum NullAssociationBehavior {
-        /// 写 `NULL`：外键被清掉（JPA，见 USAGE §13.4.4）。
+        /// 写 `NULL`：外键被清掉（JPA）。
         CLEARS_FOREIGN_KEY,
-        /// 跳过该列：外键保持旧值，`update(entity)` 无法置空（JDBC，见 USAGE §13.4.4）。
+        /// 跳过该列：外键保持旧值，`update(entity)` 无法置空（JDBC）。
         SKIPS_COLUMN
     }
 

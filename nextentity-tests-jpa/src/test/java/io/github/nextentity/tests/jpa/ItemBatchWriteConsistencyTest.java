@@ -14,8 +14,8 @@ import org.junit.jupiter.api.Test;
 
 /// 批量写入一致性：`insertAll` 全量落库、`updateAll` 让每个实体的 `@Version` 自增并**回写调用方对象**。
 ///
-/// 真实调用点：`BatchTransferService:160`、`OrderImportTaskService:445/728`（`insertAll`）、
-/// `OrgProductService:1038/1122`（`updateAll`）；point-mall 的 `AppRepositoryImpl.updateAll`
+/// 真实调用点：`BatchTransferService`、`OrderImportTaskService`（`insertAll`）、
+/// `OrgProductService`（`updateAll`）；point-mall 的 `AppRepositoryImpl.updateAll`
 /// 在 B 方案里要保证「批量更新后调用方列表拿到新版本号」，否则后续更新会撞乐观锁。
 class ItemBatchWriteConsistencyTest {
 
@@ -71,7 +71,7 @@ class ItemBatchWriteConsistencyTest {
 
     /// 批量里**中间**一条撞乐观锁：逐条执行、遇冲突即抛，已处理的那几条留在调用方事务里。
     ///
-    /// 本库不开事务（USAGE §11），所以「已处理的前几条」既没有单独提交、也没有被库回滚——
+    /// 本库不开事务，所以「已处理的前几条」既没有单独提交、也没有被库回滚——
     /// 它们只是躺在调用方的事务里。实测钉住三件事：冲突条的 id 与**陈旧版本值**出现在消息里
     /// （否则「版本条件丢失」的实现也能过）；已处理条的 `@Version` 已回写内存、冲突条与后续条没被碰；
     /// 调用方回滚后三条全部还原（证明库没有偷偷提交前几条）。

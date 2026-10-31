@@ -105,7 +105,7 @@ public final class JpaExecutor implements Executor<JpaQuery> {
 
     /// 过滤后是否存在任何行；`CountScope.GROUPS` 时判「是否存在任何组」（`HAVING` 已生效）。
     ///
-    /// 行口径只渲染 `where` + 取 1 行（2.2.3 `WhereImpl:134-148` 的 `SELECT_ANY` + limit 1）。
+    /// 行口径只渲染 `where` + 取 1 行（与 2.2.3 的 `SELECT_ANY` + limit 1 一致）。
     /// 组口径不能沿用「只拼 where」的近似：`groupBy`/`having` 会改变「有没有行」的含义
     /// （`HAVING` 可以把所有组都过滤掉），所以按原查询形态渲染 `select 1` + where + group by +
     /// having 再取 1 行——有行就是有组。**只有聚合投影 / 只有 `HAVING`**（没有 `groupBy`）的

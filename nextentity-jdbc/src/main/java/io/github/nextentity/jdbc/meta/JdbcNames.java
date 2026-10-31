@@ -6,7 +6,7 @@ package io.github.nextentity.jdbc.meta;
 /// meta 一律按裸名做匹配与比较，把 quoted 标志交给渲染层决定是否过 `JdbcDialect#quote`。
 ///
 /// 被标记引用的名字剥引号后不得再含引用定界符：Hibernate 不转义内层引号（JPA 侧同样不可用），
-/// 若 JDBC 单侧做双写转义，同一注解在两个后端行为就分叉，故本后端在 meta 期一致拒绝（见 USAGE §13.4.3）。
+/// 若 JDBC 单侧做双写转义，同一注解在两个后端行为就分叉，故本后端在 meta 期一致拒绝。
 final class JdbcNames {
 
     private static final char QUOTE = '`';
@@ -23,7 +23,7 @@ final class JdbcNames {
         return trimmed;
     }
 
-    /// 归一化并校验：被反引号标记的名字，剥引号后含 `"` / `` ` `` / `[` / `]` 任一即拒绝（见 USAGE §13.4.3）。
+    /// 归一化并校验：被反引号标记的名字，剥引号后含 `"` / `` ` `` / `[` / `]` 任一即拒绝。
     ///
     /// @param name 注解里声明的名字（可能带反引号标记）
     /// @param path 出错时定位用的「实体」或「实体.字段」路径，非 `null`

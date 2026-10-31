@@ -121,8 +121,8 @@ class JpaPersistVersionTest extends JpaTestSupport {
         });
     }
 
-    /// 无 `@Version` 的实体 update 一个不存在的 id：`verifyAffected` 的 `version == null` 一侧
-    /// （`exec/JpaPersistExecutor.java:108-109`）。与「版本对不上 → `OptimisticLockException`」
+    /// 无 `@Version` 的实体 update 一个不存在的 id：`verifyAffected` 的 `version == null` 一侧。
+    /// 与「版本对不上 → `OptimisticLockException`」
     /// 互补：没有版本列时 0 行只可能意味着行不存在，所以异常类型必须是 `EntityNotFoundException`。
     @Test
     @DisplayName("无 @Version 实体 update 不存在的 id：EntityNotFoundException，消息点名主键")
@@ -216,15 +216,15 @@ class JpaPersistVersionTest extends JpaTestSupport {
 
     /// 入参对象在 `update` 前后都不是受管状态。
     ///
-    /// 这条用例**杀不掉** `:89`（条件取反）与 `:90`（删除 `detach` 调用）两条变异体：
-    /// 走到 `:89` 时 `entityManager.contains(entity)` 刚在 `:76` 判过为 `false`，而 JPA 规定
+    /// 这条用例**杀不掉**「`contains` 条件取反」与「删除 `detach` 调用」两条变异体：
+    /// 走到该判定时 `entityManager.contains(entity)` 刚在前面的早退分支判过为 `false`，而 JPA 规定
     /// 「对未与持久化上下文关联的实体调用 `detach` 会被忽略」，因此该调用与它的条件都不改变
     /// 任何可观测状态。这里只把「更新完仍然是 detached」这个契约钉住，不假装覆盖了那两条变异体。
     ///
-    /// 等价性是**实测**的，不是推的：把 `:90` 整条删掉、把 `:89` 改成 `if (version == null)` 各跑一遍
+    /// 等价性是**实测**的，不是推的：把 `detach` 调用整条删掉、把 `contains` 判定改成 `if (version == null)` 各跑一遍
     /// `-pl nextentity-jpa -am test` 与 `-pl nextentity-tests-jpa -am verify`（H2 + MySQL 两条通道），
     /// 两次都是零新增失败、零新增错误。要真让这两条变异体可杀，只能改生产代码（例如把 `detach`
-    /// 挪到 `:76` 的早退之前），那属于 src/main 的语义变更，不在测试分支里做。
+    /// 挪到早退分支之前），那属于 src/main 的语义变更，不在测试分支里做。
     @Test
     @DisplayName("update 之后入参对象仍然是 detached")
     void updateLeavesEntityDetached() {

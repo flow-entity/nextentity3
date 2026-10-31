@@ -114,8 +114,8 @@ class PredicateOrOperatorTest {
     ///
     /// 这一格走的是 `PathValues` 自己的短路（`value == null ? Conditions.alwaysTrue() : ...`），
     /// 不是 `Conditions.AbstractOperators#skip()`——后者只有 `or(PathRef)` 造出来的链才走得到，
-    /// 而那条链的 `parent == null` 分支不可达（两个构造点：`Conditions:156` 传 `this`、
-    /// `Conditions:196` 传 `null` 且 `suppressed = true` 已提前返回），所以把 `skip()` 末行改成
+    /// 而那条链的 `parent == null` 分支不可达（两个构造点：`Leaf#or(PathRef)` 传 `this`、
+    /// `AlwaysTrue#or(PathRef)` 传 `null` 且 `suppressed = true` 已提前返回），所以把 `skip()` 末行改成
     /// `return parent;` 是**等价变异**（已实验：改完本类全绿）。
     ///
     /// 保留这条用例的理由是另一半：`PathValues` 的短路若返回 `null`，`where(...)` 那一层碰巧
@@ -143,18 +143,18 @@ class PredicateOrOperatorTest {
     /// `PathValues` 有 10 处 `value == null ? alwaysTrue() : ...`，逐处映射如下（这 10 处若返回
     /// `null`，只有"恰好被 core 的 `where(null)` 拒绝撞上"才会红，那是偶然覆盖，不能当证据）：
     ///
-    /// | `PathValues` 行 | 短路点 | 钉住它的用例 |
-    /// |---|---|---|
-    /// | `:63` | `eqIfNotNull` | 本方法（`numberShortCircuit`） |
-    /// | `:118` | `geIfNotNull` | 本方法 |
-    /// | `:123` | `gtIfNotNull` | 本方法 |
-    /// | `:128` | `leIfNotNull` | 本方法 |
-    /// | `:133` | `ltIfNotNull` | 本方法 |
-    /// | `:168` | `inIfNotNull` | 本方法 |
-    /// | `:284` | `containsIfNotEmpty`（`null` 与空串两种） | `StringPathOperatorTest#shortCircuit` |
-    /// | `:289` | `containsIfNotNull` | `StringPathOperatorTest#shortCircuit` |
-    /// | `:299` | `likeIfNotNull` | `StringPathOperatorTest#shortCircuit` |
-    /// | `:304` | `eqIfNotEmpty`（`null` 与空串两种） | `StringPathOperatorTest#shortCircuit` |
+    /// | 短路点 | 钉住它的用例 |
+    /// |---|---|
+    /// | `eqIfNotNull` | 本方法（`numberShortCircuit`） |
+    /// | `geIfNotNull` | 本方法 |
+    /// | `gtIfNotNull` | 本方法 |
+    /// | `leIfNotNull` | 本方法 |
+    /// | `ltIfNotNull` | 本方法 |
+    /// | `inIfNotNull` | 本方法 |
+    /// | `containsIfNotEmpty`（`null` 与空串两种） | `StringPathOperatorTest#shortCircuit` |
+    /// | `containsIfNotNull` | `StringPathOperatorTest#shortCircuit` |
+    /// | `likeIfNotNull` | `StringPathOperatorTest#shortCircuit` |
+    /// | `eqIfNotEmpty`（`null` 与空串两种） | `StringPathOperatorTest#shortCircuit` |
     @ParameterizedTest(name = "{0}")
     @MethodSource("numberShortCircuitCalls")
     @DisplayName("数值短路：返回同一个恒真占位实例，不是 null")

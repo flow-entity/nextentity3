@@ -6,7 +6,7 @@ package io.github.nextentity.testing;
 /// （`nextentity-tests-jpa` 里是一个 `@Entity` 实现类）。
 ///
 /// 设计要点：一致性基类只认这个接口 + `api` + `core` 的接缝类型，**任何后端类型都不得出现在这里**，
-/// 否则新增后端就必须改基类（DESIGN §5 / §6-8）。
+/// 否则新增后端就必须改基类。
 public interface Item {
 
     /// 主键。

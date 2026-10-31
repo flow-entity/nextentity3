@@ -8,10 +8,10 @@ import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.TestInstance;
 
-/// 写关联（CUT-17）的 JPA 接线：H2 内存库 + Hibernate，走真实的单实体 `insert`/`update` 路径。
+/// 写关联的 JPA 接线：H2 内存库 + Hibernate，走真实的单实体 `insert`/`update` 路径。
 ///
 /// 空关联语义 = `CLEARS_FOREIGN_KEY`：JPA 用实体值赋值，关联为 `null` 就写 `NULL`
-/// （USAGE §13.4.4 披露的差异，容器通道 `MySqlAssetWriteAssociationIntegrationTest`
+/// （容器通道 `MySqlAssetWriteAssociationIntegrationTest`
 /// 与 `PostgresAssetWriteAssociationIntegrationTest` 有同口径的整句 SQL 证据）。
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class AssetAssociationWriteConsistencyTest extends AssociationWriteConsistencyTest<AssetEntity> {

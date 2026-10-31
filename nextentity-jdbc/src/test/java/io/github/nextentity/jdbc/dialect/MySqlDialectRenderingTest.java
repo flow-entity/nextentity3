@@ -11,7 +11,7 @@ import io.github.nextentity.jdbc.support.SnapshotItem;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/// MySQL 端到端渲染（设计 §6.1）：`LENGTH` 必须下发 `char_length`（字符数），不能是 `length`（字节数，
+/// MySQL 端到端渲染：`LENGTH` 必须下发 `char_length`（字符数），不能是 `length`（字节数，
 /// utf8mb4 下 `'香蕉'` 算 6）；H2/PostgreSQL 的 `length` 本身就是字符语义，JPA 侧渲染 `character_length`。
 class MySqlDialectRenderingTest {
 
