@@ -1,12 +1,20 @@
 package io.github.nextentity.jpa.meta;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.metamodel.Attribute;
+import jakarta.persistence.metamodel.Attribute.PersistentAttributeType;
 import jakarta.persistence.metamodel.Metamodel;
 import jakarta.persistence.metamodel.PluralAttribute;
+import jakarta.persistence.metamodel.SingularAttribute;
+import java.lang.annotation.Annotation;
 import java.lang.reflect.AnnotatedElement;
+import java.lang.reflect.Field;
 import java.lang.reflect.Member;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -14,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 ///
 /// 元数据是**应用级**的，所以从 `EntityManagerFactory` 取一次 `Metamodel` 并缓存解析结果；
 /// 不用 `EntityManager.getMetamodel()`（那是请求级对象，按它解析等于每次查询重算）。
+@SuppressWarnings("PMD.TooManyMethods") // 方法数由「实体元数据查询面」决定（type/id/version/属性注解/read），拆类会把共享缓存边界拆散
 public final class JpaMeta {
 
     private final Metamodel metamodel;
@@ -94,5 +103,146 @@ public final class JpaMeta {
         }
         OneToOne oneToOne = annotated.getAnnotation(OneToOne.class);
         return oneToOne == null || oneToOne.mappedBy().isEmpty();
+    }
+
+    /// 判断「某 managed type 的某段属性是不是 `@Embedded`」。
+    ///
+    /// 写侧要按它展开：整对象 `set(root.get(inner), value)` 会让 Hibernate 把**全部**嵌入列
+    /// 展开进 `SET`（连 `@Column(updatable=false)` 的叶子一起写），所以必须先认出嵌入属性，
+    /// 再逐叶子列写、逐叶子判可写。
+    ///
+    /// @param managedType 当前所在 managed type，非 `null`（可以是 `@Embeddable` 类型）
+    /// @param attribute   属性名
+    /// @return `@Embedded` 属性返回 `true`；标量 / 关联 / 不存在的属性返回 `false`
+    public boolean embedded(Class<?> managedType, String attribute) {
+        Attribute<?, ?> resolved = attribute(managedType, attribute);
+        return resolved != null && resolved.getPersistentAttributeType() == PersistentAttributeType.EMBEDDED;
+    }
+
+    /// 标量列是否可写：`@Column(updatable = false)` 返回 `false`。
+    ///
+    /// 属性不存在或没有 `@Column` 时按可写处理：存在性校验留给写侧取路径的 `get(...)`，
+    /// 与 `JpaEntityType.updatable` 的口径一致（那边找不到属性也返回 `true`）。
+    ///
+    /// @param managedType 当前所在 managed type，非 `null`（可以是 `@Embeddable` 类型）
+    /// @param attribute   属性名
+    /// @return 可写返回 `true`
+    public boolean scalarUpdatable(Class<?> managedType, String attribute) {
+        Attribute<?, ?> resolved = attribute(managedType, attribute);
+        if (resolved == null) {
+            return true;
+        }
+        Column column = annotation(resolved, Column.class);
+        return column == null || column.updatable();
+    }
+
+    /// 关联外键列是否可写：`@JoinColumn(updatable = false)` 返回 `false`。
+    ///
+    /// 缺 `@JoinColumn` 时外键列名由 JPA 默认命名推断，按可写处理（同 `JpaEntityType.updatable`）。
+    ///
+    /// @param managedType 当前所在 managed type，非 `null`
+    /// @param attribute   属性名
+    /// @return 可写返回 `true`
+    public boolean foreignKeyUpdatable(Class<?> managedType, String attribute) {
+        Attribute<?, ?> resolved = attribute(managedType, attribute);
+        if (resolved == null) {
+            return true;
+        }
+        JoinColumn joinColumn = annotation(resolved, JoinColumn.class);
+        return joinColumn == null || joinColumn.updatable();
+    }
+
+    /// 取目标实体的 `@Id` 属性名。
+    ///
+    /// 条件更新允许「关联.`@Id` 属性名」形态的 SET 目标（写本表外键列），判定要拿目标实体的
+    /// `@Id` 属性名比对路径第二段——从元模型取，不假设属性名一定是 `id`。
+    ///
+    /// @param entityType 实体类型，非 `null`，必须在元模型里注册
+    /// @return `@Id` 属性名
+    /// @throws IllegalArgumentException 该实体没有 `@Id` 属性
+    public String idName(Class<?> entityType) {
+        for (SingularAttribute<?, ?> singular : metamodel.entity(entityType).getSingularAttributes()) {
+            if (singular.isId()) {
+                return singular.getName();
+            }
+        }
+        throw new IllegalArgumentException("实体 " + entityType.getName() + " 没有 @Id 属性");
+    }
+
+    /// 取属性声明的 Java 类型：单值关联给目标实体类型，`@Embedded` 给可嵌入类型。
+    ///
+    /// @param managedType 当前所在 managed type，非 `null`
+    /// @param attribute   属性名
+    /// @return 属性的 Java 类型
+    /// @throws IllegalArgumentException 属性不存在
+    public Class<?> attributeJavaType(Class<?> managedType, String attribute) {
+        Attribute<?, ?> resolved = attribute(managedType, attribute);
+        if (resolved == null) {
+            throw new IllegalArgumentException("类型 " + managedType.getName() + " 上找不到属性 " + attribute);
+        }
+        return resolved.getJavaType();
+    }
+
+    /// 取某 managed type 的属性名清单（元模型声明顺序）。
+    ///
+    /// 写侧用它把 `@Embedded` 展开成逐叶子列的 `SET`。
+    ///
+    /// @param managedType 当前所在 managed type，非 `null`
+    /// @return 属性名清单（不可变）
+    public List<String> attributeNames(Class<?> managedType) {
+        List<String> names = new ArrayList<>();
+        for (Attribute<?, ?> attribute : metamodel.managedType(managedType).getAttributes()) {
+            names.add(attribute.getName());
+        }
+        return List.copyOf(names);
+    }
+
+    /// 读取 `holder` 上某属性的值；`@Embedded` 展开逐列 `SET` 时用它取叶子值。
+    ///
+    /// `holder` 为 `null`（嵌入对象整体为 `null`）时返回 `null`：调用方据此把可写叶子写成
+    /// `NULL`，与 Hibernate 整对象 `set` 时的展开结果一致。
+    ///
+    /// @param managedType 当前所在 managed type，非 `null`
+    /// @param attribute   属性名
+    /// @param holder      属性所在对象，可为 `null`
+    /// @return 属性值，可能为 `null`
+    /// @throws IllegalArgumentException 属性不存在或不是字段映射
+    /// @throws IllegalStateException    反射读取失败
+    public Object read(Class<?> managedType, String attribute, Object holder) {
+        if (holder == null) {
+            return null;
+        }
+        Attribute<?, ?> resolved = attribute(managedType, attribute);
+        if (resolved == null || !(resolved.getJavaMember() instanceof Field field)) {
+            throw new IllegalArgumentException("类型 " + managedType.getName() + " 上找不到可读字段 " + attribute);
+        }
+        field.setAccessible(true);
+        try {
+            return field.get(holder);
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException("读取字段失败: " + field, e);
+        }
+    }
+
+    /// 按名字取元模型属性；不存在返回 `null`。
+    ///
+    /// 不用 `getAttribute(...)` + catch：仓库规则禁止「catch 块吞异常返回默认值」，而
+    /// 「属性不存在」在这里是有意义的结果（按可写处理），不是异常路径。
+    private Attribute<?, ?> attribute(Class<?> managedType, String name) {
+        for (Attribute<?, ?> attribute : metamodel.managedType(managedType).getAttributes()) {
+            if (attribute.getName().equals(name)) {
+                return attribute;
+            }
+        }
+        return null;
+    }
+
+    /// 读取映射字段上的注解；成员不可注解时返回 `null`。
+    private static <A extends Annotation> A annotation(Attribute<?, ?> attribute, Class<A> type) {
+        Member member = attribute.getJavaMember();
+        if (!(member instanceof AnnotatedElement annotated)) {
+            return null;
+        }
+        return annotated.getAnnotation(type);
     }
 }

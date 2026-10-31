@@ -185,8 +185,8 @@ class JdbcPersistExecutorMutationTest {
         PlainKeyGenerated item = new PlainKeyGenerated("plain");
         JdbcEntityType<PlainKeyGenerated> entityType = meta.entityType(PlainKeyGenerated.class);
 
-        assertThatThrownBy(
-                        () -> new JdbcPersistExecutor<>(generatedKeylessDataSource(), entityType, dialect).insert(item))
+        assertThatThrownBy(() ->
+                        new JdbcPersistExecutor<>(generatedKeylessDataSource(), meta, entityType, dialect).insert(item))
                 .isInstanceOf(PersistenceException.class)
                 .hasMessage("未返回生成键: insert into plain_key (name) values (?)");
     }
@@ -242,7 +242,7 @@ class JdbcPersistExecutorMutationTest {
 
     private <T> JdbcPersistExecutor<T> persist(Class<T> type) {
         JdbcEntityType<T> entityType = meta.entityType(type);
-        return new JdbcPersistExecutor<>(dataSource, entityType, dialect);
+        return new JdbcPersistExecutor<>(dataSource, meta, entityType, dialect);
     }
 
     private long count(String table) {

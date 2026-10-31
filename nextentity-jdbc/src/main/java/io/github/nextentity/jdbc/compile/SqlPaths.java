@@ -17,17 +17,21 @@ import java.util.Map;
 /// 根表别名固定 `t0`，join 目标按首次出现顺序编号 `t1`、`t2`…；同一前缀只 join 一次，
 /// 因此同一关联路径在 SELECT / WHERE / ORDER BY 里出现多次仍只产生一个 join。
 /// 标识符引用（表名 / 列名）统一走方言 `quote`，别名 `tN` 不引用。
-@SuppressWarnings("PMD.CyclomaticComplexity") // 分支数由属性形态（标量 / 嵌入 / 关联 / 路径深度）决定，拆开会把同一个路径渲染点散成多段
+@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"
+}) // 分支/方法数由属性形态（标量 / 嵌入 / 关联 / 路径深度）决定，拆开会把同一个路径解析点散成多段
 final class SqlPaths {
 
     /// 根表别名。
     static final String ROOT_ALIAS = "t0";
 
+    private static final String ASSOCIATION_COLUMN_UNSUPPORTED = "条件改删不支持关联列: ";
+    private static final String ASSOCIATION_PATH_UNSUPPORTED = "条件改删不支持关联路径: ";
+
     private final JdbcMeta meta;
     private final JdbcDialect dialect;
     private final Class<?> rootType;
-    /// 条件改删（`UPDATE` / `DELETE`）的根实体：非 null 时进入「扁平」模式——只解析根表列，
-    /// 不生成 join、不带别名（`UPDATE t SET` / `DELETE FROM t` 的列引用不能带 `tN.` 前缀）。
+    /// 条件改删（`UPDATE` / `DELETE`）的根实体：非 null 时进入「扁平」模式——不加 join、不带别名
+    /// （`UPDATE t SET` / `DELETE FROM t` 的列引用不能带 `tN.` 前缀）；`关联.id` 直接映射成根表 FK 列。
     private final JdbcEntityType<?> flatRoot;
     private final Map<List<String>, String> aliases = new HashMap<>();
     private final List<String> aliasOrder = new ArrayList<>();
@@ -38,8 +42,15 @@ final class SqlPaths {
         this(meta, dialect, rootType, null);
     }
 
-    SqlPaths(JdbcEntityType<?> root, JdbcDialect dialect) {
-        this(null, dialect, root.type(), root);
+    /// 条件改删（`UPDATE` / `DELETE`）的解析器：扁平模式，只解析根表列，不生成 join、不带别名。
+    ///
+    /// `meta` 用于把 `关联.id` 解析成根表的 FK 列（需要在扫描期拿到目标 `@Id` 的列信息）。
+    ///
+    /// @param meta    实体元数据
+    /// @param root    根实体
+    /// @param dialect 方言
+    SqlPaths(JdbcMeta meta, JdbcEntityType<?> root, JdbcDialect dialect) {
+        this(meta, dialect, root.type(), root);
     }
 
     private SqlPaths(JdbcMeta meta, JdbcDialect dialect, Class<?> rootType, JdbcEntityType<?> flatRoot) {
@@ -85,8 +96,9 @@ final class SqlPaths {
         }
     }
 
-    /// 条件改删的扁平解析：只允许根表列与 `嵌入属性.字段` 两段；关联路径要 join，`UPDATE`/`DELETE`
-    /// 里没有可移植的写法（各库别名语法不同），一律明确拒绝而不是渲染出方言相关的 SQL。
+    /// 条件改删的扁平解析：只允许根表列、`嵌入属性.字段` 两段，以及 `关联.id`（映射成根表 FK 列，
+    /// `SET` / `WHERE` 都能用）。其余关联路径要 join，`UPDATE`/`DELETE` 里没有可移植的写法
+    /// （各库别名语法不同），一律明确拒绝而不是渲染出方言相关的 SQL。
     private Resolved flat(AttributePath path) {
         List<String> names = path.names();
         JdbcEntityAttribute attribute = flatRoot.attribute(names.getFirst());
@@ -94,7 +106,7 @@ final class SqlPaths {
             throw unknownAttribute(rootType, names.getFirst());
         }
         if (attribute.isAssociation()) {
-            throw new UnsupportedOperationException("条件改删不支持关联列: " + describe(path));
+            return foreignKey(path, attribute, names);
         }
         if (attribute.isEmbedded()) {
             if (names.size() != 2) {
@@ -107,9 +119,33 @@ final class SqlPaths {
             return new Resolved(column(nested), nested);
         }
         if (names.size() != 1) {
-            throw new UnsupportedOperationException("条件改删不支持关联路径: " + describe(path));
+            throw new UnsupportedOperationException(ASSOCIATION_PATH_UNSUPPORTED + describe(path));
         }
         return new Resolved(column(attribute), attribute);
+    }
+
+    /// `关联.id` → 根表 FK 列：只接受目标 `@Id` 属性名（条件改删无法对别的关联列做有意义的赋值 / 过滤）。
+    ///
+    /// 用目标 `@Id` 的列信息构造 FK 句柄，因此枚举 / `@Convert` / 大数 / 时间类型的 FK 值
+    /// 与写关联走同一套转换。`@JoinColumn(updatable = false)` 保留在 FK 句柄上，由 `SET` 侧拒绝。
+    private Resolved foreignKey(AttributePath path, JdbcEntityAttribute association, List<String> names) {
+        if (names.size() == 1) {
+            throw new UnsupportedOperationException(ASSOCIATION_COLUMN_UNSUPPORTED + describe(path));
+        }
+        if (names.size() != 2 || association.joinColumn() == null) {
+            throw new UnsupportedOperationException(ASSOCIATION_PATH_UNSUPPORTED + describe(path));
+        }
+        JdbcEntityAttribute targetId =
+                meta.entityType(association.associationTarget()).id();
+        if (!targetId.name().equals(names.get(1))) {
+            throw new UnsupportedOperationException(ASSOCIATION_PATH_UNSUPPORTED + describe(path));
+        }
+        JdbcEntityAttribute foreignKey = JdbcEntityAttribute.foreignKey(
+                targetId,
+                association.joinColumn(),
+                association.isJoinColumnQuoted(),
+                association.isJoinColumnUpdatable());
+        return new Resolved(column(foreignKey), foreignKey);
     }
 
     /// 不带别名的列引用（条件改删的 `SET` / `WHERE` 用）。

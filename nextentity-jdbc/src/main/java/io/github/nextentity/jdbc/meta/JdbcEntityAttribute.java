@@ -265,6 +265,35 @@ public final class JdbcEntityAttribute implements EntityAttribute {
             AttributeConverter<Object, Object> converter,
             Class<?> databaseType) {}
 
+    /// 由关联属性派生的 FK 列句柄：条件改删把 `关联.id` 解析成本表 FK 列时使用。
+    ///
+    /// 列名取 `@JoinColumn(name)`；值类型、枚举形态与 `@Convert` 转换器复用目标 `@Id`，
+    /// 因此绑定值走与写关联完全相同的转换。`id` / `version` / `generated` / `insertable`
+    /// 固定为 false（FK 不是主键、不由数据库生成、也不在 INSERT 列集中单独出现），
+    /// `updatable` 取 `@JoinColumn(updatable)`。字段句柄仍指向目标 `@Id`：渲染层只读列信息，
+    /// 不调用 [#get] / [#set]。
+    ///
+    /// @param targetId          关联目标的 `@Id` 属性
+    /// @param joinColumn        FK 列名（已剥反引号）
+    /// @param joinColumnQuoted  FK 列名注解里是否用反引号标记过
+    /// @param joinColumnUpdatable FK 列是否可出现在 UPDATE SET（`@JoinColumn(updatable = false)` → false）
+    public static JdbcEntityAttribute foreignKey(
+            JdbcEntityAttribute targetId, String joinColumn, boolean joinColumnQuoted, boolean joinColumnUpdatable) {
+        Column idColumn = targetId.column;
+        Column fkColumn = new Column(
+                joinColumn,
+                false,
+                false,
+                false,
+                false,
+                joinColumnUpdatable,
+                idColumn.storage(),
+                joinColumnQuoted,
+                idColumn.converter(),
+                idColumn.databaseType());
+        return new JdbcEntityAttribute(targetId.field, fkColumn, null);
+    }
+
     /// 关联列的映射信息：`joinColumn == null` 表示被静默忽略的集合 / `mappedBy` 反侧字段（见 USAGE §13.4.2）。
     ///
     /// @param target               关联目标 Java 类型

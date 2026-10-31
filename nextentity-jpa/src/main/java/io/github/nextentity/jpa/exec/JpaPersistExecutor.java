@@ -11,6 +11,7 @@ import jakarta.persistence.EntityNotFoundException;
 import jakarta.persistence.OptimisticLockException;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaUpdate;
+import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import java.util.List;
@@ -134,7 +135,8 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
         throw new OptimisticLockException(message + ", version=" + versionValue);
     }
 
-    /// 把实体的标量属性与单值关联写进 SET 子句：跳过主键与写侧标记为只读的列，版本列写「旧值 + 1」。
+    /// 把实体的标量属性、单值关联与 `@Embedded` 叶子列写进 SET 子句：跳过主键与写侧标记为只读的列，
+    /// 版本列写「旧值 + 1」。
     ///
     /// 只读按注解判：标量看 `@Column(updatable = false)`、关联外键看 `@JoinColumn(updatable = false)`，
     /// 与 JDBC 后端 `WriteSql.appendScalars` / `WriteSql.associationColumn` 同口径——**只按 flags 判，
@@ -167,6 +169,16 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
                 update.set(root.get(name), attribute.getValue().get(entity));
                 continue;
             }
+            if (meta.embedded(entityType, name)) {
+                // @Embedded 必须逐叶子列写：整对象 set 会让 Hibernate 展开全部嵌入列，
+                // 连 @Column(updatable = false) 的叶子一起写（3.1.0 的只读列修复漏了这一层）。
+                setEmbedded(
+                        update,
+                        root.get(name),
+                        meta.attributeJavaType(entityType, name),
+                        attribute.getValue().get(entity));
+                continue;
+            }
             if (!entityMeta.updatable(name)) {
                 // @Column(updatable = false)：写侧跳过，读回不受影响
                 continue;
@@ -177,6 +189,27 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
                     versionColumn
                             ? nextVersion(versionValue)
                             : attribute.getValue().get(entity));
+        }
+    }
+
+    /// 把 `@Embedded` 摊成逐叶子列的 `SET`。
+    ///
+    /// 整对象 `set(root.get(inner), value)` 会被 Hibernate 展开成**全部**嵌入列，`@Column(updatable
+    /// = false)` 的叶子也一起进 `SET`（3.1.0 的只读列修复只覆盖了顶层标量）。这里按叶子逐列写：
+    /// 只读叶子跳过，嵌入对象整体为 `null` 时可写叶子写 `NULL`，嵌套 `@Embedded` 递归展开。
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private void setEmbedded(CriteriaUpdate<T> update, Path<?> holder, Class<?> embeddedType, Object value) {
+        for (String leaf : meta.attributeNames(embeddedType)) {
+            Object leafValue = meta.read(embeddedType, leaf, value);
+            if (meta.embedded(embeddedType, leaf)) {
+                setEmbedded(update, holder.get(leaf), meta.attributeJavaType(embeddedType, leaf), leafValue);
+                continue;
+            }
+            if (!meta.scalarUpdatable(embeddedType, leaf)) {
+                // 嵌入内部的 @Column(updatable = false)：写侧跳过，与顶层标量同口径
+                continue;
+            }
+            update.set((Path) holder.get(leaf), leafValue);
         }
     }
 

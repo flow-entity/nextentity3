@@ -3,6 +3,7 @@ package io.github.nextentity.jdbc.exec;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.nextentity.api.EntityPath;
 import io.github.nextentity.api.Path;
 import io.github.nextentity.api.model.Tuple2;
 import io.github.nextentity.core.builder.QueryBuilder;
@@ -16,7 +17,9 @@ import io.github.nextentity.jdbc.dialect.H2Dialect;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
 import io.github.nextentity.jdbc.support.ItemStatus;
 import io.github.nextentity.jdbc.support.OrdinalItem;
+import io.github.nextentity.jdbc.support.SnapshotAsset;
 import io.github.nextentity.jdbc.support.SnapshotItem;
+import io.github.nextentity.jdbc.support.SnapshotOwner;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.PersistenceException;
@@ -79,6 +82,25 @@ class JdbcExecutorTest {
 
     private QueryBuilder<SnapshotItem, JdbcQuery> items() {
         return new QueryBuilder<>(meta.entityType(SnapshotItem.class), compiler, executor);
+    }
+
+    private QueryBuilder<SnapshotAsset, JdbcQuery> assets() {
+        return new QueryBuilder<>(meta.entityType(SnapshotAsset.class), compiler, executor);
+    }
+
+    @Test
+    void groupedCountWithAssociationConditionExecutesAgainstJoin() throws SQLException {
+        execute("delete from asset");
+        execute("delete from owner");
+        execute("insert into owner (id, name) values (10, 'alpha'), (20, 'beta')");
+        execute("insert into asset (id, name, owner_id) values (1, 'a', 10), (2, 'b', 20), (3, 'c', 10)");
+
+        long groups = assets().groupBy(SnapshotAsset::name)
+                .where(EntityPath.of(SnapshotAsset::owner).get(SnapshotOwner::id))
+                .eq(10L)
+                .count();
+
+        assertThat(groups).isEqualTo(2);
     }
 
     private void execute(String sql) throws SQLException {

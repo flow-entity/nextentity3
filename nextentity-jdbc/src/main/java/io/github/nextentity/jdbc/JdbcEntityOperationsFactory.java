@@ -49,7 +49,7 @@ public final class JdbcEntityOperationsFactory implements EntityOperationsFactor
                 meta::entityType,
                 compiler,
                 new JdbcExecutor(dataSource, meta, compiler),
-                type -> new JdbcPersistExecutor<>(dataSource, meta.entityType(type), selected));
+                type -> new JdbcPersistExecutor<>(dataSource, meta, meta.entityType(type), selected));
     }
 
     @Override

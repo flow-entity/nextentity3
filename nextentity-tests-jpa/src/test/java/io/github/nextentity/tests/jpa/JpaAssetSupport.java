@@ -83,6 +83,18 @@ final class JpaAssetSupport implements AutoCloseable {
         harness.clearSql();
     }
 
+    /// 回滚当前活动事务。
+    ///
+    /// `HibernateHarness#inTransaction` 在事务体抛异常时不自动回滚，于是「断言条件写抛 UOE」这类
+    /// 异常路径用例会把事务留在活动态，后续读回会撞 `Resource-local transaction already active`。
+    /// 夹具在自己的写路径 catch 到异常后调这里收尾，再原样抛出。
+    void rollbackActiveTransaction() {
+        var transaction = harness.entityManager().getTransaction();
+        if (transaction.isActive()) {
+            transaction.rollback();
+        }
+    }
+
     /// 原始列读回：`select owner_id from asset where id = ?`。
     ///
     /// 走 native query 而不是实体查询：关联是懒加载的，读实体不保证拿到"库里的外键值"，

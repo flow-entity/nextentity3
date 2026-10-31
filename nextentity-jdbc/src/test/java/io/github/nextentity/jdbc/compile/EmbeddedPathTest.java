@@ -128,6 +128,7 @@ class EmbeddedPathTest {
     void updateOnEmbeddedColumnRendersWithoutTableAlias() {
         SqlStatement statement = ConditionalSql.update(
                 new UpdateSpec(EmbeddedProfile.class, List.of(new Assignment(path("address", "city"), "Yantai")), null),
+                meta,
                 type,
                 new H2Dialect());
 
@@ -141,6 +142,7 @@ class EmbeddedPathTest {
                 new DeleteSpec(
                         EmbeddedProfile.class,
                         new Comparison(path("address", "city"), ComparisonOperator.EQ, Literal.of("Yantai"))),
+                meta,
                 type,
                 new H2Dialect());
 
@@ -152,6 +154,7 @@ class EmbeddedPathTest {
     void updateRejectsTheEmbeddedObjectItself() {
         assertThatThrownBy(() -> ConditionalSql.update(
                         new UpdateSpec(EmbeddedProfile.class, List.of(new Assignment(path("address"), "x")), null),
+                        meta,
                         type,
                         new H2Dialect()))
                 .isInstanceOf(UnsupportedOperationException.class)
@@ -162,6 +165,7 @@ class EmbeddedPathTest {
     void updateRejectsExtraPathSegmentsBelowAScalarColumn() {
         assertThatThrownBy(() -> ConditionalSql.update(
                         new UpdateSpec(EmbeddedProfile.class, List.of(new Assignment(path("label", "x"), "x")), null),
+                        meta,
                         type,
                         new H2Dialect()))
                 .isInstanceOf(UnsupportedOperationException.class)
@@ -174,6 +178,7 @@ class EmbeddedPathTest {
                         new DeleteSpec(
                                 EmbeddedProfile.class,
                                 new Comparison(path("missing"), ComparisonOperator.EQ, Literal.of(1))),
+                        meta,
                         type,
                         new H2Dialect()))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -186,6 +191,7 @@ class EmbeddedPathTest {
                         new DeleteSpec(
                                 EmbeddedProfile.class,
                                 new Comparison(path("address", "zip"), ComparisonOperator.EQ, Literal.of("x"))),
+                        meta,
                         type,
                         new H2Dialect()))
                 .isInstanceOf(IllegalArgumentException.class)

@@ -8,6 +8,7 @@ import io.github.nextentity.jpa.entity.Branch;
 import io.github.nextentity.jpa.entity.Customer;
 import io.github.nextentity.jpa.entity.DerivedRecord;
 import io.github.nextentity.jpa.entity.ElementCollectionHolder;
+import io.github.nextentity.jpa.entity.EmbeddedFlags;
 import io.github.nextentity.jpa.entity.FetchChain;
 import io.github.nextentity.jpa.entity.Note;
 import io.github.nextentity.jpa.entity.OrderStatus;
@@ -18,6 +19,7 @@ import io.github.nextentity.jpa.entity.SealHolder;
 import io.github.nextentity.jpa.entity.Shipment;
 import io.github.nextentity.jpa.entity.ShopOrder;
 import io.github.nextentity.jpa.entity.Tag;
+import io.github.nextentity.jpa.entity.UnannotatedLink;
 import io.github.nextentity.jpa.entity.UpdatableFlags;
 import io.github.nextentity.jpa.entity.VersionedEntry;
 import io.github.nextentity.jpa.entity.VersionedLedger;
@@ -85,6 +87,8 @@ abstract class JpaTestSupport {
         configuration.addAnnotatedClass(Branch.class);
         configuration.addAnnotatedClass(FetchChain.class);
         configuration.addAnnotatedClass(UpdatableFlags.class);
+        configuration.addAnnotatedClass(EmbeddedFlags.class);
+        configuration.addAnnotatedClass(UnannotatedLink.class);
         this.sessionFactory = configuration.buildSessionFactory();
         this.meta = new JpaMeta(sessionFactory);
     }

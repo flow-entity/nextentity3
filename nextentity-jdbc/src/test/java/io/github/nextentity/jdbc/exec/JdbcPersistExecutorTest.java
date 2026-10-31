@@ -3,12 +3,15 @@ package io.github.nextentity.jdbc.exec;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.nextentity.api.EntityPath;
 import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
 import io.github.nextentity.jdbc.support.GeneratedItem;
 import io.github.nextentity.jdbc.support.IntegerGeneratedItem;
 import io.github.nextentity.jdbc.support.NullableIdItem;
+import io.github.nextentity.jdbc.support.SnapshotAsset;
 import io.github.nextentity.jdbc.support.SnapshotItem;
+import io.github.nextentity.jdbc.support.SnapshotOwner;
 import io.github.nextentity.jdbc.support.VersionedItem;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.persistence.OptimisticLockException;
@@ -43,6 +46,7 @@ class JdbcPersistExecutorTest {
         execute("delete from generated_item");
         execute("delete from integer_generated_item");
         execute("delete from versioned_item");
+        execute("delete from asset");
     }
 
     @Test
@@ -73,7 +77,7 @@ class JdbcPersistExecutorTest {
     }
 
     private <T> JdbcPersistExecutor<T> executor(Class<T> type) {
-        return new JdbcPersistExecutor<>(dataSource, meta.entityType(type), dialect);
+        return new JdbcPersistExecutor<>(dataSource, meta, meta.entityType(type), dialect);
     }
 
     private void execute(String sql) throws SQLException {
@@ -247,6 +251,52 @@ class JdbcPersistExecutorTest {
         assertThat(count("item")).isZero();
     }
 
+    @Test
+    void insertAllKeepsEachRowsForeignKeyWhenAssociationPresenceDiffers() throws SQLException {
+        SnapshotOwner alpha = new SnapshotOwner(10L, "alpha");
+        SnapshotOwner beta = new SnapshotOwner(20L, "beta");
+
+        executor(SnapshotAsset.class)
+                .insertAll(List.of(new SnapshotAsset(1L, "anvil", alpha), new SnapshotAsset(2L, "banana", null)));
+        executor(SnapshotAsset.class)
+                .insertAll(List.of(new SnapshotAsset(3L, "cherry", null), new SnapshotAsset(4L, "damson", beta)));
+
+        assertThat(ownerIdOf(1L)).isEqualTo(10L);
+        assertThat(ownerIdOf(2L)).isNull();
+        assertThat(ownerIdOf(3L)).isNull();
+        assertThat(ownerIdOf(4L)).isEqualTo(20L);
+    }
+
+    @Test
+    void conditionalUpdateCanClearForeignKey() throws SQLException {
+        executor(SnapshotAsset.class).insert(new SnapshotAsset(1L, "anvil", new SnapshotOwner(10L, "alpha")));
+
+        int affected = executor(SnapshotAsset.class)
+                .update()
+                .set(EntityPath.of(SnapshotAsset::owner).get(SnapshotOwner::id), (Long) null)
+                .where(SnapshotAsset::id)
+                .eq(1L)
+                .execute();
+
+        assertThat(affected).isEqualTo(1);
+        assertThat(ownerIdOf(1L)).isNull();
+    }
+
+    @Test
+    void conditionalUpdateSetsForeignKeyAndFiltersByAssociationId() throws SQLException {
+        executor(SnapshotAsset.class).insert(new SnapshotAsset(1L, "anvil", new SnapshotOwner(10L, "alpha")));
+
+        int affected = executor(SnapshotAsset.class)
+                .update()
+                .set(EntityPath.of(SnapshotAsset::owner).get(SnapshotOwner::id), 20L)
+                .where(EntityPath.of(SnapshotAsset::owner).get(SnapshotOwner::id))
+                .eq(10L)
+                .execute();
+
+        assertThat(affected).isEqualTo(1);
+        assertThat(ownerIdOf(1L)).isEqualTo(20L);
+    }
+
     private Object storedVersion(long id) throws SQLException {
         try (Connection connection = dataSource.getConnection();
                 Statement statement = connection.createStatement();
@@ -271,6 +321,16 @@ class JdbcPersistExecutorTest {
                 ResultSet rows = statement.executeQuery("select note from item where id = " + id)) {
             assertThat(rows.next()).isTrue();
             return rows.getString(1);
+        }
+    }
+
+    private Long ownerIdOf(long id) throws SQLException {
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement();
+                ResultSet rows = statement.executeQuery("select owner_id from asset where id = " + id)) {
+            assertThat(rows.next()).isTrue();
+            long value = rows.getLong(1);
+            return rows.wasNull() ? null : value;
         }
     }
 

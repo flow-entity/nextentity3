@@ -26,9 +26,9 @@ import java.util.List;
 ///     .fetch(Employee::getDepartment, Employee::getManager)
 ///     .list();
 ///
-/// // 预加载嵌套关联
+/// // 预加载嵌套关联（嵌套路径用 EntityPath 构造，Path 本身没有 get）
 /// List<Employee> employees = repository.query()
-///     .fetch(Path.of(Employee::getDepartment).get(Department::getManager))
+///     .fetch(EntityPath.of(Employee::getDepartment).get(Department::getManager))
 ///     .list();
 /// ```
 ///

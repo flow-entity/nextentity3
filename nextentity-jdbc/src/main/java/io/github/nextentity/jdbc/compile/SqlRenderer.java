@@ -35,11 +35,12 @@ final class SqlRenderer {
 
     /// 条件改删用的渲染器：只解析根表列、不 join、不带别名。
     ///
+    /// @param meta      实体元数据（`关联.id` 解析成 FK 列需要目标 `@Id` 的列信息）
     /// @param entityType 根实体
-    /// @param dialect 方言
+    /// @param dialect    方言
     /// @return 渲染器
-    static SqlRenderer conditional(JdbcEntityType<?> entityType, JdbcDialect dialect) {
-        return new SqlRenderer(null, dialect, null, entityType);
+    static SqlRenderer conditional(JdbcMeta meta, JdbcEntityType<?> entityType, JdbcDialect dialect) {
+        return new SqlRenderer(meta, dialect, null, entityType);
     }
 
     private SqlRenderer(JdbcMeta meta, JdbcDialect dialect, QuerySpec spec, JdbcEntityType<?> fixedEntityType) {
@@ -49,7 +50,7 @@ final class SqlRenderer {
         this.fixedEntityType = fixedEntityType;
         this.paths = fixedEntityType == null
                 ? new SqlPaths(meta, dialect, spec.entityType())
-                : new SqlPaths(fixedEntityType, dialect);
+                : new SqlPaths(meta, fixedEntityType, dialect);
     }
 
     /// 渲染普通查询。
@@ -96,11 +97,11 @@ final class SqlRenderer {
         List<String> keys = query.groupBy().stream()
                 .map(key -> paths.resolve(key).expression())
                 .toList();
-        String inner = "select " + String.join(", ", keys)
-                + FROM + table() + " " + SqlPaths.ROOT_ALIAS + paths.joins()
-                + clauses.where(query.where())
-                + clauses.groupBy(query.groupBy())
-                + clauses.having(query.having());
+        // where / having 可能在解析关联路径时注册 join，内层 SQL 必须在它们渲染完之后再取 paths.joins()，
+        // 否则派生表缺 join、WHERE 里却引用 tN 列。
+        String tail = clauses.where(query.where()) + clauses.groupBy(query.groupBy()) + clauses.having(query.having());
+        String inner =
+                "select " + String.join(", ", keys) + FROM + table() + " " + SqlPaths.ROOT_ALIAS + paths.joins() + tail;
         columnTypes.add(Long.class);
         return new SqlStatement("select count(*) from (" + inner + ") grouped", parameters, columnTypes);
     }

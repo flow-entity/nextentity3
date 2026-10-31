@@ -10,6 +10,8 @@ import io.github.nextentity.core.builder.QueryBuilder;
 import io.github.nextentity.core.exec.Executor;
 import io.github.nextentity.jdbc.dialect.H2Dialect;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
+import io.github.nextentity.jdbc.support.ConvertedIdAssociationItem;
+import io.github.nextentity.jdbc.support.ConvertedIdOwner;
 import io.github.nextentity.jdbc.support.SnapshotAsset;
 import io.github.nextentity.jdbc.support.SnapshotItem;
 import io.github.nextentity.jdbc.support.SnapshotOwner;
@@ -33,6 +35,10 @@ class JdbcSqlSnapshotTest {
 
     private QueryBuilder<SnapshotAsset, JdbcQuery> assets() {
         return new QueryBuilder<>(meta.entityType(SnapshotAsset.class), compiler, executor);
+    }
+
+    private QueryBuilder<ConvertedIdAssociationItem, JdbcQuery> convertedIdAssociations() {
+        return new QueryBuilder<>(meta.entityType(ConvertedIdAssociationItem.class), compiler, executor);
     }
 
     // ---------------------------------------------------------------- 实体查询
@@ -340,7 +346,53 @@ class JdbcSqlSnapshotTest {
                         + " left join owner t1 on t1.id = t0.owner_id order by t1.name asc");
     }
 
+    @Test
+    void associationIdProjectionUsesTargetIdColumnMapping() {
+        convertedIdAssociations()
+                .select(EntityPath.of(ConvertedIdAssociationItem::owner).get(ConvertedIdOwner::id))
+                .list();
+
+        assertThat(executor.last.sql())
+                .isEqualTo("select t1.id from converted_id_association t0"
+                        + " left join converted_id_owner t1 on t1.id = t0.owner_id");
+        assertThat(executor.last.columnTypes()).containsExactly(String.class);
+    }
+
     // ---------------------------------------------------------------- 终止符
+
+    @Test
+    void groupedCountKeepsJoinFromWhere() {
+        assets().groupBy(SnapshotAsset::name)
+                .where(EntityPath.of(SnapshotAsset::owner).get(SnapshotOwner::id))
+                .eq(10L)
+                .count();
+
+        SqlStatement count = compiler.count(executor.last.spec());
+        assertThat(count.sql())
+                .isEqualTo("select count(*) from (select t0.name from asset t0"
+                        + " left join owner t1 on t1.id = t0.owner_id where t1.id = ? group by t0.name) grouped");
+        assertThat(count.parameters()).containsExactly(10L);
+        assertThat(count.columnTypes()).containsExactly(Long.class);
+    }
+
+    @Test
+    void groupedCountKeepsJoinFromHavingAndBindsWhereBeforeHaving() {
+        assets().groupBy(SnapshotAsset::name)
+                .where(SnapshotAsset::name)
+                .like("a%")
+                .having(EntityPath.of(SnapshotAsset::owner)
+                        .get(SnapshotOwner::id)
+                        .max()
+                        .gt(10L))
+                .count();
+
+        SqlStatement count = compiler.count(executor.last.spec());
+        assertThat(count.sql())
+                .isEqualTo("select count(*) from (select t0.name from asset t0"
+                        + " left join owner t1 on t1.id = t0.owner_id"
+                        + " where t0.name like ? group by t0.name having (max(t1.id) > ?)) grouped");
+        assertThat(count.parameters()).containsExactly("a%", 10L);
+    }
 
     @Test
     void countUsesCountStarAndKeepsWhereButDropsOrder() {

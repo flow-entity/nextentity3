@@ -150,8 +150,8 @@ class GeneratedKeysTest {
     }
 
     private long insertedId(ResultSet keys) {
-        JdbcPersistExecutor<GeneratedItem> persist =
-                new JdbcPersistExecutor<>(FakeKeys.dataSource(keys), meta.entityType(GeneratedItem.class), dialect);
+        JdbcPersistExecutor<GeneratedItem> persist = new JdbcPersistExecutor<>(
+                FakeKeys.dataSource(keys), meta, meta.entityType(GeneratedItem.class), dialect);
         GeneratedItem item = new GeneratedItem("n");
         persist.insert(item);
         return item.id();
@@ -159,7 +159,7 @@ class GeneratedKeysTest {
 
     private Integer insertedIntegerId(ResultSet keys) {
         JdbcPersistExecutor<IntegerGeneratedItem> persist = new JdbcPersistExecutor<>(
-                FakeKeys.dataSource(keys), meta.entityType(IntegerGeneratedItem.class), dialect);
+                FakeKeys.dataSource(keys), meta, meta.entityType(IntegerGeneratedItem.class), dialect);
         IntegerGeneratedItem item = new IntegerGeneratedItem("n");
         persist.insert(item);
         return item.id();
@@ -167,7 +167,7 @@ class GeneratedKeysTest {
 
     private Short insertedShortId(ResultSet keys) {
         JdbcPersistExecutor<GeneratedShortItem> persist = new JdbcPersistExecutor<>(
-                FakeKeys.dataSource(keys), meta.entityType(GeneratedShortItem.class), dialect);
+                FakeKeys.dataSource(keys), meta, meta.entityType(GeneratedShortItem.class), dialect);
         GeneratedShortItem item = new GeneratedShortItem("n");
         persist.insert(item);
         return item.id();
@@ -175,7 +175,7 @@ class GeneratedKeysTest {
 
     private BigInteger insertedBigIntegerId(ResultSet keys) {
         JdbcPersistExecutor<GeneratedBigIntegerItem> persist = new JdbcPersistExecutor<>(
-                FakeKeys.dataSource(keys), meta.entityType(GeneratedBigIntegerItem.class), dialect);
+                FakeKeys.dataSource(keys), meta, meta.entityType(GeneratedBigIntegerItem.class), dialect);
         GeneratedBigIntegerItem item = new GeneratedBigIntegerItem("n");
         persist.insert(item);
         return item.id();

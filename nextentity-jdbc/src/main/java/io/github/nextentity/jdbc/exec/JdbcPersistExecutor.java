@@ -12,6 +12,7 @@ import io.github.nextentity.jdbc.compile.SqlStatement;
 import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.JdbcEntityAttribute;
 import io.github.nextentity.jdbc.meta.JdbcEntityType;
+import io.github.nextentity.jdbc.meta.JdbcMeta;
 import io.github.nextentity.jdbc.meta.JdbcTypes;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.persistence.OptimisticLockException;
@@ -22,7 +23,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import javax.sql.DataSource;
 
@@ -41,16 +44,20 @@ public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
     private static final String MISSING_ID = "主键不能为 null: ";
 
     private final DataSource dataSource;
+    private final JdbcMeta meta;
     private final JdbcEntityType<T> entityType;
     private final JdbcDialect dialect;
 
     /// 创建写入器。
     ///
     /// @param dataSource 数据源（每次操作独立取连接）
+    /// @param meta       实体元数据仓库（条件改删把 `关联.id` 解析成 FK 列时要查关联目标）
     /// @param entityType 实体元数据（表名、列名、主键 / 版本句柄）
     /// @param dialect     方言（只用于 quoted 标识符的引用形态，见 `JdbcDialect#quote`）
-    public JdbcPersistExecutor(DataSource dataSource, JdbcEntityType<T> entityType, JdbcDialect dialect) {
+    public JdbcPersistExecutor(
+            DataSource dataSource, JdbcMeta meta, JdbcEntityType<T> entityType, JdbcDialect dialect) {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
+        this.meta = Objects.requireNonNull(meta, "meta");
         this.entityType = Objects.requireNonNull(entityType, "entityType");
         this.dialect = Objects.requireNonNull(dialect, "dialect");
     }
@@ -117,11 +124,11 @@ public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
     }
 
     private int updateWhere(UpdateSpec spec) {
-        return Math.toIntExact(executeUpdate(ConditionalSql.update(spec, entityType, dialect)));
+        return Math.toIntExact(executeUpdate(ConditionalSql.update(spec, meta, entityType, dialect)));
     }
 
     private int deleteWhere(DeleteSpec spec) {
-        return Math.toIntExact(executeUpdate(ConditionalSql.delete(spec, entityType, dialect)));
+        return Math.toIntExact(executeUpdate(ConditionalSql.delete(spec, meta, entityType, dialect)));
     }
 
     private void insertGenerated(T entity, JdbcEntityAttribute id) {
@@ -144,25 +151,31 @@ public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
     }
 
     private void insertBatch(Iterable<T> entities) {
-        List<T> batch = new ArrayList<>();
-        List<SqlStatement> statements = new ArrayList<>();
+        Map<String, List<T>> batchBySql = new LinkedHashMap<>();
         for (T entity : entities) {
             Objects.requireNonNull(entity, ENTITY);
             if (entityType.id().get(entity) == null) {
                 throw new IllegalArgumentException(
                         MISSING_ID + entityType.type().getName());
             }
-            batch.add(entity);
-            statements.add(WriteSql.insert(entityType, entity, dialect));
+            // INSERT 的列集随「关联属性是否为 null」变化（null 跳过 FK 列），所以先按 SQL 分组：
+            // 一条 PreparedStatement 只能对应一套列集与参数顺序，混用会让上一行的 FK 值留在参数里。
+            batchBySql
+                    .computeIfAbsent(
+                            WriteSql.insert(entityType, entity, dialect).sql(), sql -> new ArrayList<>())
+                    .add(entity);
         }
-        if (batch.isEmpty()) {
-            return;
-        }
-        String sql = statements.getFirst().sql();
+        batchBySql.forEach(this::executeBatch);
+    }
+
+    private void executeBatch(String sql, List<T> batch) {
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement prepared = connection.prepareStatement(sql)) {
-            for (SqlStatement statement : statements) {
-                JdbcExecutor.bind(prepared, statement.parameters());
+            for (T entity : batch) {
+                // 同组 SQL 列集一致，仍清一次参数，避免驱动侧残留值被下一行复用。
+                prepared.clearParameters();
+                JdbcExecutor.bind(
+                        prepared, WriteSql.insert(entityType, entity, dialect).parameters());
                 prepared.addBatch();
             }
             prepared.executeBatch();

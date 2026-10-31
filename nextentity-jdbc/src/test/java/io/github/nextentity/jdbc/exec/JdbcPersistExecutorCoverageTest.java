@@ -205,7 +205,7 @@ class JdbcPersistExecutorCoverageTest {
 
     private <T> JdbcPersistExecutor<T> persist(Class<T> type) {
         JdbcEntityType<T> entityType = meta.entityType(type);
-        return new JdbcPersistExecutor<>(dataSource, entityType, dialect);
+        return new JdbcPersistExecutor<>(dataSource, meta, entityType, dialect);
     }
 
     @SafeVarargs

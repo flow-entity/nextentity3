@@ -53,11 +53,11 @@ class JpaCriteriaWriteTest extends JpaTestSupport {
     }
 
     @Test
-    @DisplayName("条件 update 可以改关联外键（值来自关联对象的 @Id）")
+    @DisplayName("条件 update 可以改关联外键（`关联.id` 形态写本表外键列）")
     void conditionalUpdateWritesAssociationForeignKey() {
         int affected = inTx(entityManager -> orders(entityManager)
                 .update()
-                .set(Path.of(ShopOrder::getCustomer), new Customer(11L, 2L, "Bob", null))
+                .set(EntityPath.of(ShopOrder::getCustomer).get(Customer::getId), 11L)
                 .where(ShopOrder::getId)
                 .eq(100L)
                 .execute());
@@ -76,7 +76,7 @@ class JpaCriteriaWriteTest extends JpaTestSupport {
     void conditionalUpdateCanNullAssociation() {
         int affected = inTx(entityManager -> orders(entityManager)
                 .update()
-                .set(Path.of(ShopOrder::getCustomer), null)
+                .set(EntityPath.of(ShopOrder::getCustomer).get(Customer::getId), null)
                 .where(ShopOrder::getId)
                 .eq(100L)
                 .execute());

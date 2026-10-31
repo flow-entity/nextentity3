@@ -29,8 +29,21 @@ public interface UpdateSetStep<T> extends UpdateWhereStep<T> {
 
     /// 设置一列的值（[Path] 形态的路径）。
     ///
-    /// 嵌套列（关联/`@Embedded`）只能用这种形态表达：`set(Path.of(X::getDept).get(Dept::getName), "A")`。
-    /// 把关联外键置空也走这里：`set(Path.of(X::getDept).get(Dept::getId), null)`。
+    /// 合法的 SET 目标只有三种：本表标量列、`@Embedded` 的叶子列、`关联.@Id`
+    /// （写本表外键列，值 `null` 即清外键）。后两种用 [EntityPath] 构造嵌套路径——
+    /// [Path] 本身没有 `get`：
+    ///
+    /// ```java
+    /// // @Embedded 叶子
+    /// update.set(EntityPath.of(Employee::getAddress).get(Address::getCity), "Hangzhou");
+    /// // 关联外键：写本表外键列，null 即清外键
+    /// update.set(EntityPath.of(Employee::getDepartment).get(Department::getId), null);
+    /// ```
+    ///
+    /// 其余形态（关联对象整体、嵌入对象整体、被关联表的列如 `department.name`、
+    /// 三段及以上路径）不被支持，抛 `UnsupportedOperationException` 并点名路径
+    /// （两个后端都拒绝，措辞不同不构成契约）。`@Column` / `@JoinColumn` 标了
+    /// `updatable = false` 的只读列一律拒绝，同样点名路径。
     ///
     /// @param path  列路径
     /// @param value 新值，可为 null（表示置空）

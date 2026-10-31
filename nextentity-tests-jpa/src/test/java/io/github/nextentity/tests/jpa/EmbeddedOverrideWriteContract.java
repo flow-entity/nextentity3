@@ -21,11 +21,11 @@ import org.junit.jupiter.api.Test;
 /// 断言与夹具都在本类，漂移在编译期就不可能发生。
 ///
 /// 守护的语义（此前非遗留用例零覆盖的两条）：
-/// 1. **嵌入写侧**：`JpaPersistExecutor#setValues` 只跳过主键与关联，`@Embedded` 不是关联，
-///    所以 `update` 会把整个可嵌入对象塞进 `CriteriaUpdate.set(...)`。Hibernate 7 会把它摊平成
-///    叶子列（`set home_city=?,home_zone=?,...`），本类把「摊平」这件事钉住：语句层看叶子列、
-///    结果层看重新查出来的值。若哪天换成「按列名拼 SQL」的实现、或 Hibernate 不再摊平，
-///    两侧会同时红。
+/// 1. **嵌入写侧**：`JpaPersistExecutor#setValues` 把 `@Embedded` 摊成**逐叶子列**的
+///    `CriteriaUpdate.set(...)`（`@Column(updatable = false)` 的叶子跳过），不再整对象 set——
+///    整对象 set 会让 Hibernate 把只读叶子也一起写进 SET。本类把「覆盖后的叶子列各写各的列」
+///    钉住：语句层看叶子列（`home_city=?` / `office_zone=?` …）、结果层看重新查出来的值。
+///    若哪天回退成整对象 set、或 `@AttributeOverride` 的叶子路径解析坏掉，两侧会同时红。
 /// 2. **`@AttributeOverride`**：同一个 [PostalAddress] 在实体上出现两次、各自覆盖到不同列。
 ///    第 4/5 条用例是这条能力唯一有区分力的证据：两个 `@Embedded` 若都落到默认列名（或都落到
 ///    覆盖后的同一列），两条查询会返回同一批行；只有「各写各的列」时镜像夹具才会分裂成
@@ -69,7 +69,7 @@ abstract class EmbeddedOverrideWriteContract {
         String set = setClause(updates.getFirst());
         // 叶子列：`home_city` / `home_zone` 来自 home 的覆盖，`office_*` 来自 office 的覆盖
         assertThat(set)
-                .as("嵌入属性必须摊平成叶子列：整块嵌入直接进 SET 会在真库上直接语法错误")
+                .as("嵌入属性必须逐叶子列进 SET：整对象 SET 会把 @Column(updatable=false) 叶子一起写，且列序/合并形态不可控")
                 .contains("home_city=?")
                 .contains("home_zone=?")
                 .contains("office_city=?")

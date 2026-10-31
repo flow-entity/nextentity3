@@ -559,10 +559,10 @@ List<Order> orders = query()
         .where(Order::getStatus).eq(OrderStatus.PAID)
         .list();
 
-// 多个关联一次传（便捷重载最多 3 条 Path；4 条以上用 fetch(Collection<Path>)）；嵌套关联用 Path 逐段 get
+// 多个关联一次传（便捷重载最多 3 条 Path；4 条以上用 fetch(Collection<Path>)）；嵌套关联用 EntityPath 逐段 get
 List<Order> loaded = query()
         .fetch(Path.of(Order::getCustomer),
-                Path.of(Order::getCustomer).get(Customer::getOrg),
+                EntityPath.of(Order::getCustomer).get(Customer::getOrg),
                 Path.of(Order::getShop))
         .where(Order::getStatus).eq(OrderStatus.PAID)
         .list();
@@ -570,7 +570,7 @@ List<Order> loaded = query()
 
 与 2.2.3 的四个形状差异（照抄 2.2.3 示例会编译不过）：
 
-- `FetchStep` 共 6 个方法：抽象 `fetch(Collection<? extends Path<T, ?>>)` + 1/2/3 条 `Path` 与 1/2 条 `PathRef` 的 `default` 重载。3.x 刻意不让 `Path` 继承 `PathRef`（避免给 `Path` 的实现方增加源码义务），两种形态靠 `Path.of(...)` 互转。
+- `FetchStep` 共 6 个方法：抽象 `fetch(Collection<? extends Path<T, ?>>)` + 1/2/3 条 `Path` 与 1/2 条 `PathRef` 的 `default` 重载。3.x 刻意不让 `Path` 继承 `PathRef`（避免给 `Path` 的实现方增加源码义务）：方法引用用 `Path.of(ref)` 转成 `Path`；反向没有公开转换，需要方法引用形态时直接写方法引用。嵌套路径只能 `EntityPath.of(...).get(...)`（`Path` 没有 `get`）。
 - 2.2.3 的 7 个方法里 `fetch(PathRef, PathRef, PathRef)` 不在 3.1.0（撞「接口方法数 ≤ 6」的窄度规则）；三个关联写 `fetch(Path, Path, Path)`。
 - **不能链两次 `fetch`**：`fetch(...)` 返回 `BaseWhereStep`，它没有 `fetch`；多个关联一次多参传。2.2.3 Javadoc 里的 `.fetch(a).fetch(b)` 本身编译不过，不要照抄。
 - `select(...)` / `project(...)` 之后没有 `fetch`：投影行不是实体，没有关联可填。
@@ -617,7 +617,7 @@ operations.updateAll(orders);
 
 ### 10.1 按条件更新与删除
 
-3.1.0 恢复 2.2.3 的批量写入步骤（2.2.3 examples 在用：`EmployeeRepository.java` 的 `update().set(...).set(...).where(...).execute()` 与 `delete().where(...).execute()`）。入口在 `PersistExecutor`：`update()` 返回 `UpdateSetStep`、`delete()` 返回 `DeleteWhereStep`，`execute()` 返回受影响行数。签名已定稿——`set(...)` 有两个重载：`PathRef`（方法引用形态）与 `Path`（嵌套列 / 关联外键）：
+3.1.0 恢复 2.2.3 的批量写入步骤（2.2.3 examples 在用：`EmployeeRepository.java` 的 `update().set(...).set(...).where(...).execute()` 与 `delete().where(...).execute()`）。入口在 `PersistExecutor`：`update()` 返回 `UpdateSetStep`、`delete()` 返回 `DeleteWhereStep`，`execute()` 返回受影响行数。签名已定稿——`set(...)` 有两个重载：`PathRef`（方法引用形态）与 `Path`（可写目标见下）：
 
 ```java
 // 一条 UPDATE ... WHERE ...，不是「先查出来逐行改」
@@ -632,22 +632,24 @@ int purged = operations.delete()
         .where(Employee::getStatus).eq(EmployeeStatus.INACTIVE)
         .execute();
 
-// set 的 Path 重载：嵌套 @Embedded 列，以及把关联外键置空
+// set 的 Path 重载：@Embedded 叶子列，以及「关联.id」（写本表外键列）
 int relocated = operations.update()
-        .set(Path.of(Employee::getAddress).get(Address::getCity), "Platform")
+        .set(EntityPath.of(Employee::getAddress).get(Address::getCity), "Platform")
         .where(Employee::getStatus).eq(EmployeeStatus.INACTIVE)
         .execute();
 int clearedFk = operations.update()
-        .set(Path.of(Employee::getDepartment).get(Department::getId), null)
+        .set(EntityPath.of(Employee::getDepartment).get(Department::getId), null)
         .where(Employee::getStatus).eq(EmployeeStatus.INACTIVE)
         .execute();
 ```
 
-`set(...)` 的方法引用重载只接受标量列；嵌套列与「把外键置空」必须用 `Path` 重载（`PathRef` 表达不了 `null` 与逐段路径）。右值只支持**字面量**：不支持「列 = 列」或引用了其它列的表达式；`value = null` 表示置 `NULL`。条件面复用 §3 的谓词（含 §3.1 的可选条件与 §3.6 的组合），且条件在语句里直接求值，不先取行。`execute()` 返回受影响行数；批量写不经过实体快照，因此不触发级联。
+`set(...)` 的合法目标只有三种，两个后端同规则：①本表标量列（方法引用重载即可）；②`@Embedded` 的叶子列（`EntityPath.of(X::getEmbedded).get(E::getLeaf)`）；③`关联.id`（`EntityPath.of(X::getAssociation).get(Target::getId)`，写本表外键列，`value = null` 即清外键）。其余形态——关联对象整体、嵌入对象整体、被关联表的其它列（如 `department.name`）、三段及以上路径——**两个后端都拒绝**（抛 `UnsupportedOperationException` 并点名路径；两个后端的消息措辞不同，不构成契约）。嵌套路径必须用 `EntityPath` 构造：`Path` 只有静态 `of(...)` 与 `refs()`，没有 `get(...)`。
+
+右值只支持**字面量**：不支持「列 = 列」或引用了其它列的表达式；`value = null` 表示置 `NULL`。条件面复用 §3 的谓词（含 §3.1 的可选条件与 §3.6 的组合），但**条件里的关联路径两个后端能力不同**（JPA 任意关联路径；JDBC 只支持本表列、嵌入叶子与 `关联.id`），差异与拒绝清单见 §13.4.3。条件在语句里直接求值，不先取行。`execute()` 返回受影响行数；批量写不经过实体快照，因此不触发级联。
 
 **并发语义（与 2.2.3 一致）**：条件更新/删除**不参与乐观锁**——既不校验、也不自增 `@Version`，也不回写调用方对象（Hibernate 的 `CriteriaUpdate`/`CriteriaDelete` 与 JDBC 批量语句都不施加版本列；只有 §10 的单实体 `update(entity)` 会把版本写回入参对象）。代价是：并发下批量更新可能覆盖别人刚提交的行，而调用方看不到 `OptimisticLockException`。要行级版本保护，改用单实体 `update(entity)`；或把版本列显式写进 `where(...)` 条件（`where(Employee::getVersion).eq(expectedVersion)`），再按受影响行数判断是否被并发改过并重试。
 
-**只读列**：条件更新命中 `@Column(updatable=false)` / `@JoinColumn(updatable=false)` 的列时，**两个后端一致 fail-fast 抛 `UnsupportedOperationException`**（消息点名该列）——JDBC 与 JPA（3.1.0 起）都是同一口径；静默跳过会让「更新了但某列没变」难以察觉。替代：去掉该列标志；或改走单实体 `update(entity)`（只读列按映射本来就不进 `SET` 集）；或直接发原生 SQL。写操作必须在调用方事务里执行（§11）。
+**只读列**：条件更新命中 `@Column(updatable=false)` / `@JoinColumn(updatable=false)` 的列时（含 `@Embedded` 叶子与 `关联.id` 这种嵌套形态），**两个后端一致 fail-fast 抛 `UnsupportedOperationException`**（消息点名该列）——JDBC 与 JPA（3.1.0 起）都是同一口径；静默跳过会让「更新了但某列没变」难以察觉。替代：去掉该列标志；或改走单实体 `update(entity)`（只读列按映射本来就不进 `SET` 集）；或直接发原生 SQL。写操作必须在调用方事务里执行（§11）。
 
 > ⚠️ **不写 `where(...)` 就是整表更新/删除**（`update()` / `delete()` 没有「空条件拒绝」的保护）；批量语句请始终显式给出条件，Javadoc 也写了同一句警告。
 
@@ -771,7 +773,7 @@ orders.updateAll(List.of(order));
 | 无参构造 | 实体必须有可调用的无参构造（`private`/`protected` 会 `setAccessible`）；缺失抛 `IllegalArgumentException`（消息含实体类名）；**record 实体不支持**（无无参构造、字段 final） |
 | 3.1.0 新查询/写入节点 | 字符串函数（`LOWER`/`UPPER`/`TRIM`/`LENGTH`/`SUBSTRING`）、`startsWith`/`endsWith`/`notLike` 族（折成 `LIKE`/`NOT LIKE`）、`groupBy` 之后的 `count()`/`exists()`、条件 `update`/`delete` 都有渲染分支；**`fetch(...)` 在 JDBC 后端显式拒绝（`UOE`）**（JDBC 无实体图/懒加载，见 13.4.3）；SQL Server 的长度/截取形态差异见 13.4.5 |
 
-**写关联的 null 语义与 JPA 不同（必须知道）**：JDBC 后端在关联值为 `null` 时**跳过该列**（不写 `NULL`），因此不能通过 `update(entity)` 把外键置空。等价写法是条件更新 + `Path` 重载的 `set(..., null)`：`update().set(Path.of(Employee::getDepartment).get(Department::getId), null).where(...).execute()`（见 §10.1）。另外，JDBC 读回只装外键列与标量列，**不填充关联对象**（关联字段为 `null`；显式 `project(...)` 投影除外）。
+**写关联的 null 语义与 JPA 不同（必须知道）**：JDBC 后端在关联值为 `null` 时**跳过该列**（不写 `NULL`），因此不能通过 `update(entity)` 把外键置空。等价写法是条件更新 + `set(..., null)`（`关联.id` 形态，3.1.0 起 JDBC 的条件 SET 也支持）：`update().set(EntityPath.of(Employee::getDepartment).get(Department::getId), null).where(...).execute()`（见 §10.1）。另外，JDBC 读回只装外键列与标量列，**不填充关联对象**（关联字段为 `null`；显式 `project(...)` 投影除外）。
 
 #### 13.4.2 识别但忽略：集合关联与反侧一对一
 
@@ -796,13 +798,17 @@ orders.updateAll(List.of(order));
 | 锁模式：`PESSIMISTIC_READ`/`PESSIMISTIC_WRITE` 之外的三种 | `UOE` | 外部约束（无标准 SQL 形态） | 只使用这两种锁模式，或走原生 SQL |
 | SQL Server 上的行锁（两种模式） | `UOE` | 外部约束：T-SQL 没有 `FOR SHARE`，也没有标准 `FOR UPDATE` 行锁；`with (rowlock)` 是索引提示、不是锁语义（未实测） | 应用层锁（悲观锁表 / 串行队列）、快照隔离（`READ COMMITTED SNAPSHOT`）、或原生 SQL |
 | 条件更新/删除命中 `@Column(updatable=false)` / `@JoinColumn(updatable=false)` 列 | 两后端一致 `UOE`（消息点名列；fail-fast，不会静默跳过该列） | 自设规则：批量写入的赋值列集必须显式可写，静默跳过会让「更新了但某列没变」难以察觉 | 去掉该列标志；或改走单实体 `update(entity)`（只读列按映射不进 `SET`）；或原生 SQL（共享 DSL 契约，见 §10.1） |
+| 条件更新/删除的 `SET` 目标越界：关联对象整体、嵌入对象整体、被关联表的列（如 `department.name`）、三段及以上路径 | 两后端都 `UOE`（消息点名路径；JPA 文案形如 `条件更新 SET 目标只能是本表列或关联.id: <实体全名>.<路径>`，JDBC 形如 `条件改删不支持关联列/关联路径: <实体全名>.<路径>`——措辞不同不构成契约） | 自设规则：共享 DSL 只表达「本表列」的赋值，越界目标没有可移植的渲染形态 | 只写三类合法目标（本表标量列 / `@Embedded` 叶子 / `关联.id`，见 §10.1）；跨表写改走原生 SQL |
+| 条件更新/删除的 `WHERE` 里的关联路径（JDBC 后端） | `UOE`；`关联.id` 是例外——渲染成本表 FK 列、不做 join（不放大行数）；其余关联路径（含被关联表的标量列，如 `department.name`）一律拒绝 | 架构约束：JDBC 条件改删只拼单表语句，不为条件引入 join（行数/`total` 会失真） | 改用 JPA 后端（支持任意关联路径）；或把条件改成本表 FK 列直接比较（如 `where(Employee::getDepartmentId)`） |
 | `fetch(...)`（JDBC 后端） | `UOE`（fail-fast，不静默 no-op） | 架构约束：JDBC 后端不组装实体图、无懒加载代理，`fetch` 没有可兑现的语义；静默接受只会让调用方拿到 `null` 关联 | `project(ProjectionMapper)` 显式取关联列（LEFT JOIN 可用），或改用 JPA 后端 |
 
 #### 13.4.4 与 JPA 的语义差异（不是拒绝，但结果可能不同）
 
 | 差异点 | JDBC 行为 | 与 JPA 的差别 |
 |---|---|---|
-| 关联置空 | 关联 `null` 时跳过列，`update(entity)` 无法置空外键 | JPA 按 `nullable`/级联语义写 `NULL`；JDBC 用条件更新 `set(Path.of(X::getDept).get(Dept::getId), null)` 表达 |
+| 关联置空 | 关联 `null` 时跳过列，`update(entity)` 无法置空外键 | JPA 按 `nullable`/级联语义写 `NULL`；JDBC 用条件更新 `set(EntityPath.of(X::getDept).get(Dept::getId), null)` 表达（3.1.0 起 JDBC 条件 SET 也支持 `关联.id`） |
+| 条件 SET 的目标 | 只接受三类：本表标量列、`@Embedded` 叶子、`关联.id`；其余目标 `UOE`（消息点名路径） | **无差异**：共享 DSL 契约，两后端都拒绝；消息措辞不同不构成契约（拒绝清单见 §13.4.3） |
+| 条件 WHERE 的关联路径 | 只支持本表列、嵌入叶子与 `关联.id`（后者渲染成本表 FK 列，不 join）；其余关联路径 `UOE` | **不同（能力差异）**：JPA 支持任意关联路径（渲染为 `LEFT JOIN`），JDBC 只拼单表语句（见 §13.4.3） |
 | 读回关联对象 | 只装标量列，关联字段为 `null` | JPA 按映射/预取加载关联 |
 | `@Version` 自增 | 应用侧读取后 +1 写回 | JPA 由提供方管理版本并可 DB 侧生成 |
 | 条件更新命中只读列（`updatable=false`） | `UOE`（走共享 DSL 契约，消息点名列） | **无差异**：条件更新是 3.1.0 新增入口，两个后端同版落地并一致 fail-fast（DSL 契约见 §10.1）。与 3.0.0 的差别在**单实体**更新路径：JPA 侧曾静默写只读列，JDBC 侧在映射期直接拒绝该标志 |

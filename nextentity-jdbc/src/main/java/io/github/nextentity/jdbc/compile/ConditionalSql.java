@@ -6,6 +6,7 @@ import io.github.nextentity.core.spec.UpdateSpec;
 import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.JdbcEntityAttribute;
 import io.github.nextentity.jdbc.meta.JdbcEntityType;
+import io.github.nextentity.jdbc.meta.JdbcMeta;
 import io.github.nextentity.jdbc.meta.JdbcTypes;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,11 +26,13 @@ public final class ConditionalSql {
     /// 渲染条件更新。
     ///
     /// @param spec 更新规格
+    /// @param meta 实体元数据（`关联.id` 解析成 FK 列需要目标 `@Id` 的列信息）
     /// @param entityType 根实体
     /// @param dialect 方言
     /// @return 语句
-    public static SqlStatement update(UpdateSpec spec, JdbcEntityType<?> entityType, JdbcDialect dialect) {
-        SqlRenderer renderer = SqlRenderer.conditional(entityType, dialect);
+    public static SqlStatement update(
+            UpdateSpec spec, JdbcMeta meta, JdbcEntityType<?> entityType, JdbcDialect dialect) {
+        SqlRenderer renderer = SqlRenderer.conditional(meta, entityType, dialect);
         List<Object> setParameters = new ArrayList<>();
         List<String> assignments = new ArrayList<>();
         for (Assignment assignment : spec.assignments()) {
@@ -45,11 +48,13 @@ public final class ConditionalSql {
     /// 渲染条件删除；没有 `where` 就是整表删除（2.2.3 语义，不额外拒绝）。
     ///
     /// @param spec 删除规格
+    /// @param meta 实体元数据（`关联.id` 解析成 FK 列需要目标 `@Id` 的列信息）
     /// @param entityType 根实体
     /// @param dialect 方言
     /// @return 语句
-    public static SqlStatement delete(DeleteSpec spec, JdbcEntityType<?> entityType, JdbcDialect dialect) {
-        SqlRenderer renderer = SqlRenderer.conditional(entityType, dialect);
+    public static SqlStatement delete(
+            DeleteSpec spec, JdbcMeta meta, JdbcEntityType<?> entityType, JdbcDialect dialect) {
+        SqlRenderer renderer = SqlRenderer.conditional(meta, entityType, dialect);
         String where = spec.where() == null ? "" : WHERE + new SqlPredicates(renderer).render(spec.where());
         return new SqlStatement("delete from " + renderer.table() + where, renderer.parameters(), List.of());
     }
