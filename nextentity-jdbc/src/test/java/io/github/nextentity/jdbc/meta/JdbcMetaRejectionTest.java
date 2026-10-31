@@ -125,6 +125,13 @@ class JdbcMetaRejectionTest {
     }
 
     @Test
+    void versionWithConvertIsRejected() {
+        rejectedUnsupported(
+                ConvertedVersionEntity.class,
+                JdbcEntityRules.VERSION_CONVERT_UNSUPPORTED + ConvertedVersionEntity.class.getName() + ".version");
+    }
+
+    @Test
     void generatedKeyOfUnsupportedNumericTypeIsRejected() {
         rejectedUnsupported(
                 DoubleGeneratedEntity.class,
@@ -418,6 +425,29 @@ class JdbcMetaRejectionTest {
 
         @Version
         Double version;
+    }
+
+    @Entity
+    static class ConvertedVersionEntity {
+        @Id
+        long id;
+
+        @Version
+        @Convert(converter = VersionConverter.class)
+        Long version;
+    }
+
+    @Converter
+    static class VersionConverter implements AttributeConverter<Long, String> {
+        @Override
+        public String convertToDatabaseColumn(Long attribute) {
+            return attribute == null ? null : "V" + attribute;
+        }
+
+        @Override
+        public Long convertToEntityAttribute(String dbData) {
+            return dbData == null ? null : Long.valueOf(dbData.substring(1));
+        }
     }
 
     @Entity

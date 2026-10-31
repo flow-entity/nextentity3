@@ -44,6 +44,10 @@ final class JdbcColumns {
             throw new UnsupportedOperationException(JdbcEntityRules.VERSION_UNSUPPORTED + path);
         }
         Converter converter = converter(field, path);
+        // 版本列由本层按原始数值自增写入，走转换器会让 SET 与 WHERE / 读回绑到不同形态的值
+        if (version && converter != null) {
+            throw new UnsupportedOperationException(JdbcEntityRules.VERSION_CONVERT_UNSUPPORTED + path);
+        }
         if (converter == null) {
             rejectColumnType(field, path);
         }
