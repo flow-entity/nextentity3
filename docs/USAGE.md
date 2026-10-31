@@ -425,9 +425,9 @@ List<OrderRow> rows = query().select(OrderRow.class)
 List<OrderRow> uniq = query().distinct().select(OrderRow.class).list();
 ```
 
-装配契约（以 3.1.0 实现为准）：
+装配契约（以 3.2.0 实现为准）：
 
-- **record**：属性名取 record component 名，按名匹配实体的单层属性；构造器用规范构造器，列序即参数序；
+- **record**：属性名取 record component 名，按名匹配实体属性（含 `@Embedded` 叶子，见下条）；构造器用规范构造器，列序即参数序；
 - **普通类**：属性名由公开的 `setXxx` 按 JavaBeans 规则推导（`setName` → `name`，`setURL` → `URL`），需要无参构造器，**列序按属性名排序**（反射方法序不保证稳定）；
 - **属性名先按直接属性匹配，命不中再回找 `@Embedded` 组件里的同名叶子**（3.2.0 起，JPA 后端）：DTO 属性 `city` 会解析成 `address.city`，可多级（`zone` → `address.geo.zone`）。2.2.3 的 `@EntityPath("address.city")` 这类**声明式指路不恢复**——不提供注解面（api 零注解）；
 - **改名与计算列仍不覆盖**：DTO 属性名必须与某个叶子属性名相同，2.2.3 `@EntityPath` 里「DTO 字段名 ≠ 叶子名」的写法（如字段 `zipCode` 指向叶子 `code`）表达不出来，改用 `project(ProjectionMapper)` 手写列集；
@@ -856,7 +856,7 @@ orders.updateAll(List.of(order));
 | 能力 | 2.2.3 写法 | 3.1.0 用法 | 详见 |
 |---|---|---|---|
 | 显式 fetch | `.fetch(Order::getCustomer)` | JPA 同形（渲染为 `LEFT JOIN FETCH`；`FetchStep` 6 个方法；不能链两次；便捷重载最多 3 条 `Path`，4 条以上用 `fetch(Collection<Path>)`）；JDBC 显式拒绝（fail-fast `UOE`，替代 `project(ProjectionMapper)` 或 JPA 后端），见 §8.1 | §8.1 |
-| DTO / record 投影 | `select(OrderRow.class)` | 同形；只覆盖扁平映射（属性名 = 实体单层属性名），去重用 `distinct().select(OrderRow.class)`；嵌套/改名仍用 `project(ProjectionMapper)` | §6.3 |
+| DTO / record 投影 | `select(OrderRow.class)` | 同形；覆盖扁平映射（属性名 = 实体属性名），3.2.0 起 JPA 后端回找 `@Embedded` 同名叶子、JDBC 按未知属性拒绝；去重用 `distinct().select(OrderRow.class)`；嵌套/改名仍用 `project(ProjectionMapper)` | §6.3 |
 | 按条件更新 / 删除 | `update().set(..).where(..).execute()` / `delete().where(..).execute()` | 同形，返回受影响行数 | §10.1 |
 | `startsWith` / `endsWith` / `notLike`（及取反族、`IfNotNull` / `IfNotEmpty` 变体） | `where(..).startsWith("A")` | 同形 | §3.8 |
 | `lower` / `upper` / `trim` / `substring` / `length` | `where(..).lower().contains("a")` | 同形 | §3.9 |

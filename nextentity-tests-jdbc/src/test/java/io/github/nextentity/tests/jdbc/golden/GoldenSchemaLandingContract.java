@@ -237,6 +237,22 @@ public abstract class GoldenSchemaLandingContract {
         assertThat(springfield).extracting(GoldenSchema.Customer::id).containsExactly(1L);
     }
 
+    /// 能力差异（USAGE §13.4.4）：JDBC 的 DTO 投影**不**按名回找 `@Embedded` 叶子。`street` 在
+    /// `Customer` 上不是属性，直接按未知属性拒绝；JPA 侧同名投影是正向用例
+    /// （`JpaGoldenSchemaLandingContract#dtoProjectionResolvesEmbeddedLeafByAttributeName`），
+    /// 两个后端的行为差异由这两条用例钉住，不靠文档口头交代。
+    @Test
+    @DisplayName("能力差异：JDBC 的 DTO 投影不回找 @Embedded 叶子，按未知属性拒绝")
+    void dtoProjectionDoesNotResolveEmbeddedLeaves() {
+        assertThatThrownBy(() -> support()
+                        .operations(GoldenSchema.Customer.class)
+                        .query()
+                        .select(StreetOnly.class)
+                        .list())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("未知属性");
+    }
+
     /// 嵌套关联投影：`project(ProjectionMapper)` 里声明「订单 id + 客户名」，由后端渲染 JOIN 并装回。
     ///
     /// JDBC 后端不支持 `fetch`（上一条用例钉住的 fail-fast），嵌套关联列只能走映射器——
@@ -286,6 +302,11 @@ public abstract class GoldenSchemaLandingContract {
     /// @param orderId      订单主键
     /// @param customerName 客户显示名
     private record OrderCustomer(long orderId, String customerName) {}
+
+    /// 单列投影：客户地址的街道。`street` 在 `Customer` 上没有同名属性，只有 `address` 里的同名叶子。
+    ///
+    /// @param street 街道
+    private record StreetOnly(String street) {}
 
     /// 两列映射器：下标常量紧邻表达式列表，列序错位在审查里能直接看见。
     private static final class OrderCustomerMapper implements ProjectionMapper<GoldenSchema.Order, OrderCustomer> {

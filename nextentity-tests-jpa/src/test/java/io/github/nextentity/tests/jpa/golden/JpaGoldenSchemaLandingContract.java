@@ -81,6 +81,25 @@ public abstract class JpaGoldenSchemaLandingContract {
         assertThat(order.placedAt()).isEqualTo(GoldenFixtures.ORDER_102_PLACED_AT);
     }
 
+    /// DTO 投影列按**属性名**回找 `@Embedded` 叶子，不是按列名拼：`street` 落地成 `addr_street`。
+    /// golden 夹具的关键差别就在这——其它嵌入夹具的叶子名恰好等于列名，只有这里两者不同，
+    /// 能区分「按属性名解析」与「按列名拼」两种实现。整组为空的嵌入（`bob`）读回 `null`。
+    @Test
+    @DisplayName("DTO 投影：嵌入叶子按属性名回找（street → addr_street），整组为空的嵌入读回 null")
+    void dtoProjectionResolvesEmbeddedLeafByAttributeName() {
+        support().clearSql();
+        List<StreetOnly> streets = support()
+                .query(GoldenSchema.Customer.class)
+                .select(StreetOnly.class)
+                .list();
+
+        assertThat(streets)
+                .containsExactly(new StreetOnly("1 Main St"), new StreetOnly(null), new StreetOnly("9 Oak Ave"));
+        assertThat(String.join(" ", support().drainSql()))
+                .as("列是 addr_street（属性名 street 的回找结果），不是同名列 street")
+                .contains("addr_street");
+    }
+
     /// 订单表：`@ManyToOne` 的 FK 列、`@Convert` 的小写 code、金额与时间列的往返。
     @Test
     @DisplayName("订单表：@ManyToOne 的 FK 与 @Convert 枚举（库里小写 code）正确往返")
@@ -236,4 +255,9 @@ public abstract class JpaGoldenSchemaLandingContract {
 
     /// 一次观测：结果（关联上的客户名，按订单顺序）与这次观测发出的 SQL。
     private record Observation(List<String> names, List<String> statements) {}
+
+    /// 单列投影：客户地址的街道。`street` 在 `Customer` 上没有同名属性，只有 `address` 里的同名叶子。
+    ///
+    /// @param street 街道
+    private record StreetOnly(String street) {}
 }

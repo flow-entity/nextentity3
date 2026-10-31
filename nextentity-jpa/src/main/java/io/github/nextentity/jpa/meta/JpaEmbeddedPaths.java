@@ -13,8 +13,8 @@ import java.util.Set;
 /// 2.2.3 用 `@EntityPath("address.street")` 显式指路，3.x 没有注解面，回找同名叶子是唯一可表达的形态：
 /// `PersonAddressBasic.street` ↔ `PersonWithAddress.address.street`。
 ///
-/// 只回找「当前 managed type 上不存在该属性」的情形——直接属性永远优先；条件 / 排序用的是调用方
-/// 显式的多段路径，不经这里。
+/// 只服务 DTO 投影列（`JpaPaths.projectionPath`），且只在实体上没有同名直接属性时调用——直接属性
+/// 永远优先；条件 / 排序 / 分组 / 聚合 / 条件更新是调用方显式写的路径，不经这里。
 ///
 /// 同名叶子出现在多个嵌入组件里时语义不唯一（同一个 `@Embeddable` 在实体上出现两次就会造出这种
 /// 形态），显式拒绝而不是静默挑一个：挑错的那次返回别的列，结果看着像数据错。
@@ -64,20 +64,22 @@ public final class JpaEmbeddedPaths {
             List<String> path = new ArrayList<>(prefix);
             path.add(embedded.getName());
             if (has(embeddedType, attribute)) {
-                path.add(attribute);
-                found.add(List.copyOf(path));
+                List<String> hit = new ArrayList<>(path);
+                hit.add(attribute);
+                found.add(List.copyOf(hit));
             }
             collect(embeddedType, attribute, path, found, visited);
         }
         visited.remove(managedType);
     }
 
-    /// 只把**叶子**当候选：嵌入组件里同名的那段也可能是更深的 `@Embedded`（`Warehouse` 的 `datum`
-    /// 就是），那不是一列，交给这里只会拼出取不出值的路径。
+    /// 只把**基础属性**（`BASIC`）当候选：嵌入组件里同名的那段也可能是更深的 `@Embedded`
+    /// （`Warehouse` 的 `datum` 就是），或者是单值关联（`ContactInfo` 的 `country`——它渲染成外键，
+    /// 不是可投影的一列），两者都拼不出能取值的一列。
     private boolean has(Class<?> managedType, String attribute) {
         for (Attribute<?, ?> each : metamodel.managedType(managedType).getAttributes()) {
             if (each.getName().equals(attribute)
-                    && each.getPersistentAttributeType() != PersistentAttributeType.EMBEDDED) {
+                    && each.getPersistentAttributeType() == PersistentAttributeType.BASIC) {
                 return true;
             }
         }

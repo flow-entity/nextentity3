@@ -10,7 +10,7 @@ import io.github.nextentity.api.model.Tuple3;
 /// 四列及以上由 [ProjectionMappers] 产出的映射器覆盖。以上形态都能被 [DistinctStep#distinct()] 修饰成
 /// `SELECT DISTINCT`（DTO 投影写作 `distinct().select(Dto.class)`）。
 /// 需要改名、嵌套或计算列时仍用 [#project(ProjectionMapper)] 手写映射器，[#select(Class)] 只覆盖
-/// "DTO 属性名与实体属性同名"的扁平场景。
+/// "DTO 属性名与实体属性同名"的扁平场景（JPA 后端另含 `@Embedded` 组件里的同名叶子，见该方法的 Javadoc）。
 ///
 /// @param <T> 根实体类型
 public interface SelectStep<T> extends DistinctStep<T> {
@@ -74,9 +74,9 @@ public interface SelectStep<T> extends DistinctStep<T> {
     ///
     /// 接口与抽象类不支持：接口投影要靠运行期代理，本轮不提供——改用 [#project(ProjectionMapper)] 手写映射器。
     ///
-    /// 属性名按名匹配实体属性，先找直接属性；命不中时再到实体的 `@Embedded` 组件（可多级）里找同名叶子，
-    /// 所以嵌平投影（DTO 的 `street` ↔ 实体的 `address.street`）也属本形态。2.2.3 用 `@EntityPath`
-    /// 显式给这个映射指路，3.x 没有注解面，按名回找是唯一能表达的形态。
+    /// 属性名按名匹配实体属性，先找直接属性；命不中时 **JPA 后端**再到实体的 `@Embedded` 组件（可多级）
+    /// 里找同名叶子，所以嵌平投影（DTO 的 `street` ↔ 实体的 `address.street`）也属本形态。2.2.3 用
+    /// `@EntityPath` 显式给这个映射指路，3.x 没有注解面，按名回找是唯一能表达的形态。
     ///
     /// 关联属性（`department.name` 那种跨表路径）仍不属本形态，用 [#project(ProjectionMapper)]；
     /// 属性名无法与实体属性做编译期校验，写错会在后端渲染时失败。
@@ -86,12 +86,17 @@ public interface SelectStep<T> extends DistinctStep<T> {
     /// 目标类型恰好是实体类型时退化为整实体查询（结果为实体实例），此时 `distinct()` 不可用：
     /// 整实体查询的列集不是显式列表，`SELECT DISTINCT` 表达不出来。
     ///
+    /// 失败时机分两段：目标类型的**形状**不可映射（record 无组件、类无 `setXxx`、普通类缺无参构造器、
+    /// 接口/抽象类）在本方法内抛 `IllegalArgumentException`；**属性名**解析失败（实体上既没有该属性、
+    /// 嵌入组件里也没有同名叶子，或同名叶子出现在多个 `@Embedded` 组件里）要到执行期渲染投影列时才抛。
+    /// `count()` / `exists()` 不渲染投影列，因此不做属性名解析。JDBC 后端没有嵌入回找，属性名只按实体
+    /// 直接属性匹配。
+    ///
     /// @param type DTO 类型，非 `null`
     /// @param <R> 结果类型
     /// @return 后续步骤，结果类型为 `R`
     /// @throws IllegalArgumentException 目标类型没有可映射的属性（record 无组件、类无 `setXxx`），
-    ///     普通类缺无参构造器，目标类型是接口/抽象类，或同名叶子出现在多个 `@Embedded` 组件里
-    ///     （无法唯一确定列；用 [ProjectionMapper] 显式给路径）
+    ///     普通类缺无参构造器，或目标类型是接口/抽象类；这些都在本方法内失败
     /// @throws UnsupportedOperationException 目标类型是实体类型本身却又调了 [DistinctStep#distinct()]
     <R> BaseWhereStep<T, R> select(Class<R> type);
 }

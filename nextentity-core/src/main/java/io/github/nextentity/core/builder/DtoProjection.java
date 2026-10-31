@@ -18,12 +18,12 @@ import java.util.TreeMap;
 
 /// `select(Dto.class)` 的投影：DTO 属性名 → 同名实体属性列，行按 record 构造器 / setter 装回 DTO。
 ///
-/// 只做**按名**映射：属性名就是列名契约（单段 [AttributePath]）。直接同名属性够不着时，后端会再到实体的
-/// `@Embedded` 组件里找同名叶子（嵌平投影：DTO 的 `street` ↔ 实体的 `address.street`）——嵌入信息在
+/// 只做**按名**映射：属性名就是列名契约（单段 [AttributePath]）。直接同名属性够不着时，**JPA 后端**会再到
+/// 实体的 `@Embedded` 组件里找同名叶子（嵌平投影：DTO 的 `street` ↔ 实体的 `address.street`）——嵌入信息在
 /// [io.github.nextentity.core.meta.EntityType] 上拿不到（core 不依赖 jakarta），所以那是后端的职责，
-/// 这里只保证路径是「DTO 属性名」。关联嵌套、改名、计算列都不在这里——那些是
-/// `project(ProjectionMapper)` 的职责，`select(Class)` 只覆盖「DTO 字段与实体属性同名」这一种最常见形态，
-/// 所以它是显式 opt-in 的，不改变任何既有投影的行为。
+/// 这里只保证路径是「DTO 属性名」；JDBC 后端没有这条回找，按未知属性拒绝。关联嵌套、改名、计算列都不在
+/// 这里——那些是 `project(ProjectionMapper)` 的职责，`select(Class)` 本身只声明「DTO 字段与实体属性
+/// （含 `@Embedded` 叶子）」这一种最常见形态，所以它是显式 opt-in 的，不改变任何既有投影的行为。
 ///
 /// 属性名无法与实体属性做编译期校验（[io.github.nextentity.core.meta.EntityType] 只有 id/version，
 /// 没有属性清单），写错会在后端渲染时失败，不在这里静默跳过。
