@@ -140,6 +140,23 @@ class JdbcTypesTest {
     }
 
     @Test
+    void nextVersionRejectsTypeUpperBoundInsteadOfWrapping() {
+        assertThatThrownBy(() -> JdbcTypes.nextVersion(Integer.MAX_VALUE, int.class))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining("Integer")
+                .hasMessageContaining("上界")
+                .hasMessageContaining("回绕");
+        assertThatThrownBy(() -> JdbcTypes.nextVersion(Long.MAX_VALUE, Long.class))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining("Long")
+                .hasMessageContaining("上界");
+        assertThatThrownBy(() -> JdbcTypes.nextVersion((short) Short.MAX_VALUE, Short.class))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining("Short")
+                .hasMessageContaining("上界");
+    }
+
+    @Test
     void readRestoresEveryColumnTypeFromRealDriver() throws SQLException {
         List<Case> cases = List.of(
                 new Case(String.class, "varchar(50)", "text"),

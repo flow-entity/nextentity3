@@ -11,6 +11,7 @@ import io.github.nextentity.jdbc.support.ItemStatus;
 import io.github.nextentity.jdbc.support.OrdinalItem;
 import io.github.nextentity.jdbc.support.SnapshotItem;
 import io.github.nextentity.jdbc.support.VersionedItem;
+import io.github.nextentity.jdbc.support.VersionedShortItem;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -55,6 +56,20 @@ class WriteSqlVersionTest {
         assertThat(statement.sql())
                 .isEqualTo("update integer_versioned_item set name=?, version=? where id=? and version=?");
         assertThat(statement.parameters()).containsExactly("v", 3, 6L, 2);
+    }
+
+    /// 版本号到类型上界必须在构造 SET 子句时就拒绝：`short` 再 +1 会静默回绕成 `Short.MIN_VALUE`，
+    /// 乐观锁从此永远通过（库里的行已经是旧值，写进去的谓词再也匹配不上）。
+    @Test
+    void updateRejectsVersionAtTypeUpperBoundWithoutBuildingSql() {
+        VersionedShortItem item = new VersionedShortItem(7L, "v");
+        item.version(Short.MAX_VALUE);
+
+        assertThatThrownBy(() -> WriteSql.update(meta, meta.entityType(VersionedShortItem.class), item, dialect))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining("Short")
+                .hasMessageContaining("上界")
+                .hasMessageContaining("回绕");
     }
 
     @Test

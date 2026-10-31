@@ -79,18 +79,33 @@ public final class JdbcTypes {
     ///
     /// 按字段类型分派而不是按值分派：值为 `null` 的非法版本类型也必须拒绝，不能退化成 0。
     ///
-    /// @throws UnsupportedOperationException 非 int / long / short 家族的版本类型
+    /// 到类型上界显式拒绝：`short` 的回绕（32767 → -32768）比异常危险——`where version = ?` 从此
+    /// 再也匹配不上，乐观锁静默失效。JPA 后端 `JpaPersistExecutor.nextVersion` 用同一句文案。
+    ///
+    /// @throws UnsupportedOperationException 非 int / long / short 家族的版本类型，或版本值已到该类型上界
     public static Object nextVersion(Object current, Class<?> type) {
         if (type == Integer.class || type == int.class) {
-            return current == null ? 0 : ((Number) current).intValue() + 1;
+            return (int) increment(current, Integer.MAX_VALUE, "Integer");
         }
         if (type == Long.class || type == long.class) {
-            return current == null ? 0L : ((Number) current).longValue() + 1L;
+            return increment(current, Long.MAX_VALUE, "Long");
         }
         if (type == Short.class || type == short.class) {
-            return current == null ? (short) 0 : (short) (((Number) current).shortValue() + 1);
+            return (short) increment(current, Short.MAX_VALUE, "Short");
         }
         throw new UnsupportedOperationException(JdbcEntityRules.VERSION_UNSUPPORTED + type.getName());
+    }
+
+    private static long increment(Object current, long max, String typeName) {
+        if (current == null) {
+            return 0L;
+        }
+        long value = ((Number) current).longValue();
+        if (value == max) {
+            throw new UnsupportedOperationException(
+                    "@Version 已到 " + typeName + " 上界 " + max + "：再 +1 会回绕成负数，乐观锁将永远通过；请改用更大的版本类型");
+        }
+        return value + 1;
     }
 
     private static Object convert(Object value, JdbcEntityAttribute attribute) {

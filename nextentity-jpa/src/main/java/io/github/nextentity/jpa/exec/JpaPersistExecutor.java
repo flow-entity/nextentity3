@@ -35,6 +35,7 @@ import java.util.Map;
 /// （2.2.3 只支持 Integer，其它类型会 `ClassCastException`），point-mall 的 27 处版本列全是 `integer`。
 ///
 /// @param <T> 实体类型
+@SuppressWarnings("PMD.TooManyMethods") // 方法数由 PersistExecutor 契约面 + 版本自增的类型上界守卫决定，不是上帝类
 public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
 
     private final EntityManager entityManager;
@@ -123,7 +124,7 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
         int affected = entityManager.createQuery(update).executeUpdate();
         verifyAffected(affected, version, idValue, versionValue);
         if (version != null) {
-            version.set(entity, nextVersion(versionValue));
+            version.set(entity, nextVersion(versionValue, version.type()));
         }
     }
 
@@ -199,7 +200,7 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
             update.set(
                     root.get(name),
                     versionColumn
-                            ? nextVersion(versionValue)
+                            ? nextVersion(versionValue, version.type())
                             : attribute.getValue().get(entity));
             assigned = true;
         }
@@ -278,22 +279,45 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
         return builder.and(byId, builder.equal(root.get(version.name()), versionValue));
     }
 
-    /// `@Version` 递增的**唯一**实现点：四个分支各有一条用例（`JpaPersistExecutorNextVersionTest`）。
+    /// `@Version` 递增的**唯一**实现点：三个类型分支各有一条用例（`JpaPersistExecutorNextVersionTest`）。
     ///
-    /// 包私有而不是私有：`default` 分支要抛 `UnsupportedOperationException`，而「版本列是第三种
+    /// 包私有而不是私有：拒绝分支要抛 `UnsupportedOperationException`，而「版本列是第四种
     /// 类型」的实体在测试实体集里不存在，走不到这里。按红线「契约拒绝必须钉住」，这条拒绝分支
     /// 必须有 `assertThatThrownBy` 用例，所以放开到包内可见。
     ///
+    /// 按**属性类型**分派而不是按旧值分派：`null` 起步值必须与属性类型同型（`Short` 字段拿到
+    /// `Integer 0` 会在 `EntityAttribute.set` 抛 `IllegalArgumentException`），且类型集与 JDBC 后端
+    /// `JdbcTypes.nextVersion` / `JdbcColumns.VERSION_TYPES` 保持一致（int/Integer、long/Long、
+    /// short/Short）。
+    ///
+    /// 到类型上界显式拒绝：回绕后的版本号比旧值小，谓词 `and version = ?` 从此再也匹配不上，
+    /// 乐观锁静默失效——比抛异常危险得多。
+    ///
     /// @param versionValue 旧版本值，可为 `null`
+    /// @param type 版本属性的 Java 类型
     /// @return 新版本值
-    static Object nextVersion(Object versionValue) {
-        return switch (versionValue) {
-            case null -> 0;
-            case Integer current -> current + 1;
-            case Long current -> current + 1;
-            default ->
-                throw new UnsupportedOperationException("@Version 只支持 Integer / Long: "
-                        + versionValue.getClass().getName());
-        };
+    static Object nextVersion(Object versionValue, Class<?> type) {
+        if (type == Integer.class || type == int.class) {
+            return (int) increment(versionValue, Integer.MAX_VALUE, "Integer");
+        }
+        if (type == Long.class || type == long.class) {
+            return increment(versionValue, Long.MAX_VALUE, "Long");
+        }
+        if (type == Short.class || type == short.class) {
+            return (short) increment(versionValue, Short.MAX_VALUE, "Short");
+        }
+        throw new UnsupportedOperationException("@Version 只支持 Integer / Long / Short（含原始类型）: " + type.getName());
+    }
+
+    private static long increment(Object versionValue, long max, String typeName) {
+        if (versionValue == null) {
+            return 0L;
+        }
+        long current = ((Number) versionValue).longValue();
+        if (current == max) {
+            throw new UnsupportedOperationException(
+                    "@Version 已到 " + typeName + " 上界 " + max + "：再 +1 会回绕成负数，乐观锁将永远通过；请改用更大的版本类型");
+        }
+        return current + 1;
     }
 }

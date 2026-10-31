@@ -108,6 +108,19 @@ class PostgresItemVersionRoundTripIntegrationTest {
     }
 
     @Test
+    void shortVersionIncrementsByOnePerUpdate() {
+        support.inTransaction(_ -> shortOperations.insert(new ShortVersionedEntity(ID, "s0", (short) 0)));
+        support.clear();
+        assertThat(shortVersionOf(ID)).isZero();
+
+        short current = shortVersionOf(ID);
+        support.inTransaction(_ -> shortOperations.update(new ShortVersionedEntity(ID, "s1", current)));
+
+        assertThat(shortVersionOf(ID)).isEqualTo((short) 1);
+        assertThat(shortNameOf(ID)).isEqualTo("s1");
+    }
+
+    @Test
     void shortVersionAtUpperBoundIsRejectedWithoutWritingAnything() {
         support.inTransaction(_ -> shortOperations.insert(new ShortVersionedEntity(ID, "s", (short) 0)));
         support.clear();
@@ -122,8 +135,8 @@ class PostgresItemVersionRoundTripIntegrationTest {
         assertThatThrownBy(() -> support.inTransaction(_ ->
                         shortOperations.update(new ShortVersionedEntity(ID, "changed", (short) SHORT_UPPER_BOUND))))
                 .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessageContaining("@Version 只支持 Integer / Long")
-                .hasMessageContaining(Short.class.getName());
+                .hasMessageContaining("@Version 已到 Short 上界")
+                .hasMessageContaining("回绕");
 
         assertThat(statements(support.drainSql(), "update short_versioned")).isEmpty();
         assertThat(shortVersionOf(ID)).isEqualTo((short) SHORT_UPPER_BOUND);

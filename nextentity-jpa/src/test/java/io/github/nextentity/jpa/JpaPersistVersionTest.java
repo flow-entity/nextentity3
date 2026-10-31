@@ -18,9 +18,10 @@ import org.junit.jupiter.api.Test;
 /// `JpaPersistExecutor.update` 的三件事：版本列自增、`WHERE` 用**旧**版本值、无版本实体只按主键定位。
 ///
 /// 守护的变异体（`exec/JpaPersistExecutor.java`）：
-/// - `:144` `whereClause` 返回 `null`：无 `@Version` 的实体丢了主键条件 → 一次 `update` 会改掉全表；
-/// - `:156` `nextVersion` 的 `instanceof Long` 判反 → 落进 `UnsupportedOperationException`；
-/// - `:157` Long 版本 `current + 1` → `current - 1`，或返回 `null` → 版本列不增反减/被清空。
+/// - `whereClause` 返回 `null`：无 `@Version` 的实体丢了主键条件 → 一次 `update` 会改掉全表；
+/// - `nextVersion` 的 `type == Long.class` 判定去掉/判反 → 落进 `UnsupportedOperationException`
+///   或按错误类型返回；
+/// - `nextVersion` 的 Long 分支 `current + 1` → `current - 1`，或返回 `null` → 版本列不增反减/被清空。
 ///
 /// `ShopOrder` 的版本列是 `int`（只覆盖 Integer 分支），本类改用 {@link VersionedLedger} 的
 /// `@Version Long` 把 Long 分支走通。
@@ -241,7 +242,7 @@ class JpaPersistVersionTest extends JpaTestSupport {
 
     /// 版本号缺失（`@Version` 包装类型为 `null`）时：`SET` 与 `WHERE` 都按 `null` 走，行数必然 0。
     ///
-    /// 这条用例覆盖 `nextVersion` 的 `versionValue == null` 分支（`:151`），但**杀不掉**它的
+    /// 这条用例覆盖 `nextVersion` 的 `versionValue == null` 分支，但**杀不掉**它的
     /// 「返回 null」变异体：`WHERE version = null` 本身就不匹配任何行，`SET version = 0` 与
     /// `SET version = null` 在 0 行更新下没有区别，两种实现都抛同一个 `OptimisticLockException`。
     @Test

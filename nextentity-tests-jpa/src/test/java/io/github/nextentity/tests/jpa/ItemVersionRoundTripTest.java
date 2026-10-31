@@ -20,7 +20,7 @@ class ItemVersionRoundTripTest {
 
     private static final long ID = 1L;
 
-    /// `short` 版本的上界：JPA 允许，Hibernate 也支持，但本库的自增只实现了 Integer / Long。
+    /// `short` 版本的上界：两后端都支持 short 自增，但到上界必须显式拒绝、不许回绕成负数。
     private static final int SHORT_UPPER_BOUND = Short.MAX_VALUE;
 
     /// 实际下发的整句（归一化后）：版本列既在 SET 里自增，也在 WHERE 里做乐观锁谓词。
@@ -90,6 +90,20 @@ class ItemVersionRoundTripTest {
         assertThat(updates).containsExactly(UPDATE_VERSIONED);
     }
 
+    /// `short` 版本与 Integer / Long 同语义：插入后 0，每次 update 恰好 +1（两后端都支持 short 自增）。
+    @Test
+    void shortVersionIncrementsByOnePerUpdate() {
+        support.inTransaction(_ -> shortOperations.insert(new ShortVersionedEntity(ID, "s0", (short) 0)));
+        support.clear();
+        assertThat(shortVersionOf(ID)).isZero();
+
+        short current = shortVersionOf(ID);
+        support.inTransaction(_ -> shortOperations.update(new ShortVersionedEntity(ID, "s1", current)));
+
+        assertThat(shortVersionOf(ID)).isEqualTo((short) 1);
+        assertThat(shortNameOf(ID)).isEqualTo("s1");
+    }
+
     /// 版本号顶到 `short` 上界时，自增必须显式拒绝，且**一条语句都不下发**。
     ///
     /// 这条盯的是回绕：若实现按 `short` 做 `version + 1`，`Short.MAX_VALUE` 会静默变成
@@ -112,8 +126,8 @@ class ItemVersionRoundTripTest {
         assertThatThrownBy(() -> support.inTransaction(_ ->
                         shortOperations.update(new ShortVersionedEntity(ID, "changed", (short) SHORT_UPPER_BOUND))))
                 .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessageContaining("@Version 只支持 Integer / Long")
-                .hasMessageContaining(Short.class.getName());
+                .hasMessageContaining("@Version 已到 Short 上界")
+                .hasMessageContaining("回绕");
 
         assertThat(statements(support.drainSql(), "update short_versioned")).isEmpty();
         assertThat(shortVersionOf(ID)).isEqualTo((short) SHORT_UPPER_BOUND);
