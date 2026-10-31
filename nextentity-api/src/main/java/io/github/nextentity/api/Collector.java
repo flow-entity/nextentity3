@@ -6,7 +6,7 @@ import java.util.List;
 ///
 /// 取行的方法（`list(int)` / `list(int, int)` / `first()`）在调用方没有显式 `orderBy` 时自动按主键升序
 /// （`distinct()` 投影除外，见 [SliceStep#slice]），
-/// 因此「前 N 条」「第一条」取到的行是确定的（证据：`core/builder/QueryBuilder.java:326-337`）。
+/// 因此「前 N 条」「第一条」取到的行是确定的（证据：`core/builder/QueryBuilder#spec(Window)` 里补的自动主键升序）。
 /// `count()` / `exists()` 反过来不排序、不分页，也不应用 `lock(...)` 指定的锁——锁随窗口一起被清掉，
 /// 只有真正取行的方法才有锁语义。
 ///
@@ -73,7 +73,7 @@ public interface Collector<T> {
     ///
     /// - 普通查询：满足条件的行数；
     /// - `distinct()`：**去重后的投影值个数**（`count(DISTINCT 投影)`，证据：
-    ///   `jpa/exec/JpaExecutor.java:71-81`）；
+    ///   `jpa/exec/JpaExecutor#count`）；
     /// - `groupBy(...)`：**组数**（`having` 已生效），等价于对分组结果再做一次计数。
     ///
     /// @return 行数、去重投影值个数，或组数（多列去重不支持，抛 `UnsupportedOperationException`）

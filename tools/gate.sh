@@ -451,7 +451,11 @@ tier_ci() {
     # floor = 2026-10-30 容器实测 590 条 / 49 类（含 golden schema 镜像 8 条）；skip 1 =
     # TemporalWriteContract 的 `@EnabledIfSystemProperty(nextentity.h2mode=postgresql)` 那条
     # （`...LoseExactlyOneJvmOffsetOnPostgresCompatibleMode` 只在 H2 的 PG 兼容模式跑，PG 容器通道上它不适用；同类的 Preserve 那条反过来只在真库跑）。
-    # 与 ci-container 的 MySQL 通道同批用例（590），凭证的方言矩阵等式就是靠这个成立的。
+    # 与 ci-container 的 MySQL 通道同批用例：两通道跑的是同一套 `*IntegrationTest`，且这里把 floor
+    # 定成与 ci-container 的 `failsafe:nextentity-tests-jpa` 相同的 590——「同批」靠**档位里相等的下限**
+    # 兜住，不是靠凭证比对。凭证的方言矩阵等式只在**同一张 receipt 内**成立（`surefire-pg` 对
+    # `surefire`，见 ci-container 步）：MySQL failsafe 与 PG failsafe 分属两步、两张 receipt，
+    # `tools/gate-receipt.py` 不做跨 receipt 比对（与「判定只认单份 receipt.json」同口径）。
     STEP_MAX_SKIP="failsafe-pg:nextentity-tests-jpa=1:*PostgresTemporalWriteIntegrationTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode*"
     STEP_MIN_TESTS="failsafe-pg:nextentity-tests-jpa=590"
     step ci-jpa-pg \
