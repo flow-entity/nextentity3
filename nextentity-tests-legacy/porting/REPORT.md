@@ -9,7 +9,7 @@
 | 文件数 | 114（含夹具/环境/DTO） | 83 | 85 | **99** |
 | 未移植注解数 | — | 452 | 328 | **101** |
 
-环境覆盖：`h2`（默认，随全量构建跑）与 `mysql`（真 MySQL 8.0.18）**各 954 条全绿**，合计 1,908 次执行。
+环境覆盖：`h2`（默认，随全量构建跑）与 `mysql`（真 MySQL 8.0.18）**各 954 条全绿**，合计 1,908 次执行（0 failure / 0 error / 0 skip）。实测命令：`./mvnw -pl nextentity-tests-legacy -am test -Ddbc=h2,mysql -Dnextentity.requireContainer=true`（2026-10-31，EXIT=0）。
 
 > 1,055 是上游 `integration` 目录（含 `fast/` 与 `config/DatabaseInitializerTest`）的实际注解数，
 > 旧文档的 1,063 是历史口径（把已移除的辅助类也算进去了），本轮起以 1,055 为准。
@@ -27,7 +27,9 @@
 
 ## 保留原则
 
-**断言不动，只改调用形态。** 期望值、边界、异常类型一处未改；改的只有：怎么拿到查询入口
+**断言不动，只改调用形态。** 期望值、边界一处未改；异常类型按 3.x 契约映射（`NextEntityException` →
+`IllegalStateException`，5 处，见 `api/Collector.java:69`、`core/builder/QueryBuilder.java:289`），不属期望值
+改写。改的只有：怎么拿到查询入口
 （`EntityTemplateFactory` → `EntityOperations`，再统一成 `context.queryXxx()`）、算子叫什么
 （`like` → `likeIfNotNull`、`list(offset,limit)` → `slice(offset,limit).data()`）、锁模式枚举
 （`LockModeType` → `LockMode`）、谓词组合（`Predicates.and(a,b)` → `a.and(b)`）、多参数 `orderBy` →
@@ -117,7 +119,10 @@
 
 机械核对（`assertThat…;` 序列与上游逐条差集）现在只剩一处差异，是第三轮**唯一**的加强：
 `EdgeCasesIntegrationTest.shouldHandleNegativeOffset` 由「断言非 null」（上一轮）改为断言
-`IllegalArgumentException`（见裁决 2）。
+`IllegalArgumentException`（见裁决 2）。该比对**只覆盖 `assertThat…;` 序列**，不含
+`assertThatThrownBy` / `assertThrows`：后者有 5 处期望异常类型按 3.x 契约从 `NextEntityException`
+映射为 `IllegalStateException`（`api/Collector.java:69`、`core/builder/QueryBuilder.java:289`），
+不属断言弱化。
 
 ## 第二轮回填的用例（+134 条）
 

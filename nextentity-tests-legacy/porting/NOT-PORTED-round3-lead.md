@@ -31,9 +31,12 @@
 | 字符串谓词 `or` 组合 | 4 | `or(...)` 只在 `Predicate`/`LogicalOps`，`StringOperator` 不产 Predicate |
 | `likeIfNotEmpty` | 2 | `api/StringOps.java` 只有 `likeIfNotNull`（不跳过空串，语义不等价） |
 | 算术字面值/表达式右值/`*IfNotNull`/聚合套算术 | 25 | `NumberArithmetic` 只接受字面值右值；`NumberValue.java:8` 明写聚合套算术不提供 |
-| 嵌套 DTO / 注解投影（`@EntityPath`、`@Join`） | 5 | 3.x 无注解投影；嵌套 DTO 无对位 |
+| 嵌套 DTO / 注解投影（`@EntityPath`） | 3 | 3.x 无注解投影；嵌套 DTO 无对位（`@Join` 注解投影 2 条归「整类不建」，不在此计） |
 | 前轮裁定永久删除 | 1 | `CrudOperationsIntegrationTest.shouldHandleDeleteNonExistent`（断言与注释自相矛盾，见 REPORT §裁决 1） |
 | 整类不建（批次外） | 8 | 见下节 |
+
+> 上表合计 = 15+23+7+6+7+4+2+25+3+1+8 = **101**。`@Join` 注解投影 2 条只计入「整类不建」
+> （`ProjectionJoinAnnotationTest`），不在「嵌套 DTO / 注解投影」重复计数。
 
 ## 批次外：4 个整类不建（8 条）
 
@@ -85,7 +88,10 @@ Whereable<T, UpdateWhereStep<T>>`，而 `Whereable.where(PathRef)` / `where(Stri
 - **断言未弱化的机械核对**：`tmp/scripts/check-assertions.py` 逐方法比对上游与本模块的 `assertThat…;`
   语句（归一化后做差集）。全量 1,055 条语句中，唯一差异是 `EdgeCasesIntegrationTest.shouldHandleNegativeOffset`
   从 `assertThat(employees).isNotNull()`（空洞断言）改为 `assertThatThrownBy(...).isInstanceOf(IllegalArgumentException.class)`
-  ——这是本轮唯一一处**加强**，理由见 REPORT §裁决 2。
+  ——这是本轮唯一一处**加强**，理由见 REPORT §裁决 2。**口径**：比对只覆盖 `assertThat…;`，不含
+  `assertThatThrownBy` / `assertThrows`；后者有 5 处期望异常类型按 3.x 契约从 `NextEntityException`
+  映射为 `IllegalStateException`（`api/Collector.java:69`、`core/builder/QueryBuilder.java:289`），
+  不属断言弱化。
 - **方法覆盖**：上游 1,024 个测试方法（去 4 个生命周期方法）对本模块做方法名集合差，剩余 98 条 / 16 文件，
   加上不属 `*IntegrationTest.java` 命名口径的 `AutoIncrement…VerificationTest`(1) 与
   `config/DatabaseInitializerTest`(2)，合计 101，与注解差一致。
