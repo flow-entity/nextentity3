@@ -2,7 +2,8 @@
 #
 # 算子集：STRONGER + NON_VOID_METHOD_CALLS，不含 FRECORD 过滤器。
 # NonVoidMethodCallMutator 落在 switch 模式匹配那一行的，基本都是 javac 生成的模式变量空值校验。
-# 行号口径：3.1.0 重写后的 PIT 报告（nextentity-jpa/target/pit-reports/mutations.xml）。
+# 行号口径：3.1.0 重写后的 PIT 报告（nextentity-jpa/target/pit-reports/mutations.xml）；
+# 2026-10-31 按本轮 setValues 修复后的新报告重建（setEmbedded 行号 232→231）。
 
 io.github.nextentity.jpa.compile.JpaCompiler | 33 | compile | NonVoidMethodCallMutator | 1 | reason=javac 为 switch 模式变量生成的非空校验，源码里没有这一行；QuerySpec 由 builder 保证非空，null 输入不在契约内（变异后仍是 NPE，只换消息文本） | expires=2027-04-20
 io.github.nextentity.jpa.compile.JpaOperands | 37 | expression | NonVoidMethodCallMutator | 1 | reason=javac 为 switch 模式变量生成的非空校验，源码里没有这一行；Operand 的六个实现由 sealed 接口闭合 | expires=2027-04-20
@@ -25,7 +26,7 @@ io.github.nextentity.jpa.compile.JpaQueryBuilder | 75 | apply | RemoveConditiona
 io.github.nextentity.jpa.compile.JpaQueryBuilder | 81 | orders | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(size) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-20
 io.github.nextentity.jpa.exec.GroupedCount | 85 | countQuery | NonVoidMethodCallMutator | 2 | reason=删掉的是 catch (ReflectiveOperationException e) 分支里组装 message 的两处拼接（GroupedCount.java:85 的 provider 前缀与 e.toString()），而该分支不可达：:73 的 provider 句柄解析失败时已经提前抛 UOE，能走到 :85 只剩「句柄解析成功但 invoke 抛非 InvocationTargetException 的 ReflectiveOperationException」——Method.invoke 在 public 方法上只可能抛 InvocationTargetException，故 catch 不可达，PIT 报 NO_COVERAGE（两条变体） | expires=2027-04-20
 io.github.nextentity.jpa.exec.JpaExecutor | 150 | existsGrouped | NonVoidMethodCallMutator | 1 | reason=只是 new ArrayList<>(spec.groupBy().size()) 的初始容量提示，删掉后集合内容、顺序、类型都不变 | expires=2027-04-20
-io.github.nextentity.jpa.exec.JpaPersistExecutor | 232 | setEmbedded | RemoveConditionalMutator_EQUAL_ELSE | 1 | reason=`if (!meta.owningAssociation(embeddedType, leaf)) continue;` 的 continue 分支不可达：JPA 不允许在 @Embeddable 里声明 mappedBy 反侧关联或集合关联（mappedBy 只能指向实体侧），嵌入内可出现的单值关联恒为 owning，`owningAssociation` 恒 true | expires=2027-04-20
+io.github.nextentity.jpa.exec.JpaPersistExecutor | 233 | setEmbedded | RemoveConditionalMutator_EQUAL_ELSE | 1 | reason=`if (!meta.owningAssociation(embeddedType, leaf)) continue;` 的 continue 分支不可达：JPA 不允许在 @Embeddable 里声明 mappedBy 反侧关联或集合关联（mappedBy 只能指向实体侧），嵌入内可出现的单值关联恒为 owning，`owningAssociation` 恒 true | expires=2027-04-20
 io.github.nextentity.jpa.meta.JpaEntityAttribute | 93 | get | NonVoidMethodCallMutator | 1 | reason=删掉的是 catch 块里异常消息拼接中的 String::valueOf(field)（JpaEntityAttribute.java:84 那一行的字符串拼接），而整个 catch 分支不可达：字段在构造时已 setAccessible(true)，field.get 不会抛 IllegalAccessException，所以消息串永远不被构造。该变异体落在 try 内联的异常处理器上，源码里没有可被单独执行的一行，覆盖率为 0 不是漏测。PIT 报 NO_COVERAGE 与此一致 | expires=2027-04-20
 io.github.nextentity.jpa.meta.JpaEntityAttribute | 103 | set | NonVoidMethodCallMutator | 1 | reason=同 :84——删掉的是 catch 块里异常消息拼接中的 String::valueOf(field)（JpaEntityAttribute.java:94 那一行的字符串拼接），catch 分支因构造时 setAccessible(true) 而不可达，消息串永远不被构造；该变异体落在 try 内联的异常处理器上，源码里没有可被单独执行的一行，覆盖率为 0 不是漏测。PIT 报 NO_COVERAGE | expires=2027-04-20
 io.github.nextentity.jpa.meta.JpaEntityType | 51 | of | RemoveConditionalMutator_EQUAL_IF | 1 | reason=三元 `attribute.getJavaMember() instanceof AnnotatedElement annotated ? annotated : null` 的 false 分支不可达：本仓实体全部字段访问映射，`Attribute.getJavaMember()` 恒返回 `java.lang.reflect.Field`，而 Field 实现 AnnotatedElement，两个分支取到的引用相同 | expires=2027-04-20

@@ -22,6 +22,9 @@
 - **JPA 只读判定漏 `@AttributeOverride` / `@AssociationOverride` 覆盖出的只读列（成员级）**：覆盖声明写在字段 / getter 上时，`update(entity)` 仍把覆盖出的 `updatable=false` 列写进 `SET`、条件写也放行。现在按覆盖后的生效列判定，两后端一致。**类级（TYPE 级、点号路径形态，含 `@MappedSuperclass` 覆盖）两后端仍不识别，属既有缺口**（见 USAGE §13.4.3「已知限制」）。
 - **JPA 把 `@Embedded` 内的单值关联当标量列**：`update(entity)` 把嵌入关联的外键列当普通列写、条件写放行「嵌入.关联」整体赋值。现在与顶层关联同形处理（写外键、`@JoinColumn(updatable=false)` / `@AssociationOverride` 覆盖出的只读列跳过、条件写拒绝整体赋值）；JDBC 侧该形态在元数据期就 `UOE`（能力差异见 USAGE §13.4.3）。
 - **JPA `@Access(PROPERTY)` 实体的 `update(entity)` 读嵌入值抛 `IllegalArgumentException`**：只按字段读映射成员，getter 上声明的嵌入属性取不到值。现在按映射声明成员（getter / 字段）取值与取注解。限制：仍要求存在同名字段，无字段的纯 getter 属性不支持。
+- **JDBC 关联外键在关联对象未赋主键时被静默写成 `NULL`**：`insert` / `update(entity)` 只判断关联对象本身是否为 `null`，非 `null` 但 `@Id` 为 `null`（如 `new Order(new Customer())`，尚未持久化的关联）时把外键列绑成 `NULL`——`insert` 静默丢关联、`update(entity)` 把库里已有外键清空（数据毁坏）。现在与「主键不能为 null」同口径 fail-fast 抛 `IllegalArgumentException`（消息含实体类名、属性名与关联目标），JPA 侧本就由 Hibernate 抛 `TransientObjectException` 拒绝，两后端不再分叉。
+- **JPA `update(entity)` 跳过 `@Version @Column(updatable=false)` 的版本自增**：3.1.0 新增的只读列跳过把版本列一起跳过——库内版本不动而内存版本 +1，下一次 `update(entity)` 的 `WHERE version` 必然不中，抛 `OptimisticLockException`（丢失更新被伪装成并发冲突）。版本自增是本层乐观锁职责，`updatable` 只约束业务列；现在版本列不受只读跳过影响，与 JDBC 的 `UPDATE ... SET version=?` 一致。SET 列顺序未变（既有版本更新用例的整句 SQL 断言仍逐字匹配）。
+- **JDBC `@Embedded` 扁平化的三处静默回落**：①`@Embeddable` 继承 `@MappedSuperclass` 父类时只收集本类声明字段，父类持久字段被静默丢弃（列集少列、读写永远缺字段），现在沿 `@MappedSuperclass` 链收集且父类字段在前，与实体侧同规则；父类为 `@Entity` 时拒绝（`实体继承未支持`），父子类字段重名（遮蔽）也拒绝（否则扁平化会生成重复列名的 SQL）。②`@AttributeOverride` 名字拼错或指向 `@Transient` 字段时静默失效、列名悄悄回落默认值，现在逐条消费并抛 `UOE`（`未命中的 @AttributeOverride: <路径>.<属性名>`）。③嵌入类型未做属性访问校验，`@Embeddable` 里把 `@Column`/`@Convert`/`@Enumerated` 写 getter 上或类级 `@Access(PROPERTY)` 时注解全部静默失效（枚举落回 `ORDINAL`、列名走默认命名），现在与实体侧同规则拒绝（`只支持字段访问（注解须在字段上）`）。
 
 ## [3.1.0] — 2026-10-30
 

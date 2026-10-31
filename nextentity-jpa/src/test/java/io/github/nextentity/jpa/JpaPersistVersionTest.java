@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.jpa.entity.Customer;
+import io.github.nextentity.jpa.entity.ReadOnlyVersionOnly;
+import io.github.nextentity.jpa.entity.ReadOnlyVersioned;
 import io.github.nextentity.jpa.entity.VersionedLedger;
 import io.github.nextentity.jpa.exec.JpaPersistExecutor;
 import jakarta.persistence.EntityManager;
@@ -266,6 +268,62 @@ class JpaPersistVersionTest extends JpaTestSupport {
             VersionedLedger reloaded = entityManager.find(VersionedLedger.class, 1L);
             assertThat(reloaded.getName()).isEqualTo("opening");
             assertThat(reloaded.getVersion()).isEqualTo(0L);
+            return null;
+        });
+    }
+
+    /// 版本自增是持久化层的乐观锁职责：`@Column(updatable = false)` 只约束业务列，
+    /// 不能把版本列从 `SET` 里摘掉——否则内存版本被 +1、库里不动，下一次 update 必撞乐观锁。
+    /// JDBC 后端（`WriteSql.update`）对版本列本来就不看 `updatable`，这条用例钉住两后端同口径。
+    @Test
+    @DisplayName("update：@Version 列即使标了 @Column(updatable=false) 也照常自增")
+    void updateIncrementsVersionColumnEvenWhenDeclaredReadOnly() {
+        inTx(entityManager -> {
+            entityManager.persist(new ReadOnlyVersioned(700L, "opening"));
+            return null;
+        });
+        inTx(entityManager -> {
+            ReadOnlyVersioned row = entityManager.find(ReadOnlyVersioned.class, 700L);
+            entityManager.detach(row);
+            row.setName("renamed");
+
+            new JpaPersistExecutor<>(entityManager, meta(), ReadOnlyVersioned.class).update(row);
+
+            assertThat(row.getVersion()).as("入参对象的版本号回写").isEqualTo(1);
+            return null;
+        });
+        inTx(entityManager -> {
+            ReadOnlyVersioned reloaded = entityManager.find(ReadOnlyVersioned.class, 700L);
+            assertThat(reloaded.getName()).isEqualTo("renamed");
+            assertThat(reloaded.getVersion())
+                    .as("库里的版本列必须真的自增；版本列被当只读列跳过时它停在 0")
+                    .isEqualTo(1);
+            return null;
+        });
+    }
+
+    /// 除 `@Id` 外唯一可写列就是只读版本列：`SET` 里必须仍有版本列（旧实现把它当只读列跳过，
+    /// `assigned == false` 抛「没有可写标量列」）。
+    @Test
+    @DisplayName("update：只有只读 @Version 可写时照样下发 SET version")
+    void updateWritesOnlyReadOnlyVersionColumn() {
+        inTx(entityManager -> {
+            entityManager.persist(new ReadOnlyVersionOnly(800L));
+            return null;
+        });
+        inTx(entityManager -> {
+            ReadOnlyVersionOnly row = entityManager.find(ReadOnlyVersionOnly.class, 800L);
+            entityManager.detach(row);
+
+            new JpaPersistExecutor<>(entityManager, meta(), ReadOnlyVersionOnly.class).update(row);
+
+            assertThat(row.getVersion()).as("入参对象的版本号回写").isEqualTo(1);
+            return null;
+        });
+        inTx(entityManager -> {
+            assertThat(entityManager.find(ReadOnlyVersionOnly.class, 800L).getVersion())
+                    .as("库里的版本列必须真的自增")
+                    .isEqualTo(1);
             return null;
         });
     }

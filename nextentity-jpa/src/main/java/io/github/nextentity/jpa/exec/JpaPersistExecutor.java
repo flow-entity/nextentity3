@@ -165,13 +165,17 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
             if (name.equals(id.name())) {
                 continue;
             }
+            // 同一实例：JpaEntityType.of 把同一个 JpaEntityAttribute 放进 attributes 表与 version()，
+            // 故这里判元数据实例同一性，而不是再读一次实体属性名/版本号（避免多一个判定与 NPE 面）。
+            boolean versionColumn = attribute.getValue() == version;
+            if (!versionColumn && !entityMeta.updatable(name)) {
+                // @Column / @JoinColumn(updatable = false)：写侧跳过，读回不受影响。
+                // 嵌入叶子的覆盖级只读在 setEmbedded 内按叶子判。
+                continue;
+            }
             if (meta.association(entityType, name)) {
                 if (!meta.owningAssociation(entityType, name)) {
                     // 集合关联（另一张表 / 连接表）与 @OneToOne(mappedBy) 反侧（外键在对端表）
-                    continue;
-                }
-                if (!entityMeta.updatable(name)) {
-                    // @JoinColumn(updatable = false)：外键列不参与 UPDATE
                     continue;
                 }
                 update.set(root.get(name), attribute.getValue().get(entity));
@@ -190,11 +194,8 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
                         attribute.getValue().get(entity));
                 continue;
             }
-            if (!entityMeta.updatable(name)) {
-                // @Column(updatable = false)：写侧跳过，读回不受影响
-                continue;
-            }
-            boolean versionColumn = version != null && name.equals(version.name());
+            // 版本列例外：版本自增是这一层的乐观锁职责，@Column(updatable = false) 不能把它挡在
+            // SET 外（JDBC 后端 WriteSql.update 同样无条件写版本列），否则库里版本停住而内存版本 +1。
             update.set(
                     root.get(name),
                     versionColumn

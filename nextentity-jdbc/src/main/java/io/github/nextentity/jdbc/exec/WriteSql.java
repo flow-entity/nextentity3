@@ -116,6 +116,9 @@ final class WriteSql {
     /// FK 列的写入形态：关联对象 `null` → 跳过列；否则列名 + 关联对象 `@Id` 值
     /// （按目标 `@Id` 的列映射归一，与条件写 `关联.id` 逐字一致）。
     /// `@JoinColumn(insertable/updatable=false)` 的判定在调用方（`insert` / `appendScalars`）做。
+    ///
+    /// 关联对象非 `null` 但 `@Id` 为 `null`（未持久化的关联）显式拒绝：静默跳过会丢掉 `insert`
+    /// 的关联，绑 `NULL` 则会把库里已有的外键清掉。JPA 侧同一输入抛 `TransientObjectException`。
     private static void associationColumn(
             JdbcMeta meta,
             JdbcEntityAttribute attribute,
@@ -127,13 +130,19 @@ final class WriteSql {
         if (associated == null) {
             return;
         }
+        Object associatedId = attribute.associatedId(associated);
+        if (associatedId == null) {
+            throw new IllegalArgumentException(
+                    "关联对象的主键不能为 null: " + entity.getClass().getName() + "." + attribute.name() + " → "
+                            + attribute.associationTarget().getName() + ".id");
+        }
         JdbcEntityAttribute foreignKey = JdbcEntityAttribute.foreignKey(
                 meta.entityType(attribute.associationTarget()).id(),
                 attribute.joinColumn(),
                 attribute.isJoinColumnQuoted(),
                 attribute.isJoinColumnUpdatable());
         columns.add(identifier(attribute.joinColumn(), attribute.isJoinColumnQuoted(), dialect));
-        parameters.add(JdbcTypes.toJdbc(attribute.associatedId(associated), foreignKey));
+        parameters.add(JdbcTypes.toJdbc(associatedId, foreignKey));
     }
 
     /// 标识符：quoted 时过方言引用，否则裸名。

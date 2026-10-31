@@ -21,6 +21,11 @@ public class SnapshotOwner {
         this.name = name;
     }
 
+    /// 未赋主键的关联对象：用于钉住「写外键前必须能取到关联 `@Id`」。
+    public static SnapshotOwner unsaved() {
+        return new SnapshotOwner();
+    }
+
     public Long id() {
         return id;
     }

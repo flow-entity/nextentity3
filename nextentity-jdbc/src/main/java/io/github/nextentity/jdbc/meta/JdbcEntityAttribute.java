@@ -209,7 +209,8 @@ public final class JdbcEntityAttribute implements EntityAttribute {
     /// 关联对象的 `@Id` 值（写关联时作为 FK 值绑定）；`null` 关联返回 `null`。
     ///
     /// 调用方保证本属性是关联属性（[#isAssociation()] 为真）：关联目标的 `@Id` 在扫描期必已解析，
-    /// 因此这里只需处理「关联对象本身为 null」这一种输入。
+    /// 因此这里只需处理「关联对象本身为 null」这一种输入；关联对象非 `null` 但 `@Id` 为 `null`
+    /// （未持久化的关联）由写侧 fail-fast 拒绝（`WriteSql`）。
     public Object associatedId(Object associated) {
         if (associated == null) {
             return null;

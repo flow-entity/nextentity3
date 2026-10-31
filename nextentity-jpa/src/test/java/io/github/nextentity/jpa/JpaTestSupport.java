@@ -24,6 +24,8 @@ import io.github.nextentity.jpa.entity.Organization;
 import io.github.nextentity.jpa.entity.OverrideReadOnlyFlags;
 import io.github.nextentity.jpa.entity.PriceWindow;
 import io.github.nextentity.jpa.entity.PropertyAccessFlags;
+import io.github.nextentity.jpa.entity.ReadOnlyVersionOnly;
+import io.github.nextentity.jpa.entity.ReadOnlyVersioned;
 import io.github.nextentity.jpa.entity.Seal;
 import io.github.nextentity.jpa.entity.SealHolder;
 import io.github.nextentity.jpa.entity.Shipment;
@@ -109,6 +111,8 @@ abstract class JpaTestSupport {
         configuration.addAnnotatedClass(OverrideReadOnlyFlags.class);
         configuration.addAnnotatedClass(UnannotatedLink.class);
         configuration.addAnnotatedClass(PropertyAccessFlags.class);
+        configuration.addAnnotatedClass(ReadOnlyVersioned.class);
+        configuration.addAnnotatedClass(ReadOnlyVersionOnly.class);
         this.sessionFactory = configuration.buildSessionFactory();
         this.meta = new JpaMeta(sessionFactory);
     }

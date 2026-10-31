@@ -285,6 +285,30 @@ class JdbcPersistExecutorTest {
     }
 
     @Test
+    void insertRejectsAssociationWhoseIdIsNotAssigned() throws SQLException {
+        JdbcPersistExecutor<SnapshotAsset> persist = executor(SnapshotAsset.class);
+
+        assertThatThrownBy(() -> persist.insert(new SnapshotAsset(1L, "anvil", SnapshotOwner.unsaved())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("关联对象的主键不能为 null: " + SnapshotAsset.class.getName() + ".owner → "
+                        + SnapshotOwner.class.getName() + ".id");
+        assertThat(count("asset")).isZero();
+    }
+
+    @Test
+    void updateRejectsAssociationWhoseIdIsNotAssignedInsteadOfClearingForeignKey() throws SQLException {
+        JdbcPersistExecutor<SnapshotAsset> persist = executor(SnapshotAsset.class);
+        persist.insert(new SnapshotAsset(1L, "anvil", new SnapshotOwner(10L, "alpha")));
+        assertThat(ownerIdOf(1L)).isEqualTo(10L);
+
+        assertThatThrownBy(() -> persist.update(new SnapshotAsset(1L, "anvil", SnapshotOwner.unsaved())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("关联对象的主键不能为 null: " + SnapshotAsset.class.getName() + ".owner → "
+                        + SnapshotOwner.class.getName() + ".id");
+        assertThat(ownerIdOf(1L)).isEqualTo(10L);
+    }
+
+    @Test
     void conditionalUpdateCanClearForeignKey() throws SQLException {
         executor(SnapshotAsset.class).insert(new SnapshotAsset(1L, "anvil", new SnapshotOwner(10L, "alpha")));
 

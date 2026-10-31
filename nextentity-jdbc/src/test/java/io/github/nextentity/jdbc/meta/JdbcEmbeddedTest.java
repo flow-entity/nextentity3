@@ -7,6 +7,8 @@ import io.github.nextentity.jdbc.support.EmbeddedAddress;
 import io.github.nextentity.jdbc.support.EmbeddedProfile;
 import io.github.nextentity.jdbc.support.SnapshotItem;
 import io.github.nextentity.jdbc.support.SnapshotOwner;
+import jakarta.persistence.Access;
+import jakarta.persistence.AccessType;
 import jakarta.persistence.AttributeOverride;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
@@ -15,6 +17,7 @@ import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.ManyToMany;
+import jakarta.persistence.MappedSuperclass;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
@@ -124,6 +127,75 @@ class JdbcEmbeddedTest {
         assertThat(name.isEmbedded()).isFalse();
         assertThat(name.embeddedTarget()).isNull();
         assertThat(name.embeddedColumns()).isEmpty();
+    }
+
+    @Test
+    void embeddableSuperclassFieldsAreMapped() {
+        JdbcEntityType<InheritedEmbeddedEntity> type = meta.entityType(InheritedEmbeddedEntity.class);
+
+        assertThat(type.attribute("address").embeddedColumns())
+                .extracting(JdbcEntityAttribute::name)
+                .containsExactly("city", "street");
+        assertThat(type.columns())
+                .extracting(JdbcEntityAttribute::column)
+                .containsExactly("id", "address_city", "address_street");
+    }
+
+    @Test
+    void unknownAttributeOverrideNameIsRejected() {
+        assertThatThrownBy(() -> meta.entityType(UnknownOverrideEntity.class))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessage("未命中的 @AttributeOverride: " + UnknownOverrideEntity.class.getName() + ".address.town");
+    }
+
+    @Test
+    void propertyAccessInsideEmbeddableIsRejected() {
+        assertThatThrownBy(() -> meta.entityType(PropertyAccessEmbeddableEntity.class))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessage("只支持字段访问（注解须在字段上）: " + PropertyAccessEmbeddable.class.getName());
+    }
+
+    @Test
+    void classLevelPropertyAccessInsideEmbeddableIsRejected() {
+        assertThatThrownBy(() -> meta.entityType(ClassLevelPropertyAccessEntity.class))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessage("只支持字段访问（注解须在字段上）: " + ClassLevelPropertyAccessEmbeddable.class.getName());
+    }
+
+    @Test
+    void embeddableExtendingEntityIsRejected() {
+        assertThatThrownBy(() -> meta.entityType(EmbeddableExtendsEntityEntity.class))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessage("实体继承未支持: " + EmbeddableExtendingAnEntity.class.getName());
+    }
+
+    @Test
+    void shadowedEmbeddableFieldIsRejected() {
+        assertThatThrownBy(() -> meta.entityType(ShadowedFieldEntity.class))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessage("嵌入类型内字段名重复（父类字段被子类遮蔽）: " + ShadowedFieldEntity.class.getName() + ".address.street");
+    }
+
+    @Test
+    void plainSuperclassFieldsAreNotMapped() {
+        JdbcEntityType<PlainSuperclassEntity> type = meta.entityType(PlainSuperclassEntity.class);
+
+        assertThat(type.attribute("address").embeddedColumns())
+                .extracting(JdbcEntityAttribute::name)
+                .containsExactly("street");
+        assertThat(type.columns()).extracting(JdbcEntityAttribute::column).containsExactly("id", "address_street");
+    }
+
+    @Test
+    void multipleMappedSuperclassesAreCollectedFromBottomUp() {
+        JdbcEntityType<DeepInheritedEntity> type = meta.entityType(DeepInheritedEntity.class);
+
+        assertThat(type.attribute("address").embeddedColumns())
+                .extracting(JdbcEntityAttribute::name)
+                .containsExactly("city", "zip", "street");
+        assertThat(type.columns())
+                .extracting(JdbcEntityAttribute::column)
+                .containsExactly("id", "address_city", "address_zip", "address_street");
     }
 
     // ---------------------------------------------------------------- 夹具
@@ -313,5 +385,187 @@ class JdbcEmbeddedTest {
         @Embedded
         @AttributeOverride(name = ".city", column = @Column(name = "town"))
         EmbeddedAddress address;
+    }
+
+    @Entity
+    @Table(name = "embedded_superclass")
+    static class InheritedEmbeddedEntity {
+
+        @Id
+        private Long id;
+
+        @Embedded
+        private InheritedEmbeddableAddress address;
+    }
+
+    @MappedSuperclass
+    static class InheritedEmbeddableBase {
+
+        private String city;
+    }
+
+    @Embeddable
+    static class InheritedEmbeddableAddress extends InheritedEmbeddableBase {
+
+        private String street;
+    }
+
+    @Entity
+    @Table(name = "embedded_unknown_override")
+    static class UnknownOverrideEntity {
+
+        @Id
+        private Long id;
+
+        @Embedded
+        @AttributeOverride(name = "town", column = @Column(name = "city_x"))
+        private EmbeddedAddressOnly address;
+    }
+
+    @Entity
+    @Table(name = "embedded_property_access")
+    static class PropertyAccessEmbeddableEntity {
+
+        @Id
+        private Long id;
+
+        @Embedded
+        private PropertyAccessEmbeddable address;
+    }
+
+    @Embeddable
+    static class PropertyAccessEmbeddable {
+
+        private String city;
+
+        @Column(name = "town")
+        public String getCity() {
+            return city;
+        }
+    }
+
+    @Entity
+    @Table(name = "embedded_class_level_property_access")
+    static class ClassLevelPropertyAccessEntity {
+
+        @Id
+        private Long id;
+
+        @Embedded
+        private ClassLevelPropertyAccessEmbeddable address;
+    }
+
+    @Embeddable
+    @Access(AccessType.PROPERTY)
+    static class ClassLevelPropertyAccessEmbeddable {
+
+        private String city;
+
+        public String getCity() {
+            return city;
+        }
+
+        public void setCity(String city) {
+            this.city = city;
+        }
+    }
+
+    @Entity
+    @Table(name = "embeddable_extends_entity")
+    static class EmbeddableExtendsEntityEntity {
+
+        @Id
+        private Long id;
+
+        @Embedded
+        private EmbeddableExtendingAnEntity address;
+    }
+
+    @Entity
+    @Table(name = "embedded_extended_base")
+    static class ExtendedBaseEntity {
+
+        @Id
+        private Long id;
+    }
+
+    @Embeddable
+    static class EmbeddableExtendingAnEntity extends ExtendedBaseEntity {
+
+        private String street;
+    }
+
+    @Entity
+    @Table(name = "embedded_plain_superclass")
+    static class PlainSuperclassEntity {
+
+        @Id
+        private Long id;
+
+        @Embedded
+        private PlainSuperclassAddress address;
+    }
+
+    static class PlainSuperclassBase {
+
+        private String city;
+    }
+
+    @Embeddable
+    static class PlainSuperclassAddress extends PlainSuperclassBase {
+
+        private String street;
+    }
+
+    @Entity
+    @Table(name = "embedded_deep_superclass")
+    static class DeepInheritedEntity {
+
+        @Id
+        private Long id;
+
+        @Embedded
+        private DeepInheritedAddress address;
+    }
+
+    @MappedSuperclass
+    static class DeepInheritedTop {
+
+        private String city;
+    }
+
+    @MappedSuperclass
+    static class DeepInheritedMiddle extends DeepInheritedTop {
+
+        private String zip;
+    }
+
+    @Embeddable
+    static class DeepInheritedAddress extends DeepInheritedMiddle {
+
+        private String street;
+    }
+
+    @Entity
+    @Table(name = "embedded_shadowed")
+    static class ShadowedFieldEntity {
+
+        @Id
+        private Long id;
+
+        @Embedded
+        private ShadowedAddress address;
+    }
+
+    @MappedSuperclass
+    static class ShadowedBase {
+
+        private String street;
+    }
+
+    @Embeddable
+    static class ShadowedAddress extends ShadowedBase {
+
+        private String street;
     }
 }
