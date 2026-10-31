@@ -79,7 +79,7 @@ final class SqlRenderer {
         }
         if (query.aggregate()) {
             throw new UnsupportedOperationException(
-                    "分组/聚合规格的 count 未实现（2.2.3 走子查询计数：" + query.entityType().getName() + "）");
+                    "分组/聚合规格的 count 未实现（需子查询计数：" + query.entityType().getName() + "）");
         }
         SqlClauses clauses = new SqlClauses(this);
         String expression = countExpression(query);

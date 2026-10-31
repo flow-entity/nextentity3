@@ -11,8 +11,8 @@ import org.springframework.core.ResolvableType;
 ///
 /// 成员面只到真实调用点为止（point-mall 的 `AppVersionRepository`）：
 /// 构造器注入 {@link EntityOperationsFactory} + {@link #query()}。
-/// 2.2.3 里的 `findAll` / `count` / `insert` / `updateAll` / `delete` / `path(...)` 在 point-mall
-/// 零调用点，写操作走 `@Transactional` + `core.PersistExecutor`，不在本类复制。
+/// `findAll` / `count` / `insert` / `updateAll` / `delete` / `path(...)` 在 point-mall 零调用点，
+/// 写操作走 `@Transactional` + `core.PersistExecutor`，不在本类复制。
 ///
 /// @param <T> 实体类型
 public abstract class AbstractRepository<T> {
@@ -44,7 +44,7 @@ public abstract class AbstractRepository<T> {
     /// 插入单个实体。
     ///
     /// 调用点：point-mall `VersionManager` 调 `appVersionRepository.insert(...)`
-    /// （`AppVersionRepository` 自己不声明该方法，2.2.3 里由 `AbstractRepository` 提供）。
+    /// （`AppVersionRepository` 自己不声明该方法，由 `AbstractRepository` 提供）。
     /// 事务边界由调用方的 `@Transactional` 决定，本类不接管。
     ///
     /// @param entity 待插入实体，非 `null`

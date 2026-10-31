@@ -27,7 +27,7 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 /// 时间类型（`Instant` / `LocalDateTime` / `LocalDate`）的写读契约：**同一套断言、两套连接**。
 ///
 /// 此前非遗留用例里没有任何持久化时间字段（`Instant` / `LocalDate` 在全部非 legacy 的**实体**里 0 命中，
-/// 唯一的 `Instant` 字段在 `nextentity-core` 的 builder 单测里，不落库），时间维度只剩 2.2.3 的
+/// 唯一的 `Instant` 字段在 `nextentity-core` 的 builder 单测里，不落库），时间维度只剩
 /// `InstantLiteralTimezoneIntegrationTest` 一个证据，而那个模块要被移除。本类补的是「移除后仍然有人守着」
 /// 这件事，守的具体是三条不同的绑定路径：
 ///
@@ -46,7 +46,7 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 /// PG 兼容模式差异，两者不混在一起）。
 ///
 /// **时区**：JVM 默认时区由 surefire/failsafe 的 `-Duser.timezone` 钉成 `+08:00`
-/// （`nextentity-tests-jpa/pom.xml` 的 `pinned.timezone`），这样 `Instant` 的断言在任何跑测机器上都
+/// （`pinned.timezone` 属性），这样 `Instant` 的断言在任何跑测机器上都
 /// 保留区分力。**不能**在用例里改：Hibernate 在 `buildSessionFactory()` 时就缓存了默认时区，而装置由
 /// 子类字段初始化创建，早于任何 `@BeforeEach`——在 `@BeforeEach` 里 `TimeZone.setDefault` 是「晚于
 /// 建连」的，实测会把 `LocalDate.of(2024,3,10)` 写成 `2024-03-09`，等于把装置搞成非法的时区实验。
@@ -71,7 +71,7 @@ abstract class TemporalWriteContract {
     /// 夹具的内存副本：差分 oracle 的输入，与灌进库里的那三行逐字段相同。
     private List<TemporalItemEntity> fixture = List.of();
 
-    /// 装置应当钉住的 JVM 时区：由 pom 的 `pinned.timezone` 经 `-Dnextentity.pinnedTimezone` 传进来，
+    /// 装置应当钉住的 JVM 时区：由 `pinned.timezone` 经 `-Dnextentity.pinnedTimezone` 传进来，
     /// `resetBefore` 拿它自检。**期望值只从这一个来源取**，不从 `ZoneId.systemDefault()` 现算——
     /// 两边都现算的话，「时区被换掉」时期望会和实测一起漂移，互相不出卖。
     static final ZoneId PINNED_ZONE = ZoneId.of(System.getProperty("nextentity.pinnedTimezone", "Asia/Shanghai"));
@@ -91,10 +91,10 @@ abstract class TemporalWriteContract {
 
     @BeforeEach
     void resetBefore() {
-        // 时区由 pom 的 `-Duser.timezone` 在 fork 启动时钉住（见类注释），这里把它变成**可断言的
+        // 时区由 `-Duser.timezone` 在 fork 启动时钉住（见类注释），这里把它变成**可断言的
         // 事实**：钉不上就等于所有 `Instant` 断言在 UTC 机器上失去区分力，那种「绿」没有意义。
         assertThat(ZoneId.systemDefault())
-                .as("JVM 时区必须被 pom 的 -Duser.timezone 钉在 %s（见 nextentity-tests-jpa/pom.xml）", PINNED_ZONE)
+                .as("JVM 时区必须被 -Duser.timezone 钉在 %s", PINNED_ZONE)
                 .isEqualTo(PINNED_ZONE);
         resetRows();
     }

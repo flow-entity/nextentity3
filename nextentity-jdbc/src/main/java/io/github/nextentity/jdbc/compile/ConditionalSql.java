@@ -45,7 +45,7 @@ public final class ConditionalSql {
                 "update " + renderer.table() + " set " + String.join(", ", assignments) + where, parameters, List.of());
     }
 
-    /// 渲染条件删除；没有 `where` 就是整表删除（2.2.3 语义，不额外拒绝）。
+    /// 渲染条件删除；没有 `where` 就是整表删除（不额外拒绝）。
     ///
     /// @param spec 删除规格
     /// @param meta 实体元数据（`关联.id` 解析成 FK 列需要目标 `@Id` 的列信息）

@@ -14,7 +14,7 @@ import java.util.List;
 /// ## 3.1.0 移植说明
 ///
 /// 3.x 的 {@link AbstractRepository} 只提供 `query()` 与 `insert(T)`；
-/// 2.2.3 继承来的 ID 便捷方法（findById/getById/findAllById/findAllAsMapById/existsById/deleteById）
+/// ID 便捷方法（findById/getById/findAllById/findAllAsMapById/existsById/deleteById）
 /// 在 3.x 用 `query()` / `core.EntityOperations` 就地表达，见 {@link ProductRepository}。
 @Repository
 public class CategoryRepository extends AbstractRepository<Category> {

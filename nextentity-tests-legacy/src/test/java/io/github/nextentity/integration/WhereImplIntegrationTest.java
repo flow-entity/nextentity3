@@ -36,7 +36,7 @@ public class WhereImplIntegrationTest {
 
         ///
         /// 测试目标: 验证y that where(PathExpression) returns PathOperator.
-        /// Covers: WhereImpl.where(PathExpression) line 179-180
+        /// Covers: WhereImpl.where(PathExpression)
         @ParameterizedTest
         @ArgumentsSource(IntegrationTestProvider.class)
         @DisplayName("Should return PathOperator with PathExpression")
@@ -131,7 +131,7 @@ public class WhereImplIntegrationTest {
 
         ///
         /// 测试目标: 验证y that where(NumberPath) returns NumberOperator.
-        /// Covers: WhereImpl.where(NumberPath) line 184-185
+        /// Covers: WhereImpl.where(NumberPath)
         @ParameterizedTest
         @ArgumentsSource(IntegrationTestProvider.class)
         @DisplayName("Should return NumberOperator with NumberPath")
@@ -223,7 +223,7 @@ public class WhereImplIntegrationTest {
 
         ///
         /// 测试目标: 验证y that where(StringPath) returns StringOperator.
-        /// Covers: WhereImpl.where(StringPath) line 189-190
+        /// Covers: WhereImpl.where(StringPath)
         @ParameterizedTest
         @ArgumentsSource(IntegrationTestProvider.class)
         @DisplayName("Should return StringOperator with StringPath")
@@ -295,7 +295,7 @@ public class WhereImplIntegrationTest {
 
         ///
         /// 测试目标: 验证y that groupBy(TypedExpression) adds grouping.
-        /// Covers: WhereImpl.groupBy(TypedExpression) line 193-194
+        /// Covers: WhereImpl.groupBy(TypedExpression)
         @ParameterizedTest
         @ArgumentsSource(IntegrationTestProvider.class)
         @DisplayName("Should group by single TypedExpression")
@@ -340,7 +340,7 @@ public class WhereImplIntegrationTest {
 
         ///
         /// 测试目标: 验证y that groupBy(List<TypedExpression>) adds all groupings.
-        /// Covers: WhereImpl.groupBy(List<TypedExpression>) line 198-200
+        /// Covers: WhereImpl.groupBy(List<TypedExpression>)
         @ParameterizedTest
         @ArgumentsSource(IntegrationTestProvider.class)
         @DisplayName("Should group by list of TypedExpressions")
@@ -382,7 +382,7 @@ public class WhereImplIntegrationTest {
 
         ///
         /// 测试目标: 验证y that orderBy(List<Order>) adds sorting.
-        /// Covers: WhereImpl.orderBy(List<Order>) line 222-225
+        /// Covers: WhereImpl.orderBy(List<Order>)
         @ParameterizedTest
         @ArgumentsSource(IntegrationTestProvider.class)
         @DisplayName("Should order by list of Order expressions")

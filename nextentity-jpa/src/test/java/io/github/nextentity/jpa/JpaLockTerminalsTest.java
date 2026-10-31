@@ -12,7 +12,7 @@ import java.util.function.Function;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/// 锁模式穿过 `Collector` 的每个终止符（2.2.3 的 `.lock(PESSIMISTIC_READ).first()` 等调用点）：
+/// 锁模式穿过 `Collector` 的每个终止符（`.lock(PESSIMISTIC_READ).first()` 等调用点）：
 /// 锁必须在终止符真正执行的查询上生效，而不是只能在 `list()` 上。
 class JpaLockTerminalsTest extends JpaTestSupport {
 

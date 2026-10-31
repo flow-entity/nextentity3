@@ -6,7 +6,7 @@ import java.util.List;
 ///
 /// 与 {@link io.github.nextentity.core.compile.Compiler} 成对出现：编译器只渲染，执行器只执行。
 /// 只保留三个方法——`first` / `single` / `slice` 由 core 的查询构建器用
-/// `list` + `count` 组合出来（2.2.3 里同样是 default 方法），后端因此不必为每个终止符各写一遍。
+/// `list` + `count` 组合出来，后端因此不必为每个终止符各写一遍。
 ///
 /// **职责边界**：本接缝负责「把语句跑出后端的原始行」，投影装配（原始行 → 结果对象）**不在**这一层，
 /// 见 [#list(Object)]。这样新增后端只需实现「怎么跑」，装配规则仍只有 core 的一份。

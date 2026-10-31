@@ -52,7 +52,7 @@ record DtoProjection(List<Projection> items, RowMapper<?> mapper) {
     static DtoProjection of(Class<?> type, Class<?> entityType) {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(entityType, "entityType");
-        // 接口投影要靠运行期代理（2.2.3 有，本轮不提供）：明确拒绝，而不是让后面的反射报个说不清的错误
+        // 接口投影要靠运行期代理（本轮不提供）：明确拒绝，而不是让后面的反射报个说不清的错误
         if (type.isInterface() || Modifier.isAbstract(type.getModifiers())) {
             throw new IllegalArgumentException(
                     "不支持接口/抽象类的 DTO 投影：" + type.getName() + "（接口投影需要运行期代理，改用 project(ProjectionMapper) 手写映射器）");

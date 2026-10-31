@@ -75,8 +75,8 @@ public interface SelectStep<T> extends DistinctStep<T> {
     /// 接口与抽象类不支持：接口投影要靠运行期代理，本轮不提供——改用 [#project(ProjectionMapper)] 手写映射器。
     ///
     /// 属性名按名匹配实体属性，先找直接属性；命不中时 **JPA 后端**再到实体的 `@Embedded` 组件（可多级）
-    /// 里找同名叶子，所以嵌平投影（DTO 的 `street` ↔ 实体的 `address.street`）也属本形态。2.2.3 用
-    /// `@EntityPath` 显式给这个映射指路，3.x 没有注解面，按名回找是唯一能表达的形态。
+    /// 里找同名叶子，所以嵌平投影（DTO 的 `street` ↔ 实体的 `address.street`）也属本形态。没有注解面
+    /// 给这个映射指路，按名回找是唯一能表达的形态。
     ///
     /// 关联属性（`department.name` 那种跨表路径）仍不属本形态，用 [#project(ProjectionMapper)]；
     /// 属性名无法与实体属性做编译期校验，写错会在后端渲染时失败。

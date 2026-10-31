@@ -13,7 +13,7 @@ import org.junit.jupiter.api.TestInstance;
 /// `select(Dto.class)` 的嵌平列（H2 通道）：DTO 属性名在实体上找不到同名属性时，按 `@Embedded` 组件
 /// 回找同名叶子——`city` → `address.city`、`zone` → `address.geo.zone`（两层嵌入）。
 ///
-/// 2.2.3 用 `@EntityPath("address.street")` 显式指路，3.x 没有注解面，按名回找是唯一可表达的形态；
+/// 没有注解面显式指路（`@EntityPath("address.street")` 那种写法），按名回找是唯一可表达的形态；
 /// 这里钉住三件事：解析出来的列真的取到值、整句 SQL 的列清单（含嵌入摊平后的列名）、
 /// 同名叶子出现在两个嵌入组件里时显式拒绝。
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)

@@ -149,7 +149,7 @@ class JpaEndToEndTest extends JpaTestSupport {
     /// 公开 api 路径的同一拒绝由 `nextentity-tests-jpa` 的
     /// `ItemAggregateTerminalContractTest#countRejectsGroupBy` 与
     /// `#countRejectsMultiColumnDistinct` 钉住；这里手搭 `QuerySpec` 是为了在 **exec 层单独钉住两条
-    /// 文案**——两条消息带不同的诊断信息（一条说 2.2.3 走子查询计数，一条说多列 distinct 的方言语义
+    /// 文案**——两条消息带不同的诊断信息（一条说需子查询计数，一条说多列 distinct 的方言语义
     /// 不一致），必须在编译/执行入口就固定下来。
     @Test
     void countRejectsAggregateAndMultiColumnDistinct() {
@@ -179,7 +179,7 @@ class JpaEndToEndTest extends JpaTestSupport {
             JpaExecutor executor = executor(entityManager);
             assertThatThrownBy(() -> executor.count(compiler.compile(grouped.forCount())))
                     .isInstanceOf(UnsupportedOperationException.class)
-                    .hasMessage("分组/聚合规格的 count 未实现（2.2.3 走子查询计数：" + ShopOrder.class.getName() + "）");
+                    .hasMessage("分组/聚合规格的 count 未实现（需子查询计数：" + ShopOrder.class.getName() + "）");
             assertThatThrownBy(() -> executor.count(compiler.compile(multiColumnDistinct.forCount())))
                     .isInstanceOf(UnsupportedOperationException.class)
                     .hasMessage("多列 distinct 规格的 count 未实现（列数 2，方言语义不一致）：" + ShopOrder.class.getName());

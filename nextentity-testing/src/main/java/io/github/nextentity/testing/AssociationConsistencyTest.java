@@ -10,9 +10,9 @@ import java.util.Objects;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/// 关联嵌套路径（`EntityPath.of(A::getB).get(B::getC)`）的一致性：这是 2.2.3 迁移里唯一失败的那一族。
+/// 关联嵌套路径（`EntityPath.of(A::getB).get(B::getC)`）的一致性：这是迁移里唯一失败的那一族。
 ///
-/// 失败形态（2.2.3 迁移时实测）：
+/// 失败形态（迁移时实测）：
 /// `无法从方法引用解析属性路径: PathValues$Nested` / `NoSuchMethodException: writeReplace()`——
 /// 嵌套路径在运行期解析不出属性名，于是 `where(...)` 根本拿不到可用的路径。
 ///

@@ -117,7 +117,7 @@ public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
 
     /// 条件删除入口：`delete().where(...).execute()`，只发一条 `DELETE`，不先取行。
     ///
-    /// 不写 `where` 就是整表删除（与 2.2.3 一致），不额外拒绝。
+    /// 不写 `where` 就是整表删除，不额外拒绝。
     @Override
     public DeleteWhereStep<T> delete() {
         return new DeleteWhereStepBuilder<>(entityType.type(), this::deleteWhere);

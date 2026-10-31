@@ -106,7 +106,7 @@ public record QuerySpec(
     /// 是否含分组、聚合或 HAVING。
     ///
     /// 它同时决定两件事：
-    /// 1. 分页是否自动补主键排序——聚合/分组/HAVING 查询不补（2.2.3 同此口径）；
+    /// 1. 分页是否自动补主键排序——聚合/分组/HAVING 查询不补；
     /// 2. `count()` 是否拒绝——这些形态的"行数"要么语义不明确、要么要子查询计数，
     ///    宁可抛 `UnsupportedOperationException` 也不能静默给出错数。
     ///
@@ -124,7 +124,7 @@ public record QuerySpec(
 
     /// 计数用的规格：清排序、清窗口、去锁、**清预加载**，保留 where / groupBy / having。
     ///
-    /// 与 2.2.3 `WhereImpl.buildCountData` 对齐——"清 orderBy/offset/limit/lockType" 是 core 的责任，
+    /// "清 orderBy/offset/limit/lockType" 是 core 的责任，
     /// 后端只负责把同一份规格渲染成计数语句。预加载也一并清掉：`count(*)` 没有实体要填关联，
     /// 留着会让后端多 join 一层。
     ///
@@ -182,7 +182,7 @@ public record QuerySpec(
     /// 外层 `count(*)` 才是组数。若沿用原来的聚合投影（`select count(...) group by ...`），
     /// 外层计数会把"每组内的行数"再数一遍，答案与 `count()` 的承诺不符。
     ///
-    /// 语义与 2.2.3 `WhereImpl.buildCountData`（`select count(*) from (分组查询)`）对齐。
+    /// 语义即外层 `select count(*) from (分组查询)`。
     ///
     /// @return 分组计数规格，`countScope()` 为 [CountScope#GROUPS]
     /// @throws IllegalArgumentException 没有 `groupBy`：没有分组键就没有"组"可数

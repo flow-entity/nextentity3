@@ -38,7 +38,7 @@ import java.util.stream.Collectors;
 /// - 事务管理
 ///
 /// 3.1.0 移植说明：写操作改走 `core.EntityOperations`，四列以上投影改走 `project(ProjectionMappers.select(...))`，
-/// 带 `@EntityPath` 的 DTO 改走手写 `ProjectionMapper`；查询形态与断言保持 2.2.3 原样。
+/// 带 `@EntityPath` 的 DTO 改走手写 `ProjectionMapper`；查询形态与断言不变。
 @Repository
 public class EmployeeRepository extends AbstractRepository<Employee> {
 

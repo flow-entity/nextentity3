@@ -2,7 +2,7 @@ package io.github.nextentity.core.spec;
 
 /// 恒真/恒假节点：`1=1` / `1=0`。
 ///
-/// 唯一来源是集合算子遇到空集合（2.2.3 同此口径：`IN` 空 → `FALSE`，
+/// 唯一来源是集合算子遇到空集合（`IN` 空 → `FALSE`，
 /// 再套一层 `NOT` 即 `TRUE`）。有了它，空集合语义在 AST 里是显式的，
 /// 后端只需把 `Constant` 渲染成 `conjunction()` / `disjunction()`，不必再猜。
 ///

@@ -11,7 +11,7 @@ import io.github.nextentity.core.meta.EntityType;
 /// - [PersistExecutor] 提供实体级写入（`insert` / `insertAll` / `update` / `updateAll`）与
 ///   条件写入入口（`update().set().where()` / `delete().where()`）。
 ///
-/// 3.1 起 2.2.3 的条件更新/删除 DSL 加性恢复（`fetch(...)` 在 `EntityQuery` 上，`toSubQuery()` 仍不提供）。
+/// 3.1 起条件更新/删除 DSL 加性恢复（`fetch(...)` 在 `EntityQuery` 上，`toSubQuery()` 仍不提供）。
 ///
 /// @param <T> 实体类型
 public interface EntityOperations<T> extends PersistExecutor<T> {

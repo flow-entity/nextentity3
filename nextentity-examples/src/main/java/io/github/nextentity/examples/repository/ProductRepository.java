@@ -26,7 +26,7 @@ import java.util.Map;
 ///
 /// 演示以下功能：
 ///
-/// - ID 相关便捷方法（2.2.3 继承自 AbstractRepository，3.x 就地补齐）
+/// - ID 相关便捷方法（3.x 就地补齐）
 /// - 与 {@link Category} 的关联查询
 /// - 懒加载与急加载
 /// - DTO 投影与嵌套属性
@@ -48,7 +48,7 @@ public class ProductRepository extends AbstractRepository<Product> {
         this.operations = context.operations(Product.class);
     }
 
-    // ==================== 3.x 写法补齐的 CRUD（2.2.3 由 AbstractRepository 继承） ====================
+    // ==================== 3.x 写法补齐的 CRUD ====================
 
     /// 按主键查询单条。
     public Product getById(Long id) {

@@ -2,7 +2,7 @@ package io.github.nextentity.api;
 
 /// 字符串「前缀/后缀/否定」模式算子。
 ///
-/// 这些方法都由 [like]/[notLike] 拼出，语义与 2.2.3 一致：`startsWith(v)` 等价 `like(v + "%")`，
+/// 这些方法都由 [like]/[notLike] 拼出：`startsWith(v)` 等价 `like(v + "%")`，
 /// `notContains(v)` 等价 `notLike("%" + v + "%")`。通配符只在这一处拼，后端只认 `LIKE`/`NOT LIKE`。
 ///
 /// 继承 [StringOps] 只是为了默认方法里能调到 `like`，不新增对实现方的要求。

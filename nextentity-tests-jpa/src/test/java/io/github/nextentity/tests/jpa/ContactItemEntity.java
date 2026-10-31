@@ -15,7 +15,7 @@ import jakarta.persistence.Table;
 /// 「覆盖没生效」和「覆盖生效」在结果上分不出来（默认列名本来就只有一处）；出现两次且不覆盖，
 /// Hibernate 会直接报重复列映射——所以「两次、不同列」是这条能力的**最小可证伪夹具**。
 ///
-/// 此前非遗留用例里 `@AttributeOverride` 零命中，这一维度只有 2.2.3 移植模块的
+/// 此前非遗留用例里 `@AttributeOverride` 零命中，这一维度只有移植模块的
 /// `AttributeOverrideCrudIntegrationTest` 作证，而该模块按计划会被移除。
 ///
 /// 列名与属性名不同（`city` ≠ `home_city`）是刻意的：若框架某处拿属性名当列名拼 SQL，

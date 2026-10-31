@@ -450,7 +450,7 @@ class QueryBuilderTest {
     }
 
     @Test
-    @DisplayName("分页无 orderBy：自动补主键升序（2.2.3 autoAddIdOrder 默认开启）")
+    @DisplayName("分页无 orderBy：自动补主键升序")
     void pagingAddsIdOrder() {
         query().list(10);
 
@@ -950,7 +950,7 @@ class QueryBuilderTest {
     // ------------------------------------------- 条件位置的契约拒绝（fail-closed）
 
     /// `Path<T, Boolean>` 是 `Expression<T, Boolean>` 但不是条件（不是 `Op`）。
-    /// 2.2.3 起就不支持"把字段本身当条件"（布尔字段请写 `.eq(true)`），
+    /// 不支持"把字段本身当条件"（布尔字段请写 `.eq(true)`），
     /// 因此送进条件位置必须**当场拒绝**。旧实现用 `instanceof Op` 当唯一入口、其余静默跳过，
     /// 于是 `where(flag)` 会退化成无条件（返回全表），租户/权限边界一起消失。
     ///

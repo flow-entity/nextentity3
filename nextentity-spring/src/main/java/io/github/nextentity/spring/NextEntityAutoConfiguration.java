@@ -15,8 +15,8 @@ import org.springframework.context.annotation.Bean;
 /// `NoSuchBeanDefinitionException`，多 1 个会 `NoUniqueBeanDefinitionException`。除此之外
 /// point-mall 不消费本库的任何 Spring 特性，所以不加事务管理器、事件发布、通用仓储、属性开关。
 ///
-/// 开关语义：`nextentity.enabled=true` 才装配（point-mall 的 `application.yml` 里按 `nextentity.enabled: true` 声明）。
-/// 未配置或为 `false` 时本配置不生效，context 里就没有工厂 bean。
+/// 开关语义：`nextentity.enabled=true` 才装配，未配置或为 `false` 时本配置不生效，
+/// context 里就没有工厂 bean。
 ///
 /// JPA 后端的零件装配在 `JpaEntityOperationsFactory` 里（本模块只做「拿到两个 JPA bean → 交给它」），
 /// 查询语义与分页组成不在本模块。

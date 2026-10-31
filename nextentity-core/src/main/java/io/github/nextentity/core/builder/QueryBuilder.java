@@ -44,12 +44,12 @@ import java.util.Objects;
 /// 表达式 → 投影节点在 [ValueProjections]，原始行 → 结果对象在 [RowAssembler]；
 /// `select(...)` 的返回形态由 [ValueMappers] 的内置映射器给出，与 `project(...)` 共用同一条装配路径。
 ///
-/// 两条终止符语义在 core 落地而不是后端（2.2.3 `Collector` 的 default 方法即如此）：
+/// 两条终止符语义在 core 落地而不是后端（`Collector` 的 default 方法即如此）：
 /// - `first()/single()/slice()` 用 `list` + `count` 组合；
-/// - 分页且没有 `orderBy` 时自动追加 `ORDER BY 主键 ASC`（2.2.3 `autoAddIdOrder` 默认开启；去重投影除外）。
+/// - 分页且没有 `orderBy` 时自动追加 `ORDER BY 主键 ASC`（默认行为；去重投影除外）。
 ///
 /// **类型参数是 `T`（实体），而 `select(...)` 的返回元素并不是 `T`**：`select(Long)` 的运行时元素是
-/// `Long`，`select(a, b)` 是 `Tuple2`。这是 2.2.3 的 api 形状（`SelectStep#select` 返回 `List<T>` 之类），
+/// `Long`，`select(a, b)` 是 `Tuple2`。`SelectStep#select` 的声明形状是 `List<T>` 之类，
 /// 调用方声明成 `List<Long>` 时靠一次 unchecked 转型，类型安全由「选了几列 ↔ 声明了什么类型」的约定顶着。
 /// 本类内部一律按 `Object` 传递，只在 `fetch` 边界上转型；把元素类型纳进类型参数会改动公开步骤接口面。
 ///
@@ -197,7 +197,7 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     public <R> BaseWhereStep<T, R> select(Class<R> type) {
         boolean distinct = takeDistinct();
         Objects.requireNonNull(type, "type");
-        // 目标就是实体本身时退化为整实体查询（2.2.3 口径）：列集由实体定义，不必造投影列
+        // 目标就是实体本身时退化为整实体查询：列集由实体定义，不必造投影列
         if (type.equals(entityType.type())) {
             // 整实体查询不带 distinct 标志（见 DistinctStep 类注释），旗标在这里只能落成静默不生效
             if (distinct) {
@@ -269,7 +269,7 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     }
 
     /// 从 `offset` 起取至多 `limit` 行：与 [SliceStep#slice] 共用窗口与自动主键排序，
-    /// 只是不跑计数查询。`lock(...)` 返回的 `Collector` 也走这条（2.2.3 `Collector#list(int,int)`），
+    /// 只是不跑计数查询。`lock(...)` 返回的 `Collector` 也走这条（`Collector#list(int,int)`），
     /// 因此「带锁分页」不需要收窄 `lock` 的返回类型。
     @Override
     public List<T> list(int offset, int limit) {
@@ -383,7 +383,7 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     }
 
     /// 追加一个 WHERE 条件：`Constant.TRUE`（`*IfNotNull` 短路产生）不进入 WHERE，
-    /// 其余条件与已有条件做 `AND`（2.2.3 `WhereImpl.andWhere`）。
+    /// 其余条件与已有条件做 `AND`。
     private void addCondition(Spec spec) {
         where = mergeCondition(where, spec);
     }
@@ -407,7 +407,7 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     /// 组装当前状态下的查询规格。
     ///
     /// 带 limit 的分页且没有排序、不是聚合查询、也不是去重投影时，追加 `ORDER BY 主键 ASC`——
-    /// 2.2.3 `autoAddIdOrder` 默认 true 且 point-mall 未覆盖，去掉它会改变 `first()`/`slice()`
+    /// 这是默认行为且 point-mall 未覆盖，去掉它会改变 `first()`/`slice()`
     /// 取到哪一行。
     ///
     /// **去重投影下不追加**：主键通常不在 `SELECT DISTINCT` 的投影列里，MySQL 会拒绝

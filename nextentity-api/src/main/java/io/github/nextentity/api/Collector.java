@@ -41,7 +41,7 @@ public interface Collector<T> {
     /// `slice(...)` 会多跑一次计数查询并返回总数。这条重载存在的原因：[LockStep#lock] 返回的是
     /// [Collector]，没有它「带锁分页」就表达不出来，而收窄 `lock` 的返回类型会破坏 3.0.0 的兼容基线。
     ///
-    /// `groupBy(...)` 之后窗口作用在**组**上（对组分页，与 `count()` 的组口径、以及 2.2.3 一致）。
+    /// `groupBy(...)` 之后窗口作用在**组**上（对组分页，与 `count()` 的组口径一致）。
     /// 本方法自己不做形态拒绝：没有 `groupBy` 的聚合形态（只有聚合投影或只有 `having`）由**后端**拒绝
     /// （[UnsupportedOperationException]，见本接口 `count()` / `exists()` 的说明），不是这条取行路径抛的。
     ///
@@ -83,7 +83,7 @@ public interface Collector<T> {
 
     /// 过滤后是否存在任何行（`groupBy(...)` 之后：是否存在任何组）。
     ///
-    /// 普通查询只看条件：没有命中行即为 `false`（与 2.2.3 的 `SELECT_ANY` + limit 1 一致）。
+    /// 普通查询只看条件：没有命中行即为 `false`。
     ///
     /// `groupBy(...)` 之后看的是**组**：`having` 把所有组都过滤掉时为 `false`，因此 `groupBy` /
     /// `having` 必须一起渲染——只渲染 `where` 会给出与查询**相反**的布尔值。

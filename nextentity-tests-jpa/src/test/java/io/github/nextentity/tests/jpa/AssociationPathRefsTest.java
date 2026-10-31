@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 /// 值层回归（不碰数据库）：嵌套路径的 `refs()` 必须逐段是**用户写的原始 lambda**。
 ///
 /// 回归背景：`Path` 曾 `extends PathRef`，core 于是把 api 的值对象（`PathValues$Nested`）当 lambda
-/// 收下，解析属性名时炸 `NoSuchMethodException: writeReplace()`——2.2.3 迁移里 point-mall 唯一失败的根因。
+/// 收下，解析属性名时炸 `NoSuchMethodException: writeReplace()`——迁移里 point-mall 唯一失败的根因。
 ///
 /// 这层断言与 [`AssociationConsistencyTest`] 的端到端断言互补：这里证明「路径链可解析」，
 /// 那边证明「join / 分页语义对」。

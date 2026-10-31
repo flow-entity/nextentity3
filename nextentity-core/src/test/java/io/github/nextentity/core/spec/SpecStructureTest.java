@@ -20,7 +20,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 /// Spec 节点结构的单元测试：不依赖数据库、不依赖 Spring。
 ///
 /// 每个节点至少一条断言，另外覆盖 `QuerySpec` 上两个"纯值变换"（计数/存在性），
-/// 它们是 core 对 2.2.3 语义的承诺，属于最容易悄悄漂移的部分。
+/// 它们最容易悄悄漂移，是 core 必须钉住的部分。
 @DisplayName("Spec 结构")
 class SpecStructureTest {
 

@@ -61,7 +61,7 @@ final class JpaPaths {
     /// （`street` → `address.street`）。
     ///
     /// 只有 `select(Dto.class)` 的列集走这里：那些列名就是 DTO 属性名，嵌平字段在实体上没有同名属性，
-    /// 2.2.3 靠 `@EntityPath` 显式指路，3.x 没有注解面，按名回找是唯一可表达的形态。直接属性永远优先：
+    /// 没有注解面显式指路（`@EntityPath` 那种写法），按名回找是唯一可表达的形态。直接属性永远优先：
     /// 实体上有同名属性时就是那一列，不去嵌入里找。同名叶子出现在多个嵌入组件里时由
     /// [io.github.nextentity.jpa.meta.JpaEmbeddedPaths] 显式拒绝。
     Path<?> projectionPath(AttributePath attributePath) {

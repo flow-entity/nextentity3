@@ -20,7 +20,7 @@ import java.util.Map;
 /// JPA 写入执行器：插入用 `persist`，更新用带版本条件的 `CriteriaUpdate`，条件更新/删除用
 /// `CriteriaUpdate` / `CriteriaDelete`。
 ///
-/// 语义对齐 2.2.3（`JpaPersistExecutor`）：
+/// 语义：
 /// - `insert` / `insertAll` 逐条 `persist`，`@Version` 初值由 Hibernate 在 flush 时写；
 /// - `update` / `updateAll` 按主键（有 `@Version` 时再加版本条件）批量 UPDATE，版本列写成
 ///   「旧值 + 1」，影响行数 ≠ 1 抛乐观锁异常，成功后把新版本号回写到调用方对象上；
@@ -30,9 +30,9 @@ import java.util.Map;
 ///   对象取 `@Id`），键值 `null` 写 `NULL`；集合关联与 `@OneToOne(mappedBy=...)` 反侧没有
 ///   本表外键列，仍不写（3.1.0 起即如此）。
 ///
-/// 与 2.2.3 的差异：① 异常用标准 JPA 异常（`OptimisticLockException` /
-/// `EntityNotFoundException`）替代 2.2.3 的自定义异常；② `@Version` 支持 Integer 与 Long
-/// （2.2.3 只支持 Integer，其它类型会 `ClassCastException`），point-mall 的 27 处版本列全是 `integer`。
+/// 约定：① 异常用标准 JPA 异常（`OptimisticLockException` / `EntityNotFoundException`）；
+/// ② `@Version` 支持 Integer 与 Long（其它类型会 `ClassCastException`），
+/// point-mall 的 27 处版本列全是 `integer`。
 ///
 /// @param <T> 实体类型
 @SuppressWarnings("PMD.TooManyMethods") // 方法数由 PersistExecutor 契约面 + 版本自增的类型上界守卫决定，不是上帝类
@@ -129,8 +129,7 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
     }
 
     /// 影响行数必须恰好 1：有 `@Version` 时是乐观锁冲突（`OptimisticLockException`），
-    /// 否则是行不存在。异常类型是 3.x 的决定：**用标准 JPA 异常替代 2.2.3 的自定义异常**
-    /// （2.2.3 抛 `NextEntityException("Entity not found with id: …")`），point-mall 无 catch 依赖。
+    /// 否则是行不存在。异常类型不用自定义异常：**标准 JPA 异常**（point-mall 无 catch 依赖）。
     private void verifyAffected(int affected, EntityAttribute version, Object idValue, Object versionValue) {
         if (affected == 1) {
             return;
@@ -264,7 +263,7 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
         return assigned;
     }
 
-    /// 主键条件；有 `@Version` 时再叠一个版本条件（2.2.3 的乐观锁写法）。
+    /// 主键条件；有 `@Version` 时再叠一个版本条件（乐观锁）。
     private Predicate whereClause(
             CriteriaBuilder builder,
             Root<T> root,

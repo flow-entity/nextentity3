@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 /// 自增主键（`@GeneratedValue`）的写侧契约：**同一套断言、两套连接**（H2 与真 MySQL）。
 ///
 /// 此前这条能力在非遗留用例里是零覆盖：`GeneratedValue` 在 api / core / jpa 的 main 与全部
-/// 非 legacy 测试实体里都 0 命中，2.2.3 的 `AutoIncrementInsertIntegrationTest` 是唯一证据，
+/// 非 legacy 测试实体里都 0 命中，`AutoIncrementInsertIntegrationTest` 是唯一证据，
 /// 而那个模块要被移除——也就是「框架不碰主键、由数据库发号」这件事会在移除后彻底失去守护。
 ///
 /// [PersistExecutor#insert](io.github.nextentity.core.exec.PersistExecutor) 返回 `void`，

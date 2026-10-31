@@ -48,12 +48,12 @@ class ArchitectureTest {
 
     /// 允许超过上限的既有接口：类型全名 → **该接口自己的**声明数上限（精确值，不是「放宽到 N」）。
     ///
-    /// 条目只能用于「既有公开接口恢复 2.2.3 就有、3.0.0 丢掉的成员」这一类场景，
+    /// 条目只能用于「既有公开接口恢复 3.0.0 丢掉的成员」这一类场景，
     /// 因为拆接口会改 builder / `lock(...)` 的返回类型，属主版本动作，MINOR 里做不了。
     /// 规则：**只许持平、不许增长**（数值就是精确上限，多一个方法立刻红），
     /// 每条都必须对应一条架构决策记录，并写明 revisit 触发器（下一次主版本按注释里的拆分口径落地）。
     ///
-    /// `Collector`：2.2.3 的 7 个终止符（`list()` / `list(int)` / `list(int,int)` / `first()` /
+    /// `Collector`：7 个终止符（`list()` / `list(int)` / `list(int,int)` / `first()` /
     /// `single()` / `count()` / `exists()`）是同一个契约面；3.0.0 丢掉了 `list(int,int)`，
     /// 3.1.0 恢复它导致声明数回到 7。拆分点（取行 vs 聚合）只有在主版本才能重新划。
     private static final Map<String, Integer> WIDE_INTERFACE_ALLOWLIST = Map.of(Collector.class.getName(), 7);

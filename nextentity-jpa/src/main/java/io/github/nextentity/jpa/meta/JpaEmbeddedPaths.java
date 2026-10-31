@@ -10,7 +10,7 @@ import java.util.Set;
 
 /// `select(Dto.class)` 的嵌平列：把 DTO 的扁平属性名回找成「`@Embedded` 属性 … 叶子名」路径。
 ///
-/// 2.2.3 用 `@EntityPath("address.street")` 显式指路，3.x 没有注解面，回找同名叶子是唯一可表达的形态：
+/// 没有注解面显式指路（`@EntityPath("address.street")` 那种写法），回找同名叶子是唯一可表达的形态：
 /// `PersonAddressBasic.street` ↔ `PersonWithAddress.address.street`。
 ///
 /// 只服务 DTO 投影列（`JpaPaths.projectionPath`），且只在实体上没有同名直接属性时调用——直接属性

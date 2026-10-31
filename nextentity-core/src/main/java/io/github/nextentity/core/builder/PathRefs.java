@@ -12,9 +12,9 @@ import java.util.Locale;
 
 /// 把方法引用解析成属性路径。
 ///
-/// 2.2.3 的做法是反射调用 lambda 的 `writeReplace()` 拿到 `SerializedLambda`，
+/// 做法是反射调用 lambda 的 `writeReplace()` 拿到 `SerializedLambda`，
 /// 属性名由**方法名**去 `get`/`is` 前缀得到，
-/// 不读字段、不读注解。3.x 沿用同一机制：point-mall 的 762 处 `.where(...)` 全是方法引用，
+/// 不读字段、不读注解。本库沿用同一机制：point-mall 的 762 处 `.where(...)` 全是方法引用，
 /// 换成别的方式就要改消费方代码。
 ///
 /// 入参恒为**用户写下的方法引用**：api 的 `Path` 不再继承 `PathRef`，多段路径由调用方
@@ -52,7 +52,7 @@ final class PathRefs {
 
     /// 方法名 → 属性名：`getStatus` → `status`、`isActive` → `active`、`status` → `status`。
     ///
-    /// 与 2.2.3 `PathReference.getFieldName` 逐字符对齐（含"第二个字符大写则不改首字母"这条）。
+    /// 含"第二个字符大写则不改首字母"这条规则。
     ///
     /// @param methodName Java 方法名，非 `null`
     /// @return 属性名：去掉 `get`/`is` 前缀，第二个字符大写时首字母不动

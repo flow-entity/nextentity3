@@ -8,7 +8,7 @@ import io.github.nextentity.api.UpdateSetStep;
 /// 方法集合按调用点裁剪：point-mall 的 `AppRepositoryImpl` 只委托 `insert` / `insertAll` /
 /// `update` / `updateAll` 四个；它的 `delete*` 来自 Spring Data `JpaRepository`，与本接缝无关。
 ///
-/// 条件更新/删除（[#update()] / [#delete()]）是 2.2.3 能力的加性恢复：本接缝只声明"能开出一个
+/// 条件更新/删除（[#update()] / [#delete()]）是加性恢复的能力：本接缝只声明"能开出一个
 /// 构建器"，具体语句由后端渲染。实现方需要各自接上，否则编译不过（这条接口是 `@Internal`，
 /// 不承诺兼容，但第三方实现确实要跟着补两个方法）。
 ///

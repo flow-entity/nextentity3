@@ -645,7 +645,7 @@ class JdbcCompilerBranchTest {
 
         assertThatThrownBy(() -> compiler.count(spec))
                 .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessage("分组/聚合规格的 count 未实现（2.2.3 走子查询计数：" + SnapshotItem.class.getName() + "）");
+                .hasMessage("分组/聚合规格的 count 未实现（需子查询计数：" + SnapshotItem.class.getName() + "）");
     }
 
     @Test
