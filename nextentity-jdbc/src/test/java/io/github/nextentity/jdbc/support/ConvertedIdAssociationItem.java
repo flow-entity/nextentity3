@@ -20,6 +20,11 @@ public class ConvertedIdAssociationItem {
 
     protected ConvertedIdAssociationItem() {}
 
+    public ConvertedIdAssociationItem(Long id, ConvertedIdOwner owner) {
+        this.id = id;
+        this.owner = owner;
+    }
+
     public Long id() {
         return id;
     }

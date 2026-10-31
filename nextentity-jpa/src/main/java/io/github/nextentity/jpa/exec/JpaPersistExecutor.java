@@ -111,7 +111,13 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
         CriteriaBuilder builder = entityManager.getCriteriaBuilder();
         CriteriaUpdate<T> update = builder.createCriteriaUpdate(entityType);
         Root<T> root = update.from(entityType);
-        setValues(entityMeta, entity, update, root, versionValue);
+        if (!setValues(entityMeta, entity, update, root, versionValue)) {
+            // 与 JDBC 后端 WriteSql.update 同口径显式拒绝：空 SET 会被 provider 当成内部错误
+            // （Hibernate 抛 IllegalArgumentException("No assignments specified as part of UPDATE criteria")）。
+            throw new UnsupportedOperationException("实体 " + entityType.getName()
+                    + " 没有可写标量列，update 无法生成 SET 子句：可写标量列都带"
+                    + " @Column(updatable=false)，也没有 @Version 列可以自增；请至少保留一个可更新列");
+        }
         update.where(whereClause(builder, root, id, version, idValue, versionValue));
 
         int affected = entityManager.createQuery(update).executeUpdate();
@@ -147,10 +153,12 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
     /// 单值关联的写法是 `set(root.get(关联), 关联对象)`：Hibernate 从关联对象取 `@Id` 写外键列，
     /// 值为 `null` 时写 `NULL`（JPA 侧 dirty checking 本来就能置空，不为了对齐 JDBC 的
     /// 「null 跳过列」而弱化这里的行为）。
-    private void setValues(
+    /// @return 是否真的写入了至少一条赋值；`false` 表示实体的全部列都不可写（调用方据此显式拒绝）
+    private boolean setValues(
             JpaEntityType<T> entityMeta, T entity, CriteriaUpdate<T> update, Root<T> root, Object versionValue) {
         EntityAttribute id = entityMeta.id();
         EntityAttribute version = entityMeta.version();
+        boolean assigned = false;
         for (Map.Entry<String, EntityAttribute> attribute :
                 entityMeta.attributes().entrySet()) {
             String name = attribute.getKey();
@@ -167,15 +175,18 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
                     continue;
                 }
                 update.set(root.get(name), attribute.getValue().get(entity));
+                assigned = true;
                 continue;
             }
             if (meta.embedded(entityType, name)) {
                 // @Embedded 必须逐叶子列写：整对象 set 会让 Hibernate 展开全部嵌入列，
                 // 连 @Column(updatable = false) 的叶子一起写（3.1.0 的只读列修复漏了这一层）。
-                setEmbedded(
+                assigned |= setEmbedded(
                         update,
                         root.get(name),
                         meta.attributeJavaType(entityType, name),
+                        name,
+                        "",
                         attribute.getValue().get(entity));
                 continue;
             }
@@ -189,7 +200,9 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
                     versionColumn
                             ? nextVersion(versionValue)
                             : attribute.getValue().get(entity));
+            assigned = true;
         }
+        return assigned;
     }
 
     /// 把 `@Embedded` 摊成逐叶子列的 `SET`。
@@ -197,20 +210,56 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
     /// 整对象 `set(root.get(inner), value)` 会被 Hibernate 展开成**全部**嵌入列，`@Column(updatable
     /// = false)` 的叶子也一起进 `SET`（3.1.0 的只读列修复只覆盖了顶层标量）。这里按叶子逐列写：
     /// 只读叶子跳过，嵌入对象整体为 `null` 时可写叶子写 `NULL`，嵌套 `@Embedded` 递归展开。
+    ///
+    /// 只读按**覆盖后的生效列**判（`JpaMeta.embeddedColumnUpdatable`）：覆盖声明在根 `@Embedded`
+    /// 属性上，故 `attribute` 是根属性名、`path` 是从根起的点号路径，嵌套层共用同一份覆盖上下文。
+    /// @return 是否真的写入了至少一条叶子列
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private void setEmbedded(CriteriaUpdate<T> update, Path<?> holder, Class<?> embeddedType, Object value) {
+    private boolean setEmbedded(
+            CriteriaUpdate<T> update,
+            Path<?> holder,
+            Class<?> embeddedType,
+            String attribute,
+            String path,
+            Object value) {
+        boolean assigned = false;
         for (String leaf : meta.attributeNames(embeddedType)) {
             Object leafValue = meta.read(embeddedType, leaf, value);
-            if (meta.embedded(embeddedType, leaf)) {
-                setEmbedded(update, holder.get(leaf), meta.attributeJavaType(embeddedType, leaf), leafValue);
+            String leafPath = path + leaf;
+            if (meta.association(embeddedType, leaf)) {
+                // 嵌入里的单值关联与顶层关联同形处理：按关联对象写本表外键列、null 写 NULL，
+                // 集合关联与 @OneToOne(mappedBy) 反侧（外键不在本表）跳过。
+                if (!meta.owningAssociation(embeddedType, leaf)) {
+                    continue;
+                }
+                if (!meta.embeddedForeignKeyUpdatable(entityType, attribute, leafPath)) {
+                    // 嵌入里的只读外键：字段上的 @JoinColumn(updatable = false)，
+                    // 或实体侧 @AssociationOverride(joinColumns = @JoinColumn(updatable = false)) 覆盖出来的
+                    continue;
+                }
+                update.set((Path) holder.get(leaf), leafValue);
+                assigned = true;
                 continue;
             }
-            if (!meta.scalarUpdatable(embeddedType, leaf)) {
-                // 嵌入内部的 @Column(updatable = false)：写侧跳过，与顶层标量同口径
+            if (meta.embedded(embeddedType, leaf)) {
+                assigned |= setEmbedded(
+                        update,
+                        holder.get(leaf),
+                        meta.attributeJavaType(embeddedType, leaf),
+                        attribute,
+                        leafPath + '.',
+                        leafValue);
+                continue;
+            }
+            if (!meta.embeddedColumnUpdatable(entityType, attribute, leafPath)) {
+                // 嵌入内部的只读列：叶子自己的 @Column(updatable = false)，或实体侧
+                // @AttributeOverride(column = @Column(updatable = false)) 覆盖出来的只读列
                 continue;
             }
             update.set((Path) holder.get(leaf), leafValue);
+            assigned = true;
         }
+        return assigned;
     }
 
     /// 主键条件；有 `@Version` 时再叠一个版本条件（2.2.3 的乐观锁写法）。

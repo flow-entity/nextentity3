@@ -8,6 +8,7 @@ import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
 import io.github.nextentity.jdbc.support.GeneratedItem;
 import io.github.nextentity.jdbc.support.IntegerGeneratedItem;
+import io.github.nextentity.jdbc.support.IntegerVersionedItem;
 import io.github.nextentity.jdbc.support.NullableIdItem;
 import io.github.nextentity.jdbc.support.SnapshotAsset;
 import io.github.nextentity.jdbc.support.SnapshotItem;
@@ -46,6 +47,7 @@ class JdbcPersistExecutorTest {
         execute("delete from generated_item");
         execute("delete from integer_generated_item");
         execute("delete from versioned_item");
+        execute("delete from integer_versioned_item");
         execute("delete from asset");
     }
 
@@ -185,6 +187,21 @@ class JdbcPersistExecutorTest {
         assertThatThrownBy(() -> executor(VersionedItem.class).update(item))
                 .isInstanceOf(OptimisticLockException.class)
                 .hasMessage("实体 " + VersionedItem.class.getName() + " 不存在: id=7, version=5");
+    }
+
+    /// `@Version` 包装类型为 null（实体未加载版本）时，WHERE 必须渲染 NULL 谓词 → 0 行 → 乐观锁异常；
+    /// 若把 null 归一成 0，会静默命中库里 version=0 的行并改写它。
+    @Test
+    void updateWithNullVersionDoesNotMatchStoredZeroVersion() throws SQLException {
+        execute("insert into integer_versioned_item (id, name, version) values (7, 'stored', 0)");
+        IntegerVersionedItem item = new IntegerVersionedItem(7L, "changed");
+
+        assertThatThrownBy(() -> executor(IntegerVersionedItem.class).update(item))
+                .isInstanceOf(OptimisticLockException.class)
+                .hasMessage("实体 " + IntegerVersionedItem.class.getName() + " 不存在: id=7, version=null");
+
+        assertThat(storedIntegerVersionedName(7L)).isEqualTo("stored");
+        assertThat(storedIntegerVersionedVersion(7L)).isZero();
     }
 
     @Test
@@ -340,6 +357,25 @@ class JdbcPersistExecutorTest {
                 ResultSet rows = statement.executeQuery("select name from versioned_item where id = " + id)) {
             assertThat(rows.next()).isTrue();
             return rows.getString(1);
+        }
+    }
+
+    private String storedIntegerVersionedName(long id) throws SQLException {
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement();
+                ResultSet rows = statement.executeQuery("select name from integer_versioned_item where id = " + id)) {
+            assertThat(rows.next()).isTrue();
+            return rows.getString(1);
+        }
+    }
+
+    private int storedIntegerVersionedVersion(long id) throws SQLException {
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement();
+                ResultSet rows =
+                        statement.executeQuery("select version from integer_versioned_item where id = " + id)) {
+            assertThat(rows.next()).isTrue();
+            return rows.getInt(1);
         }
     }
 

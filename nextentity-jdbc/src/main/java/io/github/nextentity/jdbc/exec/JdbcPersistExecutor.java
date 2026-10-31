@@ -74,7 +74,7 @@ public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
         if (id.get(entity) == null) {
             throw new IllegalArgumentException(MISSING_ID + entityType.type().getName());
         }
-        executeUpdate(WriteSql.insert(entityType, entity, dialect));
+        executeUpdate(WriteSql.insert(meta, entityType, entity, dialect));
         writeBackVersion(entity);
     }
 
@@ -132,7 +132,7 @@ public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
     }
 
     private void insertGenerated(T entity, JdbcEntityAttribute id) {
-        SqlStatement statement = WriteSql.insert(entityType, entity, dialect);
+        SqlStatement statement = WriteSql.insert(meta, entityType, entity, dialect);
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement prepared =
                         connection.prepareStatement(statement.sql(), Statement.RETURN_GENERATED_KEYS)) {
@@ -162,7 +162,7 @@ public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
             // 一条 PreparedStatement 只能对应一套列集与参数顺序，混用会让上一行的 FK 值留在参数里。
             batchBySql
                     .computeIfAbsent(
-                            WriteSql.insert(entityType, entity, dialect).sql(), sql -> new ArrayList<>())
+                            WriteSql.insert(meta, entityType, entity, dialect).sql(), sql -> new ArrayList<>())
                     .add(entity);
         }
         batchBySql.forEach(this::executeBatch);
@@ -175,7 +175,8 @@ public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
                 // 同组 SQL 列集一致，仍清一次参数，避免驱动侧残留值被下一行复用。
                 prepared.clearParameters();
                 JdbcExecutor.bind(
-                        prepared, WriteSql.insert(entityType, entity, dialect).parameters());
+                        prepared,
+                        WriteSql.insert(meta, entityType, entity, dialect).parameters());
                 prepared.addBatch();
             }
             prepared.executeBatch();
@@ -190,7 +191,7 @@ public final class JdbcPersistExecutor<T> implements PersistExecutor<T> {
         JdbcEntityAttribute version = entityType.version();
         Object idValue = id.get(entity);
         Object versionValue = version == null ? null : version.get(entity);
-        int affected = executeUpdate(WriteSql.update(entityType, entity, dialect));
+        int affected = executeUpdate(WriteSql.update(meta, entityType, entity, dialect));
         if (affected != 1) {
             String message = "实体 " + entityType.type().getName() + " 不存在: id=" + idValue;
             if (version == null) {

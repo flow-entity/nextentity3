@@ -23,6 +23,10 @@ public class ConvertedIdOwner {
 
     protected ConvertedIdOwner() {}
 
+    public ConvertedIdOwner(Long id) {
+        this.id = id;
+    }
+
     public Long id() {
         return id;
     }

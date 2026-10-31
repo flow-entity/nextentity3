@@ -3,6 +3,7 @@ package io.github.nextentity.jpa.meta;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.nextentity.jpa.entity.BaseRecord;
 import io.github.nextentity.jpa.entity.DerivedRecord;
 import io.github.nextentity.jpa.entity.LabelOnlyEntity;
 import jakarta.persistence.metamodel.Attribute;
@@ -10,6 +11,7 @@ import jakarta.persistence.metamodel.Attribute.PersistentAttributeType;
 import jakarta.persistence.metamodel.EntityType;
 import jakarta.persistence.metamodel.Metamodel;
 import jakarta.persistence.metamodel.SingularAttribute;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.util.Map;
@@ -31,7 +33,7 @@ class JpaEntityTypeTest {
     @Test
     @DisplayName("没有 @Id 属性：IllegalArgumentException，消息点名实体类")
     void rejectsEntityWithoutIdAttribute() {
-        Metamodel metamodel = metamodelWith(attribute("label", false));
+        Metamodel metamodel = metamodelWith(attribute("label", false, field(LabelOnlyEntity.class, "label")));
 
         assertThatThrownBy(() -> JpaEntityType.of(metamodel, LabelOnlyEntity.class))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -41,7 +43,9 @@ class JpaEntityTypeTest {
     @Test
     @DisplayName("对照：属性表里有 isId 的属性时解析正常，id/version 各自归位")
     void acceptsEntityWithIdAttribute() {
-        Metamodel metamodel = metamodelWith(attribute("id", true), attribute("code", false));
+        Metamodel metamodel = metamodelWith(
+                attribute("id", true, field(DerivedRecord.class, "id")),
+                attribute("code", false, field(BaseRecord.class, "code")));
 
         JpaEntityType<DerivedRecord> entityType = JpaEntityType.of(metamodel, DerivedRecord.class);
 
@@ -56,7 +60,15 @@ class JpaEntityTypeTest {
         return stub(Metamodel.class, Map.of("entity", entityType));
     }
 
-    private static SingularAttribute<?, ?> attribute(String name, boolean id) {
+    private static Field field(Class<?> type, String name) {
+        try {
+            return type.getDeclaredField(name);
+        } catch (NoSuchFieldException e) {
+            throw new IllegalStateException("测试夹具里没有字段: " + type.getName() + "." + name, e);
+        }
+    }
+
+    private static SingularAttribute<?, ?> attribute(String name, boolean id, Field member) {
         // `getPersistentAttributeType` 是写侧判定要用的（关联 vs 标量），桩必须如实回答，
         // 否则解析逻辑一碰它就会以「桩未实现」报错——那是桩太瘦，不是被测代码的问题。
         return stub(
@@ -69,7 +81,9 @@ class JpaEntityTypeTest {
                         "isVersion",
                         false,
                         "getPersistentAttributeType",
-                        PersistentAttributeType.BASIC));
+                        PersistentAttributeType.BASIC,
+                        "getJavaMember",
+                        member));
     }
 
     /// 只回答 `answers` 里列出的方法，其余方法一律显式失败：桩若被调用到未预料的方法，

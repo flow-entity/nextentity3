@@ -7,16 +7,23 @@ import io.github.nextentity.jdbc.compile.SqlStatement;
 import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
 import io.github.nextentity.jdbc.support.ColumnFlagsItem;
+import io.github.nextentity.jdbc.support.ConvertedIdAssociationItem;
+import io.github.nextentity.jdbc.support.ConvertedIdOwner;
 import io.github.nextentity.jdbc.support.ConvertedItem;
 import io.github.nextentity.jdbc.support.EmbeddedAddress;
 import io.github.nextentity.jdbc.support.EmbeddedProfile;
+import io.github.nextentity.jdbc.support.EnumIdAssociationItem;
+import io.github.nextentity.jdbc.support.EnumIdOwner;
 import io.github.nextentity.jdbc.support.FlaggedAssociationEntity;
 import io.github.nextentity.jdbc.support.GeneratedItem;
 import io.github.nextentity.jdbc.support.GeneratedOnlyItem;
 import io.github.nextentity.jdbc.support.ItemStatus;
 import io.github.nextentity.jdbc.support.MappedSubclassOwner;
 import io.github.nextentity.jdbc.support.NumbersItem;
+import io.github.nextentity.jdbc.support.OrdinalIdAssociationItem;
+import io.github.nextentity.jdbc.support.OrdinalIdOwner;
 import io.github.nextentity.jdbc.support.OwnsMappedOwner;
+import io.github.nextentity.jdbc.support.ReadOnlyOverrideProfile;
 import io.github.nextentity.jdbc.support.SnapshotAsset;
 import io.github.nextentity.jdbc.support.SnapshotItem;
 import io.github.nextentity.jdbc.support.SnapshotOwner;
@@ -48,7 +55,7 @@ class WriteSqlTest {
     void insertWithoutGeneratedKeyListsEveryScalarColumn() {
         SnapshotItem item = new SnapshotItem(7L, "banana", 10, 20, "n1", ItemStatus.ACTIVE);
 
-        SqlStatement statement = WriteSql.insert(meta.entityType(SnapshotItem.class), item, dialect);
+        SqlStatement statement = WriteSql.insert(meta, meta.entityType(SnapshotItem.class), item, dialect);
 
         assertThat(statement.sql())
                 .isEqualTo("insert into item (id, name, score, score2, note, status) values (?, ?, ?, ?, ?, ?)");
@@ -59,7 +66,7 @@ class WriteSqlTest {
     void insertSkipsGeneratedKeyColumn() {
         GeneratedItem item = new GeneratedItem("generated");
 
-        SqlStatement statement = WriteSql.insert(meta.entityType(GeneratedItem.class), item, dialect);
+        SqlStatement statement = WriteSql.insert(meta, meta.entityType(GeneratedItem.class), item, dialect);
 
         assertThat(statement.sql()).isEqualTo("insert into generated_item (name) values (?)");
         assertThat(statement.parameters()).containsExactly("generated");
@@ -69,7 +76,7 @@ class WriteSqlTest {
     void insertRejectsEntityWithoutInsertableColumnWithActionableMessage() {
         GeneratedOnlyItem item = new GeneratedOnlyItem();
 
-        assertThatThrownBy(() -> WriteSql.insert(meta.entityType(GeneratedOnlyItem.class), item, dialect))
+        assertThatThrownBy(() -> WriteSql.insert(meta, meta.entityType(GeneratedOnlyItem.class), item, dialect))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessageStartingWith("实体 " + GeneratedOnlyItem.class.getName() + " 没有可插入列")
                 .hasMessageContaining("请至少保留一个可插入的标量列")
@@ -81,7 +88,8 @@ class WriteSqlTest {
         FlaggedAssociationEntity entity =
                 new FlaggedAssociationEntity(1L, "f", new SnapshotOwner(2L, "s"), new SnapshotOwner(3L, "l"));
 
-        SqlStatement statement = WriteSql.insert(meta.entityType(FlaggedAssociationEntity.class), entity, dialect);
+        SqlStatement statement =
+                WriteSql.insert(meta, meta.entityType(FlaggedAssociationEntity.class), entity, dialect);
 
         assertThat(statement.sql()).isEqualTo("insert into flagged_association (id, name, locked_id) values (?, ?, ?)");
         assertThat(statement.parameters()).containsExactly(1L, "f", 3L);
@@ -92,7 +100,8 @@ class WriteSqlTest {
         FlaggedAssociationEntity entity =
                 new FlaggedAssociationEntity(1L, "f", new SnapshotOwner(2L, "s"), new SnapshotOwner(3L, "l"));
 
-        SqlStatement statement = WriteSql.update(meta.entityType(FlaggedAssociationEntity.class), entity, dialect);
+        SqlStatement statement =
+                WriteSql.update(meta, meta.entityType(FlaggedAssociationEntity.class), entity, dialect);
 
         assertThat(statement.sql()).isEqualTo("update flagged_association set name=?, skipped_id=? where id=?");
         assertThat(statement.parameters()).containsExactly("f", 2L, 1L);
@@ -102,7 +111,7 @@ class WriteSqlTest {
     void insertSkipsNullAssociationColumn() {
         SnapshotAsset asset = new SnapshotAsset(3L, "bandage", null);
 
-        SqlStatement statement = WriteSql.insert(meta.entityType(SnapshotAsset.class), asset, dialect);
+        SqlStatement statement = WriteSql.insert(meta, meta.entityType(SnapshotAsset.class), asset, dialect);
 
         assertThat(statement.sql()).isEqualTo("insert into asset (id, name) values (?, ?)");
         assertThat(statement.parameters()).containsExactly(3L, "bandage");
@@ -112,7 +121,7 @@ class WriteSqlTest {
     void insertWritesJoinColumnFromAssociationId() {
         SnapshotAsset asset = new SnapshotAsset(3L, "anvil", new SnapshotOwner(1L, "alpha"));
 
-        SqlStatement statement = WriteSql.insert(meta.entityType(SnapshotAsset.class), asset, dialect);
+        SqlStatement statement = WriteSql.insert(meta, meta.entityType(SnapshotAsset.class), asset, dialect);
 
         assertThat(statement.sql()).isEqualTo("insert into asset (id, name, owner_id) values (?, ?, ?)");
         assertThat(statement.parameters()).containsExactly(3L, "anvil", 1L);
@@ -122,7 +131,7 @@ class WriteSqlTest {
     void insertSkipsColumnsMarkedNotInsertable() {
         ColumnFlagsItem item = new ColumnFlagsItem(9L, "flag", "admin");
 
-        SqlStatement statement = WriteSql.insert(meta.entityType(ColumnFlagsItem.class), item, dialect);
+        SqlStatement statement = WriteSql.insert(meta, meta.entityType(ColumnFlagsItem.class), item, dialect);
 
         assertThat(statement.sql()).isEqualTo("insert into column_flags_item (id, name) values (?, ?)");
         assertThat(statement.parameters()).containsExactly(9L, "flag");
@@ -132,7 +141,7 @@ class WriteSqlTest {
     void insertFlattensEmbeddedColumnsWithAttributeOverride() {
         EmbeddedProfile profile = new EmbeddedProfile(5L, new EmbeddedAddress("Yantai", "No. 1"), "home");
 
-        SqlStatement statement = WriteSql.insert(meta.entityType(EmbeddedProfile.class), profile, dialect);
+        SqlStatement statement = WriteSql.insert(meta, meta.entityType(EmbeddedProfile.class), profile, dialect);
 
         assertThat(statement.sql())
                 .isEqualTo("insert into embedded_profile (id, town, address_street, label) values (?, ?, ?, ?)");
@@ -140,10 +149,23 @@ class WriteSqlTest {
     }
 
     @Test
+    void insertSkipsLeafMarkedNotInsertableThroughAttributeOverride() {
+        ReadOnlyOverrideProfile profile =
+                new ReadOnlyOverrideProfile(5L, new EmbeddedAddress("Yantai", "No. 1"), "home");
+
+        SqlStatement statement =
+                WriteSql.insert(meta, meta.entityType(ReadOnlyOverrideProfile.class), profile, dialect);
+
+        assertThat(statement.sql())
+                .isEqualTo("insert into read_only_override_profile (id, home_city, label) values (?, ?, ?)");
+        assertThat(statement.parameters()).containsExactly(5L, "Yantai", "home");
+    }
+
+    @Test
     void insertBindsConvertedColumnThroughAttributeConverter() {
         ConvertedItem item = new ConvertedItem(1L, ItemStatus.DONE, "n");
 
-        SqlStatement statement = WriteSql.insert(meta.entityType(ConvertedItem.class), item, dialect);
+        SqlStatement statement = WriteSql.insert(meta, meta.entityType(ConvertedItem.class), item, dialect);
 
         assertThat(statement.sql()).isEqualTo("insert into converted_item (id, status, note) values (?, ?, ?)");
         assertThat(statement.parameters()).containsExactly(1L, "DONE", "n");
@@ -164,7 +186,7 @@ class WriteSqlTest {
                 new BigDecimal("12.34"),
                 new BigInteger("99"));
 
-        SqlStatement statement = WriteSql.insert(meta.entityType(NumbersItem.class), item, dialect);
+        SqlStatement statement = WriteSql.insert(meta, meta.entityType(NumbersItem.class), item, dialect);
 
         assertThat(statement.sql())
                 .isEqualTo(
@@ -196,7 +218,7 @@ class WriteSqlTest {
         Timestamp sqlTimestamp = Timestamp.valueOf(LocalDateTime.of(2021, 6, 7, 8, 9, 10));
         TimesItem item = new TimesItem(1L, birthDate, createdAt, wakeTime, syncedAt, sqlDate, sqlTime, sqlTimestamp);
 
-        SqlStatement statement = WriteSql.insert(meta.entityType(TimesItem.class), item, dialect);
+        SqlStatement statement = WriteSql.insert(meta, meta.entityType(TimesItem.class), item, dialect);
 
         assertThat(statement.sql())
                 .isEqualTo("insert into times_item (id, birthDate, createdAt, wakeTime, syncedAt, sqlDate, sqlTime,"
@@ -214,10 +236,61 @@ class WriteSqlTest {
     }
 
     @Test
+    void insertConvertsAssociationIdThroughTargetIdColumnMapping() {
+        ConvertedIdAssociationItem item = new ConvertedIdAssociationItem(1L, new ConvertedIdOwner(9L));
+
+        SqlStatement statement =
+                WriteSql.insert(meta, meta.entityType(ConvertedIdAssociationItem.class), item, dialect);
+
+        assertThat(statement.sql()).isEqualTo("insert into converted_id_association (id, owner_id) values (?, ?)");
+        assertThat(statement.parameters()).containsExactly(1L, "9");
+    }
+
+    @Test
+    void updateMatchesConvertedIdThroughItsColumnMapping() {
+        ConvertedIdOwner owner = new ConvertedIdOwner(4L);
+
+        SqlStatement statement = WriteSql.update(meta, meta.entityType(ConvertedIdOwner.class), owner, dialect);
+
+        assertThat(statement.sql()).isEqualTo("update converted_id_owner set name=? where id=?");
+        assertThat(statement.parameters()).containsExactly(null, "4");
+    }
+
+    @Test
+    void updateMatchesEnumIdThroughItsStorageShape() {
+        EnumIdOwner owner = new EnumIdOwner(ItemStatus.DONE);
+
+        SqlStatement statement = WriteSql.update(meta, meta.entityType(EnumIdOwner.class), owner, dialect);
+
+        assertThat(statement.sql()).isEqualTo("update enum_id_owner set name=? where id=?");
+        assertThat(statement.parameters()).containsExactly(null, "DONE");
+    }
+
+    @Test
+    void insertBindsOrdinalEnumAssociationIdAsOrdinal() {
+        OrdinalIdAssociationItem item = new OrdinalIdAssociationItem(1L, new OrdinalIdOwner(ItemStatus.DONE));
+
+        SqlStatement statement = WriteSql.insert(meta, meta.entityType(OrdinalIdAssociationItem.class), item, dialect);
+
+        assertThat(statement.sql()).isEqualTo("insert into ordinal_id_association (id, owner_id) values (?, ?)");
+        assertThat(statement.parameters()).containsExactly(1L, ItemStatus.DONE.ordinal());
+    }
+
+    @Test
+    void insertBindsEnumAssociationIdThroughItsStorageShape() {
+        EnumIdAssociationItem item = new EnumIdAssociationItem(1L, new EnumIdOwner(ItemStatus.ACTIVE));
+
+        SqlStatement statement = WriteSql.insert(meta, meta.entityType(EnumIdAssociationItem.class), item, dialect);
+
+        assertThat(statement.sql()).isEqualTo("insert into enum_id_association (id, owner_id) values (?, ?)");
+        assertThat(statement.parameters()).containsExactly(1L, "ACTIVE");
+    }
+
+    @Test
     void updateSetsScalarColumnsAndMatchesId() {
         SnapshotItem item = new SnapshotItem(7L, "banana", 10, 20, "n1", ItemStatus.DONE);
 
-        SqlStatement statement = WriteSql.update(meta.entityType(SnapshotItem.class), item, dialect);
+        SqlStatement statement = WriteSql.update(meta, meta.entityType(SnapshotItem.class), item, dialect);
 
         assertThat(statement.sql()).isEqualTo("update item set name=?, score=?, score2=?, note=?, status=? where id=?");
         assertThat(statement.parameters()).containsExactly("banana", 10, 20, "n1", "DONE", 7L);
@@ -228,7 +301,7 @@ class WriteSqlTest {
         VersionedItem item = new VersionedItem(7L, "banana");
         item.version(2L);
 
-        SqlStatement statement = WriteSql.update(meta.entityType(VersionedItem.class), item, dialect);
+        SqlStatement statement = WriteSql.update(meta, meta.entityType(VersionedItem.class), item, dialect);
 
         assertThat(statement.sql()).isEqualTo("update versioned_item set name=?, version=? where id=? and version=?");
         assertThat(statement.parameters()).containsExactly("banana", 3L, 7L, 2L);
@@ -239,7 +312,7 @@ class WriteSqlTest {
         VersionedShortItem item = new VersionedShortItem(7L, "banana");
         item.version((short) 2);
 
-        SqlStatement statement = WriteSql.update(meta.entityType(VersionedShortItem.class), item, dialect);
+        SqlStatement statement = WriteSql.update(meta, meta.entityType(VersionedShortItem.class), item, dialect);
 
         assertThat(statement.sql())
                 .isEqualTo("update short_versioned_item set name=?, version=? where id=? and version=?");
@@ -250,7 +323,7 @@ class WriteSqlTest {
     void updateWritesJoinColumnFromAssociationId() {
         SnapshotAsset asset = new SnapshotAsset(3L, "anvil", new SnapshotOwner(1L, "alpha"));
 
-        SqlStatement statement = WriteSql.update(meta.entityType(SnapshotAsset.class), asset, dialect);
+        SqlStatement statement = WriteSql.update(meta, meta.entityType(SnapshotAsset.class), asset, dialect);
 
         assertThat(statement.sql()).isEqualTo("update asset set name=?, owner_id=? where id=?");
         assertThat(statement.parameters()).containsExactly("anvil", 1L, 3L);
@@ -260,7 +333,7 @@ class WriteSqlTest {
     void updateSkipsColumnsMarkedNotUpdatable() {
         ColumnFlagsItem item = new ColumnFlagsItem(9L, "flag", "admin");
 
-        SqlStatement statement = WriteSql.update(meta.entityType(ColumnFlagsItem.class), item, dialect);
+        SqlStatement statement = WriteSql.update(meta, meta.entityType(ColumnFlagsItem.class), item, dialect);
 
         assertThat(statement.sql()).isEqualTo("update column_flags_item set createdBy=? where id=?");
         assertThat(statement.parameters()).containsExactly("admin", 9L);
@@ -270,7 +343,7 @@ class WriteSqlTest {
     void updateFlattensEmbeddedColumns() {
         EmbeddedProfile profile = new EmbeddedProfile(5L, new EmbeddedAddress("Yantai", "No. 1"), "home");
 
-        SqlStatement statement = WriteSql.update(meta.entityType(EmbeddedProfile.class), profile, dialect);
+        SqlStatement statement = WriteSql.update(meta, meta.entityType(EmbeddedProfile.class), profile, dialect);
 
         assertThat(statement.sql())
                 .isEqualTo("update embedded_profile set town=?, address_street=?, label=? where id=?");
@@ -278,10 +351,23 @@ class WriteSqlTest {
     }
 
     @Test
+    void updateSkipsLeafMarkedNotUpdatableThroughAttributeOverride() {
+        ReadOnlyOverrideProfile profile =
+                new ReadOnlyOverrideProfile(5L, new EmbeddedAddress("Yantai", "No. 1"), "home");
+
+        SqlStatement statement =
+                WriteSql.update(meta, meta.entityType(ReadOnlyOverrideProfile.class), profile, dialect);
+
+        assertThat(statement.sql())
+                .isEqualTo("update read_only_override_profile set home_street=?, label=? where id=?");
+        assertThat(statement.parameters()).containsExactly("No. 1", "home", 5L);
+    }
+
+    @Test
     void insertWritesJoinColumnFromIdDeclaredInMappedSuperclass() {
         OwnsMappedOwner entity = new OwnsMappedOwner(3L, new MappedSubclassOwner(7L, "owner"));
 
-        SqlStatement statement = WriteSql.insert(meta.entityType(OwnsMappedOwner.class), entity, dialect);
+        SqlStatement statement = WriteSql.insert(meta, meta.entityType(OwnsMappedOwner.class), entity, dialect);
 
         assertThat(statement.sql()).isEqualTo("insert into owns_mapped_owner (id, owner_id) values (?, ?)");
         assertThat(statement.parameters()).containsExactly(3L, 7L);
@@ -290,7 +376,7 @@ class WriteSqlTest {
     @Test
     void parametersAreImmutableCopy() {
         SnapshotItem item = new SnapshotItem(1L, "a", null, null, null, ItemStatus.NEW);
-        SqlStatement statement = WriteSql.insert(meta.entityType(SnapshotItem.class), item, dialect);
+        SqlStatement statement = WriteSql.insert(meta, meta.entityType(SnapshotItem.class), item, dialect);
 
         assertThat(statement.parameters()).containsExactly(1L, "a", null, null, null, "NEW");
         assertThatThrownBy(() -> statement.parameters().add("x")).isInstanceOf(UnsupportedOperationException.class);

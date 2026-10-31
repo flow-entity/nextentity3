@@ -3,6 +3,7 @@ package io.github.nextentity.jpa.meta;
 import io.github.nextentity.core.meta.EntityAttribute;
 import jakarta.persistence.Column;
 import jakarta.persistence.JoinColumn;
+import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Field;
 import java.util.Objects;
 
@@ -29,12 +30,20 @@ final class JpaEntityAttribute implements EntityAttribute {
     }
 
     JpaEntityAttribute(Class<?> entityType, String name, boolean association) {
+        this(entityType, name, association, null);
+    }
+
+    /// `declared` 是映射声明所在的成员（字段或 getter）：`@Access(PROPERTY)` 的实体把
+    /// `@Column` / `@JoinColumn` 写在 getter 上，字段上没有注解，按 access type 取注解才看得到
+    /// 只读标记；为 `null` 时回落到字段（字段访问实体）。
+    JpaEntityAttribute(Class<?> entityType, String name, boolean association, AnnotatedElement declared) {
         this.name = name;
         this.field = resolveField(Objects.requireNonNull(entityType, "entityType"), name);
         this.association = association;
-        Column column = field.getAnnotation(Column.class);
+        AnnotatedElement annotations = declared == null ? field : declared;
+        Column column = annotations.getAnnotation(Column.class);
         this.columnUpdatable = column == null || column.updatable();
-        JoinColumn joinColumn = field.getAnnotation(JoinColumn.class);
+        JoinColumn joinColumn = annotations.getAnnotation(JoinColumn.class);
         this.joinColumnUpdatable = joinColumn == null || joinColumn.updatable();
     }
 

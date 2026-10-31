@@ -6,6 +6,7 @@ import jakarta.persistence.metamodel.Attribute;
 import jakarta.persistence.metamodel.Attribute.PersistentAttributeType;
 import jakarta.persistence.metamodel.Metamodel;
 import jakarta.persistence.metamodel.SingularAttribute;
+import java.lang.reflect.AnnotatedElement;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -46,7 +47,9 @@ public final class JpaEntityType<T> implements EntityType<T> {
             PersistentAttributeType attributeType = attribute.getPersistentAttributeType();
             boolean association = attributeType == PersistentAttributeType.MANY_TO_ONE
                     || attributeType == PersistentAttributeType.ONE_TO_ONE;
-            EntityAttribute meta = new JpaEntityAttribute(type, attribute.getName(), association);
+            AnnotatedElement declared =
+                    attribute.getJavaMember() instanceof AnnotatedElement annotated ? annotated : null;
+            EntityAttribute meta = new JpaEntityAttribute(type, attribute.getName(), association, declared);
             attributes.put(attribute.getName(), meta);
             if (attribute instanceof SingularAttribute<?, ?> singular) {
                 if (singular.isId()) {

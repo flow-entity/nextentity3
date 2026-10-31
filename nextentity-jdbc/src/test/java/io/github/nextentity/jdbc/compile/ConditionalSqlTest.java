@@ -21,6 +21,7 @@ import io.github.nextentity.jdbc.support.FlaggedAssociationEntity;
 import io.github.nextentity.jdbc.support.IgnoredAssociationItem;
 import io.github.nextentity.jdbc.support.ItemStatus;
 import io.github.nextentity.jdbc.support.QuotedOrder;
+import io.github.nextentity.jdbc.support.ReadOnlyOverrideProfile;
 import io.github.nextentity.jdbc.support.SnapshotAsset;
 import io.github.nextentity.jdbc.support.SnapshotItem;
 import java.util.List;
@@ -248,6 +249,19 @@ class ConditionalSqlTest {
         assertThatThrownBy(() -> ConditionalSql.update(spec, META, entity(ColumnFlagsItem.class), DIALECT))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessage("条件更新不支持 @Column(updatable=false) 列: " + ColumnFlagsItem.class.getName() + ".name");
+    }
+
+    @Test
+    void updateRejectsReadOnlyColumnDeclaredThroughAttributeOverride() {
+        UpdateSpec spec = new UpdateSpec(
+                ReadOnlyOverrideProfile.class,
+                List.of(new Assignment(path(ReadOnlyOverrideProfile.class, "address", "city"), "renamed")),
+                null);
+
+        assertThatThrownBy(() -> ConditionalSql.update(spec, META, entity(ReadOnlyOverrideProfile.class), DIALECT))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessage("条件更新不支持 @Column(updatable=false) 列: " + ReadOnlyOverrideProfile.class.getName()
+                        + ".address.city");
     }
 
     @Test

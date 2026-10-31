@@ -4,6 +4,7 @@ import io.github.nextentity.jdbc.compile.SqlStatement;
 import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.JdbcEntityAttribute;
 import io.github.nextentity.jdbc.meta.JdbcEntityType;
+import io.github.nextentity.jdbc.meta.JdbcMeta;
 import io.github.nextentity.jdbc.meta.JdbcTypes;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -26,12 +27,14 @@ final class WriteSql {
 
     /// `insert into t (a, b) values (?, ?)`：跳过自增主键列与 `insertable=false` 的列；
     /// 关联属性非 `null` 时写 FK 列，`null` 时该列不出现。
-    static SqlStatement insert(JdbcEntityType<?> entityType, Object entity, JdbcDialect dialect) {
+    static SqlStatement insert(JdbcMeta meta, JdbcEntityType<?> entityType, Object entity, JdbcDialect dialect) {
         List<String> columns = new ArrayList<>();
         List<Object> parameters = new ArrayList<>();
         for (JdbcEntityAttribute attribute : entityType.columns()) {
             if (attribute.isAssociation()) {
-                associationColumn(attribute, entity, true, columns, parameters, dialect);
+                if (attribute.isJoinColumnInsertable()) {
+                    associationColumn(meta, attribute, entity, columns, parameters, dialect);
+                }
             } else if (!attribute.isGenerated() && attribute.isColumnInsertable()) {
                 columns.add(identifier(attribute.column(), attribute.isColumnQuoted(), dialect));
                 parameters.add(JdbcTypes.toJdbc(attribute.get(entity), attribute));
@@ -51,98 +54,86 @@ final class WriteSql {
     /// `update t set a=?, b=?, version=? where id=? [and version=?]`：`SET` 列 = 可写标量属性去掉主键与版本，
     /// 版本列固定排在最后并写「旧值 + 1」；版本列同时出现在 `WHERE` 里。
     /// 没有任何可写列且无版本列时显式拒绝（否则会渲染出 `set  where` 这种非法 SQL）。
-    static SqlStatement update(JdbcEntityType<?> entityType, Object entity, JdbcDialect dialect) {
+    static SqlStatement update(JdbcMeta meta, JdbcEntityType<?> entityType, Object entity, JdbcDialect dialect) {
+        List<String> assignments = new ArrayList<>();
         List<Object> parameters = new ArrayList<>();
-        StringBuilder sql = new StringBuilder("update ")
-                .append(identifier(entityType.table(), entityType.isTableQuoted(), dialect))
-                .append(" set ");
+        appendScalars(meta, entityType, entity, assignments, parameters, dialect);
         JdbcEntityAttribute version = entityType.version();
-        boolean empty = appendScalars(entityType, entity, sql, parameters, dialect);
-        if (version == null) {
-            if (empty) {
-                throw new UnsupportedOperationException(
-                        "实体 " + entityType.type().getName()
-                                + " 没有可写标量列，update 无法生成 SET 子句：可写标量列都带"
-                                + " @Column(updatable=false)，也没有 @Version 列可以自增；请至少保留一个可更新列");
-            }
-        } else {
-            if (!empty) {
-                sql.append(", ");
-            }
-            sql.append(identifier(version.column(), version.isColumnQuoted(), dialect))
-                    .append("=?");
+        if (version == null && assignments.isEmpty()) {
+            throw new UnsupportedOperationException("实体 " + entityType.type().getName()
+                    + " 没有可写标量列，update 无法生成 SET 子句：可写标量列都带"
+                    + " @Column(updatable=false)，也没有 @Version 列可以自增；请至少保留一个可更新列");
+        }
+        if (version != null) {
+            assignments.add(identifier(version.column(), version.isColumnQuoted(), dialect) + "=?");
             parameters.add(JdbcTypes.nextVersion(version.get(entity), version.type()));
         }
+        StringBuilder sql = new StringBuilder("update ")
+                .append(identifier(entityType.table(), entityType.isTableQuoted(), dialect))
+                .append(" set ")
+                .append(String.join(", ", assignments));
         JdbcEntityAttribute id = entityType.id();
         sql.append(" where ")
                 .append(identifier(id.column(), id.isColumnQuoted(), dialect))
                 .append("=?");
-        parameters.add(id.get(entity));
+        parameters.add(JdbcTypes.toJdbc(id.get(entity), id));
         if (version != null) {
             sql.append(" and ")
                     .append(identifier(version.column(), version.isColumnQuoted(), dialect))
                     .append("=?");
-            parameters.add(version.get(entity));
+            // WHERE 是谓词：version 为 null 必须保持 NULL（0 行 → 乐观锁异常），不能沿用写侧 null→0 的归一。
+            parameters.add(JdbcTypes.toLiteral(version.get(entity), version));
         }
         return new SqlStatement(sql.toString(), parameters, List.of());
     }
 
-    /// 追加 `SET` 的标量列（跳过主键、版本与 `updatable=false`），返回「一个都没追加」。
-    private static boolean appendScalars(
+    /// 追加 `SET` 的赋值（跳过主键、版本与 `updatable=false`）。
+    private static void appendScalars(
+            JdbcMeta meta,
             JdbcEntityType<?> entityType,
             Object entity,
-            StringBuilder sql,
+            List<String> assignments,
             List<Object> parameters,
             JdbcDialect dialect) {
-        boolean empty = true;
         for (JdbcEntityAttribute attribute : entityType.columns()) {
+            List<String> columns = new ArrayList<>();
+            List<Object> values = new ArrayList<>();
             if (attribute.isAssociation()) {
-                List<String> columns = new ArrayList<>();
-                List<Object> values = new ArrayList<>();
-                associationColumn(attribute, entity, false, columns, values, dialect);
-                if (!columns.isEmpty()) {
-                    if (!empty) {
-                        sql.append(", ");
-                    }
-                    sql.append(columns.getFirst()).append("=?");
-                    parameters.add(values.getFirst());
-                    empty = false;
+                if (attribute.isJoinColumnUpdatable()) {
+                    associationColumn(meta, attribute, entity, columns, values, dialect);
                 }
-                continue;
+            } else if (!attribute.isId() && !attribute.isVersion() && attribute.isColumnUpdatable()) {
+                columns.add(identifier(attribute.column(), attribute.isColumnQuoted(), dialect));
+                values.add(JdbcTypes.toJdbc(attribute.get(entity), attribute));
             }
-            if (attribute.isId() || attribute.isVersion() || !attribute.isColumnUpdatable()) {
-                continue;
+            if (!columns.isEmpty()) {
+                assignments.add(columns.getFirst() + "=?");
+                parameters.add(values.getFirst());
             }
-            if (!empty) {
-                sql.append(", ");
-            }
-            sql.append(identifier(attribute.column(), attribute.isColumnQuoted(), dialect))
-                    .append("=?");
-            parameters.add(JdbcTypes.toJdbc(attribute.get(entity), attribute));
-            empty = false;
         }
-        return empty;
     }
 
-    /// FK 列的写入形态：`insertable/updatable=false` → 跳过；关联对象 `null` → 跳过列；
-    /// 否则列名 + 关联对象 `@Id` 值。返回「是否追加了一列」。
-    private static boolean associationColumn(
+    /// FK 列的写入形态：关联对象 `null` → 跳过列；否则列名 + 关联对象 `@Id` 值
+    /// （按目标 `@Id` 的列映射归一，与条件写 `关联.id` 逐字一致）。
+    /// `@JoinColumn(insertable/updatable=false)` 的判定在调用方（`insert` / `appendScalars`）做。
+    private static void associationColumn(
+            JdbcMeta meta,
             JdbcEntityAttribute attribute,
             Object entity,
-            boolean insert,
             List<String> columns,
             List<Object> parameters,
             JdbcDialect dialect) {
-        if (insert ? !attribute.isJoinColumnInsertable() : !attribute.isJoinColumnUpdatable()) {
-            return false;
-        }
         Object associated = attribute.get(entity);
         if (associated == null) {
-            return false;
+            return;
         }
+        JdbcEntityAttribute foreignKey = JdbcEntityAttribute.foreignKey(
+                meta.entityType(attribute.associationTarget()).id(),
+                attribute.joinColumn(),
+                attribute.isJoinColumnQuoted(),
+                attribute.isJoinColumnUpdatable());
         columns.add(identifier(attribute.joinColumn(), attribute.isJoinColumnQuoted(), dialect));
-        parameters.add(attribute.associatedId(associated));
-        return true;
+        parameters.add(JdbcTypes.toJdbc(attribute.associatedId(associated), foreignKey));
     }
 
     /// 标识符：quoted 时过方言引用，否则裸名。

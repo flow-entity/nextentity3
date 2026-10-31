@@ -1,6 +1,7 @@
 package io.github.nextentity.jdbc.meta;
 
 import jakarta.persistence.AttributeOverride;
+import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Embeddable;
 import jakarta.persistence.Embedded;
@@ -35,7 +36,7 @@ final class JdbcEmbedded {
                     "@Embedded 目标缺少 @Embeddable: " + path + ": " + embeddable.getName());
         }
         Constructor<?> constructor = constructor(embeddable, path);
-        Map<String, String> overrides = overrides(field, path);
+        Map<String, Column> overrides = overrides(field, path);
         List<JdbcEntityAttribute> columns = new ArrayList<>();
         for (Field nested : embeddable.getDeclaredFields()) {
             if (JdbcColumns.excluded(nested)) {
@@ -61,9 +62,10 @@ final class JdbcEmbedded {
         }
     }
 
-    /// `@AttributeOverride` → 嵌套字段名到列名；嵌套路径（`a.b`）本轮不支持。
-    private static Map<String, String> overrides(Field field, String path) {
-        Map<String, String> overrides = new HashMap<>();
+    /// `@AttributeOverride` → 嵌套字段名到整份列映射（列名与 `insertable` / `updatable` 都以覆盖为准）；嵌套路径
+    /// （`a.b`）本轮不支持。
+    private static Map<String, Column> overrides(Field field, String path) {
+        Map<String, Column> overrides = new HashMap<>();
         for (AttributeOverride override : field.getAnnotationsByType(AttributeOverride.class)) {
             String name = override.name();
             if (name.isEmpty()) {
@@ -72,7 +74,7 @@ final class JdbcEmbedded {
             if (name.indexOf('.') >= 0) {
                 throw new UnsupportedOperationException("嵌套 @AttributeOverride 未支持: " + path + "." + name);
             }
-            overrides.put(name, override.column().name());
+            overrides.put(name, override.column());
         }
         return overrides;
     }

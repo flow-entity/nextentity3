@@ -30,10 +30,10 @@ final class JdbcColumns {
         return scalar(type, field, path, null, field.getName());
     }
 
-    /// 嵌入列的重载：`overrideColumn` 来自 `@AttributeOverride`（优先），`defaultColumn` 是 JPA 默认命名
-    /// `<@Embedded 字段名>_<嵌套字段名>`；两者都缺时回落 `@Column(name)` / 字段名。
+    /// 嵌入列的重载：`overrideColumn` 来自 `@AttributeOverride`（优先，整份列映射替换），`defaultColumn` 是 JPA
+    /// 默认命名 `<@Embedded 字段名>_<嵌套字段名>`；两者都缺时回落 `@Column(name)` / 字段名。
     static JdbcEntityAttribute scalar(
-            Class<?> type, Field field, String path, String overrideColumn, String defaultColumn) {
+            Class<?> type, Field field, String path, Column overrideColumn, String defaultColumn) {
         boolean id = field.isAnnotationPresent(Id.class);
         boolean version = field.isAnnotationPresent(Version.class);
         boolean generated = id && field.isAnnotationPresent(GeneratedValue.class);
@@ -47,7 +47,7 @@ final class JdbcColumns {
         if (converter == null) {
             rejectColumnType(field, path);
         }
-        Column flags = field.getAnnotation(Column.class);
+        Column flags = overrideColumn != null ? overrideColumn : field.getAnnotation(Column.class);
         ColumnName column = columnName(field, path, overrideColumn, defaultColumn);
         return new JdbcEntityAttribute(
                 field,
@@ -232,9 +232,9 @@ final class JdbcColumns {
     private record Converter(AttributeConverter<Object, Object> converter, Class<?> databaseType) {}
 
     /// 列名：`@AttributeOverride` 优先，其次 `@Column(name)`（剥反引号），都没有时用默认命名。
-    private static ColumnName columnName(Field field, String path, String overrideColumn, String defaultColumn) {
+    private static ColumnName columnName(Field field, String path, Column overrideColumn, String defaultColumn) {
         Column column = field.getAnnotation(Column.class);
-        String raw = overrideColumn != null ? overrideColumn : column == null ? "" : column.name();
+        String raw = overrideColumn != null ? overrideColumn.name() : column == null ? "" : column.name();
         String name = JdbcNames.bare(raw, path);
         if (name.isEmpty()) {
             return new ColumnName(defaultColumn, false);

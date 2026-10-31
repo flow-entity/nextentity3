@@ -12,11 +12,17 @@ import io.github.nextentity.jdbc.compile.JdbcQuery;
 import io.github.nextentity.jdbc.dialect.H2Dialect;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
 import io.github.nextentity.jdbc.support.ItemStatus;
+import io.github.nextentity.jdbc.support.ItemStatusConverter;
 import io.github.nextentity.jdbc.support.SnapshotAsset;
 import io.github.nextentity.jdbc.support.SnapshotItem;
 import io.github.nextentity.jdbc.support.SnapshotOwner;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Embeddable;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
@@ -54,6 +60,8 @@ class RowReaderTest {
         execute("create table if not exists instant_item (id bigint primary key, created_at timestamp)");
         execute("create table if not exists status_owner (id bigint primary key, status int)");
         execute("create table if not exists owns_status_owner (id bigint primary key, owner_id bigint)");
+        execute("create table if not exists embedded_item (id bigint primary key,"
+                + " details_status varchar(32), details_converted varchar(32))");
         execute("delete from asset");
         execute("delete from owner");
         execute("delete from item");
@@ -71,6 +79,8 @@ class RowReaderTest {
         execute("delete from status_owner");
         execute("insert into status_owner (id, status) values (1, 2)");
         execute("insert into owns_status_owner (id, owner_id) values (1, 1)");
+        execute("delete from embedded_item");
+        execute("insert into embedded_item (id, details_status, details_converted) values (1, 'DONE', 'ACTIVE')");
     }
 
     private QueryBuilder<SnapshotItem, JdbcQuery> items() {
@@ -169,6 +179,20 @@ class RowReaderTest {
                 .list();
 
         assertThat(statuses).containsExactly(ItemStatus.DONE);
+    }
+
+    @Test
+    void embeddedLeafProjectionsConvertEnumsAndConverters() {
+        EntityPath<EmbeddedItem, Details> details = EntityPath.of(EmbeddedItem::details);
+
+        assertThat(new QueryBuilder<>(meta.entityType(EmbeddedItem.class), compiler, executor)
+                        .select(details.get(Details::status))
+                        .list())
+                .containsExactly(ItemStatus.DONE);
+        assertThat(new QueryBuilder<>(meta.entityType(EmbeddedItem.class), compiler, executor)
+                        .select(details.get(Details::converted))
+                        .list())
+                .containsExactly(ItemStatus.ACTIVE);
     }
 
     @Test
@@ -287,6 +311,44 @@ class RowReaderTest {
 
         long version() {
             return version;
+        }
+    }
+
+    @Entity
+    @Table(name = "embedded_item")
+    static class EmbeddedItem {
+
+        @Id
+        private Long id;
+
+        @Embedded
+        private Details details;
+
+        protected EmbeddedItem() {}
+
+        Details details() {
+            return details;
+        }
+    }
+
+    /// 嵌入类型里的枚举列与 `@Convert` 列：读回时必须与实体行装配走同一套反转换。
+    @Embeddable
+    static class Details {
+
+        @Enumerated(EnumType.STRING)
+        private ItemStatus status;
+
+        @Convert(converter = ItemStatusConverter.class)
+        private ItemStatus converted;
+
+        protected Details() {}
+
+        ItemStatus status() {
+            return status;
+        }
+
+        ItemStatus converted() {
+            return converted;
         }
     }
 

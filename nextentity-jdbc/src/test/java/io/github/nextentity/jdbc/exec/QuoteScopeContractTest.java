@@ -49,12 +49,12 @@ class QuoteScopeContractTest {
         JdbcEntityType<SnapshotItem> type = meta.entityType(SnapshotItem.class);
         SnapshotItem item = new SnapshotItem(1L, "apple", 10, 10, null, ItemStatus.NEW);
 
-        SqlStatement insert = WriteSql.insert(type, item, quoting);
+        SqlStatement insert = WriteSql.insert(meta, type, item, quoting);
         assertThat(insert.sql())
                 .isEqualTo("insert into item (id, name, score, score2, note, status) values (?, ?, ?, ?, ?, ?)");
         assertThat(insert.sql()).doesNotContain("\"");
 
-        SqlStatement update = WriteSql.update(type, item, quoting);
+        SqlStatement update = WriteSql.update(meta, type, item, quoting);
         assertThat(update.sql()).isEqualTo("update item set name=?, score=?, score2=?, note=?, status=? where id=?");
         assertThat(update.sql()).doesNotContain("\"");
     }

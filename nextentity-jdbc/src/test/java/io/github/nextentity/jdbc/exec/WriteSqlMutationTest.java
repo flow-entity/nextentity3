@@ -43,7 +43,7 @@ class WriteSqlMutationTest {
     @Test
     void insertBindsZeroForNullLongVersion() {
         JdbcEntityType<VersionedItem> entityType = meta.entityType(VersionedItem.class);
-        SqlStatement statement = WriteSql.insert(entityType, new VersionedItem(1L, "a"), dialect);
+        SqlStatement statement = WriteSql.insert(meta, entityType, new VersionedItem(1L, "a"), dialect);
 
         assertThat(statement.parameters()).containsExactly(1L, "a", 0L);
     }
@@ -51,7 +51,7 @@ class WriteSqlMutationTest {
     @Test
     void insertBindsZeroForNullIntegerVersion() {
         JdbcEntityType<IntegerVersionedItem> entityType = meta.entityType(IntegerVersionedItem.class);
-        SqlStatement statement = WriteSql.insert(entityType, new IntegerVersionedItem(2L, "b"), dialect);
+        SqlStatement statement = WriteSql.insert(meta, entityType, new IntegerVersionedItem(2L, "b"), dialect);
 
         assertThat(statement.parameters()).containsExactly(2L, "b", 0);
     }
@@ -60,7 +60,7 @@ class WriteSqlMutationTest {
     void insertBindsIntegerZeroForNullPrimitiveIntVersion() {
         JdbcEntityType<PrimitiveIntVersionItem> entityType = meta.entityType(PrimitiveIntVersionItem.class);
 
-        SqlStatement statement = WriteSql.insert(entityType, new PrimitiveIntVersionItem(1L, "a"), dialect);
+        SqlStatement statement = WriteSql.insert(meta, entityType, new PrimitiveIntVersionItem(1L, "a"), dialect);
 
         assertThat(statement.parameters()).containsExactly(1L, "a", 0);
         assertThat(statement.parameters().get(2)).isInstanceOf(Integer.class);
@@ -70,7 +70,7 @@ class WriteSqlMutationTest {
     void insertBindsLongZeroForNullPrimitiveLongVersion() {
         JdbcEntityType<VersionedItem> entityType = meta.entityType(VersionedItem.class);
 
-        SqlStatement statement = WriteSql.insert(entityType, new VersionedItem(2L, "b"), dialect);
+        SqlStatement statement = WriteSql.insert(meta, entityType, new VersionedItem(2L, "b"), dialect);
 
         assertThat(statement.parameters()).containsExactly(2L, "b", 0L);
         assertThat(statement.parameters().get(2)).isInstanceOf(Long.class);

@@ -125,7 +125,8 @@ public interface JdbcDialect {
         return "";
     }
 
-    /// `length` 函数形态：默认 `length(x)`（H2 / MySQL / PostgreSQL 同形）。
+    /// `length` 函数形态：默认 `length(x)`（H2 / PostgreSQL 为字符数）。MySQL 的 `length` 是字节数，
+    /// 由 `MySqlDialect` 覆写成 `char_length(x)`；SQL Server 覆写成 `len(x)`（裁尾随空格，已披露）。
     ///
     /// @param operand 已渲染的字符串操作数
     /// @return LENGTH 表达式

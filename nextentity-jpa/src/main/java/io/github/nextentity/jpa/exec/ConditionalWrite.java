@@ -131,14 +131,15 @@ final class ConditionalWrite<T> {
         return root.get(name);
     }
 
-    /// `嵌入属性.叶子`：`@Embedded` 摊在本表的列；`嵌入属性.嵌入属性` 是整块赋值，显式拒绝。
+    /// `嵌入属性.叶子`：`@Embedded` 摊在本表的列；`嵌入属性.嵌入属性` 是整块赋值、
+    /// `嵌入属性.关联对象` 是关联整体赋值，都不是一列，显式拒绝。
     private Path<?> embeddedLeafTarget(Root<?> root, AttributePath path, String first, String second) {
         Class<?> embeddedType = meta.attributeJavaType(path.entityType(), first);
-        if (meta.embedded(embeddedType, second)) {
-            // 「嵌入属性.嵌入属性」是整块赋值，不是列
+        if (meta.embedded(embeddedType, second) || meta.association(embeddedType, second)) {
+            // 「嵌入属性.嵌入属性」/「嵌入属性.关联对象」都是整块赋值，不是列
             throw targetNotColumn(path);
         }
-        requireUpdatable(meta.scalarUpdatable(embeddedType, second), path);
+        requireUpdatable(meta.embeddedColumnUpdatable(path.entityType(), first, second), path);
         return root.get(first).get(second);
     }
 

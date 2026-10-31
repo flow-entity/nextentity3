@@ -1,5 +1,7 @@
 package io.github.nextentity.jpa.meta;
 
+import jakarta.persistence.AssociationOverride;
+import jakarta.persistence.AttributeOverride;
 import jakarta.persistence.Column;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.JoinColumn;
@@ -12,7 +14,9 @@ import jakarta.persistence.metamodel.SingularAttribute;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Member;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -152,6 +156,105 @@ public final class JpaMeta {
         return joinColumn == null || joinColumn.updatable();
     }
 
+    /// 嵌入叶子列是否可写：叶子自身的 `@Column(updatable = false)` 与实体侧
+    /// `@AttributeOverride(column = @Column(updatable = false))` 覆盖出来的只读列，任一命中即不可写。
+    ///
+    /// 生效映射可能来自覆盖而不是 `@Embeddable` 里的字段声明（`@Embeddable` 常常完全不带列注解），
+    /// 只读判定必须看覆盖后的那一列，否则写侧会把只读列写进 `SET`、条件更新会放行。
+    ///
+    /// @param ownerType 持有 `@Embedded` 属性的 type，非 `null`
+    /// @param attribute `@Embedded` 属性名
+    /// @param path      嵌入内的叶子路径（点号分隔，如 `city` / `detail.code`），非 `null`
+    /// @return 可写返回 `true`；属性不存在时按可写处理（与 `scalarUpdatable` 同口径）
+    public boolean embeddedColumnUpdatable(Class<?> ownerType, String attribute, String path) {
+        Column column = embeddedColumn(ownerType, attribute, path);
+        return column == null || column.updatable();
+    }
+
+    /// 嵌入叶子（关联外键）列是否可写：叶子自身的 `@JoinColumn(updatable = false)` 与实体侧
+    /// `@AssociationOverride(joinColumns = @JoinColumn(updatable = false))` 覆盖出来的只读外键，
+    /// 任一命中即不可写。
+    ///
+    /// @param ownerType 持有 `@Embedded` 属性的 type，非 `null`
+    /// @param attribute `@Embedded` 属性名
+    /// @param path      嵌入内的叶子路径（点号分隔），非 `null`
+    /// @return 可写返回 `true`；属性不存在时按可写处理（与 `foreignKeyUpdatable` 同口径）
+    public boolean embeddedForeignKeyUpdatable(Class<?> ownerType, String attribute, String path) {
+        JoinColumn joinColumn = embeddedJoinColumn(ownerType, attribute, path);
+        return joinColumn == null || joinColumn.updatable();
+    }
+
+    /// 取嵌入叶子生效的 `@Column`：覆盖声明优先（外层属性上的点号名，或内层 `@Embedded` 属性上的
+    /// 直接名），都没有才回落到叶子字段自己的注解。
+    private Column embeddedColumn(Class<?> ownerType, String attribute, String path) {
+        Attribute<?, ?> holder = attribute(ownerType, attribute);
+        if (holder == null) {
+            return null;
+        }
+        Column override = attributeOverride(holder, path);
+        if (override != null) {
+            return override;
+        }
+        int separator = path.indexOf('.');
+        if (separator > 0) {
+            String head = path.substring(0, separator);
+            return embeddedColumn(holder.getJavaType(), head, path.substring(separator + 1));
+        }
+        Attribute<?, ?> leaf = attribute(holder.getJavaType(), path);
+        return leaf == null ? null : annotation(leaf, Column.class);
+    }
+
+    /// 取嵌入叶子生效的 `@JoinColumn`：同 `embeddedColumn`，覆盖来源是 `@AssociationOverride`。
+    private JoinColumn embeddedJoinColumn(Class<?> ownerType, String attribute, String path) {
+        Attribute<?, ?> holder = attribute(ownerType, attribute);
+        if (holder == null) {
+            return null;
+        }
+        JoinColumn override = associationOverride(holder, path);
+        if (override != null) {
+            return override;
+        }
+        int separator = path.indexOf('.');
+        if (separator > 0) {
+            String head = path.substring(0, separator);
+            return embeddedJoinColumn(holder.getJavaType(), head, path.substring(separator + 1));
+        }
+        Attribute<?, ?> leaf = attribute(holder.getJavaType(), path);
+        return leaf == null ? null : annotation(leaf, JoinColumn.class);
+    }
+
+    /// 在属性声明的成员（字段 / getter）上找名字匹配的 `@AttributeOverride`，取它声明的列。
+    ///
+    /// 用 `getAnnotationsByType` 而不是 `getAnnotation`：容器注解（`@AttributeOverrides`）也会被它
+    /// 一并展开，不用手写两套读取。
+    private static Column attributeOverride(Attribute<?, ?> holder, String name) {
+        for (AttributeOverride override : overrides(holder, AttributeOverride.class)) {
+            if (override.name().equals(name)) {
+                return override.column();
+            }
+        }
+        return null;
+    }
+
+    /// 在属性声明的成员上找名字匹配的 `@AssociationOverride`，取它声明的外键列。
+    private static JoinColumn associationOverride(Attribute<?, ?> holder, String name) {
+        for (AssociationOverride override : overrides(holder, AssociationOverride.class)) {
+            if (override.name().equals(name) && override.joinColumns().length > 0) {
+                return override.joinColumns()[0];
+            }
+        }
+        return null;
+    }
+
+    /// 取属性声明成员上的指定类型注解（容器注解已展开）；成员不可注解时返回空清单。
+    private static <A extends Annotation> List<A> overrides(Attribute<?, ?> holder, Class<A> type) {
+        Member member = holder.getJavaMember();
+        if (!(member instanceof AnnotatedElement annotated)) {
+            return List.of();
+        }
+        return List.of(annotated.getAnnotationsByType(type));
+    }
+
     /// 取目标实体的 `@Id` 属性名。
     ///
     /// 条件更新允许「关联.`@Id` 属性名」形态的 SET 目标（写本表外键列），判定要拿目标实体的
@@ -202,26 +305,34 @@ public final class JpaMeta {
     /// `holder` 为 `null`（嵌入对象整体为 `null`）时返回 `null`：调用方据此把可写叶子写成
     /// `NULL`，与 Hibernate 整对象 `set` 时的展开结果一致。
     ///
+    /// 按映射声明所在成员读：字段访问实体读字段，`@Access(PROPERTY)` 实体读 getter——后者字段上
+    /// 没有映射声明，只认字段会让嵌入属性取值直接失败。
+    ///
     /// @param managedType 当前所在 managed type，非 `null`
     /// @param attribute   属性名
     /// @param holder      属性所在对象，可为 `null`
     /// @return 属性值，可能为 `null`
-    /// @throws IllegalArgumentException 属性不存在或不是字段映射
+    /// @throws IllegalArgumentException 属性不存在或映射成员既不是字段也不是 getter
     /// @throws IllegalStateException    反射读取失败
     public Object read(Class<?> managedType, String attribute, Object holder) {
         if (holder == null) {
             return null;
         }
         Attribute<?, ?> resolved = attribute(managedType, attribute);
-        if (resolved == null || !(resolved.getJavaMember() instanceof Field field)) {
-            throw new IllegalArgumentException("类型 " + managedType.getName() + " 上找不到可读字段 " + attribute);
-        }
-        field.setAccessible(true);
+        Member member = resolved == null ? null : resolved.getJavaMember();
         try {
-            return field.get(holder);
-        } catch (IllegalAccessException e) {
-            throw new IllegalStateException("读取字段失败: " + field, e);
+            if (member instanceof Field field) {
+                field.setAccessible(true);
+                return field.get(holder);
+            }
+            if (member instanceof Method getter) {
+                getter.setAccessible(true);
+                return getter.invoke(holder);
+            }
+        } catch (IllegalAccessException | InvocationTargetException e) {
+            throw new IllegalStateException("读取属性失败: " + managedType.getName() + "." + attribute, e);
         }
+        throw new IllegalArgumentException("类型 " + managedType.getName() + " 上找不到可读字段 " + attribute);
     }
 
     /// 按名字取元模型属性；不存在返回 `null`。

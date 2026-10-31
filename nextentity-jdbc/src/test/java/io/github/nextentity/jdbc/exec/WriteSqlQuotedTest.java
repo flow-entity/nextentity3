@@ -26,7 +26,7 @@ class WriteSqlQuotedTest {
     void quotedTableAndColumnsAreQuotedOnInsert() {
         JdbcEntityType<QuotedOrder> type = meta.entityType(QuotedOrder.class);
 
-        SqlStatement statement = WriteSql.insert(type, new QuotedOrder("one", 11), dialect);
+        SqlStatement statement = WriteSql.insert(meta, type, new QuotedOrder("one", 11), dialect);
 
         assertThat(statement.sql()).isEqualTo("insert into \"order\" (\"desc\", \"key\") values (?, ?)");
         assertThat(statement.parameters()).containsExactly("one", 11);
@@ -38,7 +38,7 @@ class WriteSqlQuotedTest {
         QuotedOrder order = new QuotedOrder("two", 22);
         order.id = 3L;
 
-        SqlStatement statement = WriteSql.update(type, order, dialect);
+        SqlStatement statement = WriteSql.update(meta, type, order, dialect);
 
         assertThat(statement.sql()).isEqualTo("update \"order\" set \"desc\"=?, \"key\"=? where \"id\"=?");
         assertThat(statement.parameters()).containsExactly("two", 22, 3L);
@@ -49,7 +49,7 @@ class WriteSqlQuotedTest {
         JdbcEntityType<SnapshotItem> type = meta.entityType(SnapshotItem.class);
         SnapshotItem item = new SnapshotItem(1L, "apple", 10, 10, null, null);
 
-        SqlStatement insert = WriteSql.insert(type, item, dialect);
+        SqlStatement insert = WriteSql.insert(meta, type, item, dialect);
 
         assertThat(insert.sql())
                 .isEqualTo("insert into item (id, name, score, score2, note, status) values (?, ?, ?, ?, ?, ?)");
@@ -99,7 +99,7 @@ class WriteSqlQuotedTest {
         JdbcEntityType<QuotedVersioned> type = meta.entityType(QuotedVersioned.class);
         QuotedVersioned entity = new QuotedVersioned(5L, "value", 2L);
 
-        SqlStatement statement = WriteSql.update(type, entity, dialect);
+        SqlStatement statement = WriteSql.update(meta, type, entity, dialect);
 
         assertThat(statement.sql())
                 .isEqualTo("update versioned_quoted set name=?, \"version\"=? where \"id\"=? and \"version\"=?");
@@ -111,7 +111,7 @@ class WriteSqlQuotedTest {
         JdbcEntityType<MixedQuotedVersion> type = meta.entityType(MixedQuotedVersion.class);
         MixedQuotedVersion entity = new MixedQuotedVersion(7L, "value", 4L);
 
-        SqlStatement statement = WriteSql.update(type, entity, dialect);
+        SqlStatement statement = WriteSql.update(meta, type, entity, dialect);
 
         assertThat(statement.sql())
                 .isEqualTo("update mixed_quoted_version set name=?, version=? where \"id\"=? and version=?");

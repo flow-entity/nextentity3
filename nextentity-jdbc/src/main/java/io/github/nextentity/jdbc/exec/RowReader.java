@@ -86,10 +86,16 @@ final class RowReader {
     private JdbcEntityAttribute resolve(AttributePath path) {
         JdbcEntityType<?> current = meta.entityType(path.entityType());
         JdbcEntityAttribute attribute = null;
-        for (String name : path.names()) {
-            attribute = current.attribute(name);
+        List<String> names = path.names();
+        for (int i = 0; i < names.size(); i++) {
+            attribute = current.attribute(names.get(i));
             if (attribute == null) {
                 return null;
+            }
+            if (attribute.isEmbedded()) {
+                // 嵌入列已扁平化：叶子只支持 `外层属性.嵌入字段` 两段，与 compile/SqlPaths#embedded 同规则
+                // （三段路径在编译期就被拒，这里不会静默截断）。
+                return i + 1 < names.size() ? attribute.embeddedColumn(names.get(i + 1)) : null;
             }
             if (attribute.isAssociation() && attribute.joinColumn() != null) {
                 current = meta.entityType(attribute.associationTarget());
