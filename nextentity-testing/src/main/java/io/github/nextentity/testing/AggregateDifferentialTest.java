@@ -40,7 +40,7 @@ import org.junit.jupiter.api.TestFactory;
 ///   `count(列)` 是 `0`——夹具里 `note=n2` 组的 `score2` 整列为空，钉住这条语义；
 /// - 无行时同理：`count` 是 `0`，其余是 `null`（见 {@link EmptyAggregateConsistencyTest}）。
 ///
-/// **返回类型（实测，不是照文档抄）**：H2 `MODE=MySQL` 与 MySQL 8.0.18 逐格一致。
+/// **返回类型（实测）**：H2 `MODE=MySQL` 与 MySQL 8.0.18 逐格一致。
 /// ```text
 /// count(id) / count(score)  → Long     2 / 1
 /// sum(score)                → Integer  10        （列是 Integer；API 的 sum() 返回 AggregateValue<T,U>，U 即列类型）
@@ -48,7 +48,7 @@ import org.junit.jupiter.api.TestFactory;
 /// min(score) / max(score)   → Integer  10 / 10
 /// 全 NULL 组的 sum/avg/min/max → null（Java 侧就是 null，不是 0、不是 Double.NaN）
 /// ```
-/// 三个会踩的坑，写在这里省一次调试（都是实测，不是照文档抄）：
+/// 三个会踩的坑，写在这里省一次调试（都是实测）：
 /// - `sum()` 的静态类型跟着列走（`Integer` 列 → `Integer`），**不是** `Long`/`BigDecimal`；
 ///   方言的 `SUM(int)` 在 SQL 层是 `BIGINT`，但结果被收回成 `Integer`。
 ///   溢出时**不会**静默回绕，而是抛 `org.hibernate.exception.DataException`（实测两行各 20 亿）：

@@ -126,7 +126,7 @@ public final class JpaMeta {
     /// 嵌入路径解析器：`select(Dto.class)` 的嵌平列靠它把 DTO 属性名回找成多段路径。
     ///
     /// 独立成类而不是塞在这里：回找是「列名 → 多段路径」的独立算法，且本类的 PMD 圈复杂度
-    /// 已贴着类上限（60，见根 pom 的 PMD 配置）。
+    /// 已贴着类上限（60）。
     ///
     /// @return 嵌入路径解析器，应用级共享（只读元模型，线程安全）
     public JpaEmbeddedPaths embeddedPaths() {

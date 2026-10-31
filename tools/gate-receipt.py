@@ -44,7 +44,7 @@ FRESH_TOLERANCE = 0.0
 ALLOWED_BASELINE_FIELDS = ("type", "issue", "expires")
 
 #: 预期失败基线条目的最长租约（天）。没有上限的 `expires=2099-12-31` 等于永久豁免，
-#: 与 AGENTS.md「禁用要有租约」同一条理由：期限长到看不见就等于没有期限。
+#: 与禁用租约同一条理由：期限长到看不见就等于没有期限。
 MAX_BASELINE_LEASE_DAYS = 180
 
 #: 等价变异台账的必填字段。等价变异不是「杀不死就算了」——每条都要写出**为什么杀不死**
@@ -76,7 +76,7 @@ def _scan_xml_reports(root: str, kind: str, since: float) -> dict[str, dict]:
     通道名自动就是独立的一档 `surefire-pg:...`，不需要额外参数。
 
     聚合的是 `<testsuite>` 的四个计数属性 + 跳过/失败用例的**具名清单**——
-    只有数字没有名字的跳过报表，等于没有报表（AGENTS「方言跳过必须可数」要求点名）。
+    只有数字没有名字的跳过报表，等于没有报表。
 
     **按文件 mtime 过滤**（不是只比聚合 mtime）：`target/` 会留着上一轮的 53 个报告，
     只跑 `-Dtest=OneTest` 时若不逐文件过滤，本步会报「564 条、绿」——数字全是旧的。
@@ -156,7 +156,6 @@ STATIC_REPORTS = {
 # 反例：从模块 pom 的插件配置里读 `skip`——那正是 S2 要堵的漏洞（删执行块 = 期望一起消失）。
 STATIC_EXEMPT = {
     # 移植载体：源文件刻意与上游同排版以便逐文件 diff，故跳过 spotless/checkstyle/PMD。
-    # 见 nextentity-tests-legacy/README.md 与 AGENTS「移植语料是范围例外」。
     "nextentity-tests-legacy": ("checkstyle", "pmd"),
     # 示例语料：nextentity-examples 是 2.2.3 真实调用却的移植载体（gate.sh 的 ci/night/release
     # 各有一条 `*-examples` 步骤真跑它的 130 条测试），风格门禁与 tests-legacy 同性质跳过。
@@ -730,7 +729,7 @@ def _load_expected_failures(path: str) -> tuple[dict[str, dict[str, dict]], list
     `type` / `issue` / `expires` 都必填，其余字段一律拒绝：
     - `type` 钉住失败的**性质**。只比用例名的话，某条「方言渲染差异（断言不符）」哪天变成
       「生产代码抛 NPE（error）」，名字不变、失败条数不变，凭证照旧判绿。
-    - `issue` 与 `expires` 同 AGENTS.md「禁用要有租约」：没有到期日的豁免就是永久豁免；
+    - `issue` 与 `expires` 同禁用租约的规则：没有到期日的豁免就是永久豁免；
       过期仍在基线里的条目按违规处理，且租约本身有上限（见 `MAX_BASELINE_LEASE_DAYS`）。
 
     @param path 基线文件路径
@@ -904,7 +903,7 @@ def _load_equivalents(root: str, module: str) -> tuple[dict[str, dict], list[str
         <mutatedClass> | <行号> | <方法名> | <变异算子> | <条数> | reason=<为什么行为不变> | expires=<yyyy-MM-dd>
 
     前四段直接抄 PIT 报告里的值，不猜、不简写：写错就是「申报了但没生效」，而台账一旦
-    与报告脱节，它就从证据退化成注释。`reason` 与 `expires` 同 AGENTS.md「禁用要有租约」。
+    与报告脱节，它就从证据退化成注释。`reason` 与 `expires` 同禁用租约的规则。
 
     @param root 仓库根目录
     @param module 模块名（`nextentity-core` 之类）

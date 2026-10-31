@@ -1,8 +1,8 @@
 # 门禁载体：把「本机能跑」变成「有人替你跑，且跑没跑有凭证」。
 #
 # 为什么需要这个文件：`nextentity.requireContainer` 默认 `false`，Docker 不可用时整条容器通道
-# 计为 skip、构建照样绿（本地开发需要这个宽进）。AGENTS.md 要求「CI 必须加
-# `-Dnextentity.requireContainer=true`」，而在本文件出现之前这条要求**没有执行载体**。
+# 计为 skip、构建照样绿（本地开发需要这个宽进）。CI 则必须加
+# `-Dnextentity.requireContainer=true`，而在本文件出现之前这条要求**没有执行载体**。
 #
 # 为什么改成调 `tools/gate.sh` 而不是直接写 `./mvnw`：裸命令在成功和「整条通道没跑」时
 # 退出码都是 0。`-DskipITs` 不产生任何标记，而 `target/failsafe-reports/` 里上一轮的通过

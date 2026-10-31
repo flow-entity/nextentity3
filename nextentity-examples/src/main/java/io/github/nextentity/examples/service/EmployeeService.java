@@ -15,8 +15,6 @@ import java.util.List;
 ///
 /// 推荐模式：在 Service 层使用 Spring 的 @Transactional 注解，
 /// 而不是在 Repository 层。
-///
-/// 用于 crud-operations.md 文档的示例。
 @Service
 public class EmployeeService {
 
@@ -32,8 +30,6 @@ public class EmployeeService {
     // ==================== 事务示例 ====================
 
     /// 在单个事务中创建员工和部门。
-    ///
-    /// 示例用于 crud-operations.md "Service 层推荐使用 @Transactional"。
     @Transactional
     public void createEmployeeWithDepartment(Employee emp, Department dept) {
         departmentRepository.insert(dept);
@@ -42,8 +38,6 @@ public class EmployeeService {
     }
 
     /// 在部门间调动员工。
-    ///
-    /// 示例用于 crud-operations.md "@Transactional" 章节。
     @Transactional
     public void transferEmployee(Long empId, Long newDeptId) {
         Employee emp = employeeRepository.findEmployeeById(empId);

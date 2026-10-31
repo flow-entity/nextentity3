@@ -626,8 +626,8 @@ tier_night() {
 tier_release() {
     EXPECT_STEPS=(release-verify release-jpa-pg release-jdbc-it-pg release-jdbc-it-mssql release-legacy release-install release-examples release-pit-api release-pit-core release-pit-jdbc release-pit-jpa release-pit-spring release-compat)
     # 与 ci/night 同一条申报：`TemporalWriteContract` 那对用例按 H2 兼容模式互斥，
-    # 默认参数下必有 1 条跳过。此前漏了这一档，导致 AGENTS「发版前 ./tools/gate.sh release」
-    # 恒红——本机制的主题是「无理由跳过不能被预算静默吸收」，那就每一档都得说清这 1 条是谁。
+    # 默认参数下必有 1 条跳过。此前漏了这一档，导致 release 档恒红——本机制的主题是
+    # 「无理由跳过不能被预算静默吸收」，那就每一档都得说清这 1 条是谁。
     STEP_MAX_SKIP="surefire:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* failsafe:nextentity-tests-jpa=1:*MySqlTemporalWriteIntegrationTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode* surefire-pg:nextentity-tests-jpa=1:*TemporalWriteTest#insertAndReloadPreserveTheInstant*"
     # 发版前必须把方言矩阵也跑一遍：`clean verify` 会先删 `target/`，PG 通道在
     # release 档若缺席，那 8 条已知差异就永远不会被重新核对，基线静默烂掉。

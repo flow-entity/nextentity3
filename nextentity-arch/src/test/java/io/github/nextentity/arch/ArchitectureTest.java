@@ -330,7 +330,7 @@ class ArchitectureTest {
     ///
     /// 测试代码不在范围内：本类用 `DoNotIncludeTests` 导入，天然只看生产代码。测试模块要 mock
     /// 什么是它们的自由（`nextentity-spring` 现在连 `mockito-core` 都不在 classpath 上了，
-    /// 自动配置用例改用真 Hibernate + H2，见模块 pom 的说明），与这条规则无关。
+    /// 自动配置用例改用真 Hibernate + H2），与这条规则无关。
     @ArchTest
     static final ArchRule PRODUCTION_CODE_IS_FREE_OF_TEST_FRAMEWORKS = noClasses()
             .that()

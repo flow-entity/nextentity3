@@ -32,7 +32,7 @@ import org.junit.jupiter.api.TestFactory;
 /// `eq(alpha)` 与 `ne(alpha)` 两侧都不命中——`ne` 里出现 bandage 就是「把 `NULL` 当普通值」或
 /// 「嵌套路径渲染成内连接」的直接判据，{@link #nullJoinColumnMatchesNeitherEqNorNe()} 专钉这一条。
 ///
-/// **排序口径（实测，不是照文档抄）**：H2 `MODE=MySQL` 与 MySQL 8.0 都把 `null` 当最小值，
+/// **排序口径（实测）**：H2 `MODE=MySQL` 与 MySQL 8.0 都把 `null` 当最小值，
 /// 所以 `ORDER BY owner.name ASC` 里 bandage 排最前、`DESC` 里排最后；本类据此用
 /// `containsExactlyElementsOf` 钉**完整序列（含 `null`）**，而不是只钉非空部分——
 /// 只钉非空部分时「`null` 被排到中间」「降序时 `null` 没跟着反转」全部逃逸。

@@ -8,8 +8,8 @@ import java.lang.reflect.Method;
 ///
 /// 标准 JPA Criteria 没有「从子查询派生」的 API（`from(Subquery)` 不存在），Hibernate 6+ 的
 /// `org.hibernate.query.criteria.JpaCriteriaQuery#createCountQuery()` 是唯一入口；而本模块的
-/// hibernate-core 是 `test` scope（主代码保持 provider 中立，见根 pom 的 dependencyManagement
-/// 注释），所以按类名反射解析，解析只做一次（[{@link #HIBERNATE}] 静态常量）。
+/// hibernate-core 是 `test` scope（主代码保持 provider 中立），所以按类名反射解析，解析只做一次
+/// （[{@link #HIBERNATE}] 静态常量）。
 ///
 /// **失败一律 fail-fast**：provider 不是 Hibernate、方法缺席、调用抛异常都抛
 /// `UnsupportedOperationException`，不静默降级成「客户端把分组键查出来再 size」——那会把
