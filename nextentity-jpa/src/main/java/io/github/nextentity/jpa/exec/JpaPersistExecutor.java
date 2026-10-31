@@ -71,6 +71,9 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
     /// 的上下文级操作，其它脏实体也会一起刷下去——这是语义，不是副作用失控。这样「这次
     /// update 有没有真的落库」「乐观锁冲突 / 行已被删」在调用点就能看到，而不是留给提交时。
     ///
+    /// 实体没有任何可写标量列（也没有 `@Version` 可自增）时，不论是否托管都先抛
+    /// `UnsupportedOperationException`：与 JDBC 后端同口径，不静默跳过这次 update。
+    ///
     /// @param entity 待更新实体，非 `null`；成功后新 `@Version` 回写到该对象
     @Override
     public void update(T entity) {
@@ -98,12 +101,6 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
     }
 
     private void updateOne(JpaEntityType<T> entityMeta, T entity) {
-        if (entityManager.contains(entity)) {
-            // 合并语义：托管实体的写入由脏检查承担。立刻 flush，让挂起改动落库、让版本冲突 /
-            // 行缺失在调用点抛出——原先的 `return` 会把「这次 update 到底写没写」静默留给提交。
-            entityManager.flush();
-            return;
-        }
         EntityAttribute id = entityMeta.id();
         EntityAttribute version = entityMeta.version();
         Object idValue = id.get(entity);
@@ -115,9 +112,16 @@ public final class JpaPersistExecutor<T> implements PersistExecutor<T> {
         if (!setValues(entityMeta, entity, update, root, versionValue)) {
             // 与 JDBC 后端 WriteSql.update 同口径显式拒绝：空 SET 会被 provider 当成内部错误
             // （Hibernate 抛 IllegalArgumentException("No assignments specified as part of UPDATE criteria")）。
+            // 判定必须早于下面的托管早退：托管实例同样不允许静默跳过这次 update。
             throw new UnsupportedOperationException("实体 " + entityType.getName()
                     + " 没有可写标量列，update 无法生成 SET 子句：可写标量列都带"
                     + " @Column(updatable=false)，也没有 @Version 列可以自增；请至少保留一个可更新列");
+        }
+        if (entityManager.contains(entity)) {
+            // 合并语义：托管实体的写入由脏检查承担。立刻 flush，让挂起改动落库、让版本冲突 /
+            // 行缺失在调用点抛出——原先的 `return` 会把「这次 update 到底写没写」静默留给提交。
+            entityManager.flush();
+            return;
         }
         update.where(whereClause(builder, root, id, version, idValue, versionValue));
 

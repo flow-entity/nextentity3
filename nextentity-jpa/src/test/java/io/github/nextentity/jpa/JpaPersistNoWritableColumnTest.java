@@ -48,4 +48,27 @@ class JpaPersistNoWritableColumnTest extends JpaTestSupport {
         assertThat(read.getState()).as("只读列的库内值不得被覆盖").isEqualTo("orig");
         assertThat(read.getMemo()).as("只读列的库内值不得被覆盖").isEqualTo("orig-memo");
     }
+
+    @Test
+    @DisplayName("实体 update：托管实例同样在空 SET 时显式 UOE，不下发空 SET 的 update")
+    void updateManagedWithoutWritableColumnsIsRejected() {
+        inTx(entityManager -> {
+            JpaPersistExecutor<AllReadOnlyFlags> executor =
+                    new JpaPersistExecutor<>(entityManager, meta(), AllReadOnlyFlags.class);
+            AllReadOnlyFlags managed = entityManager.find(AllReadOnlyFlags.class, 1L);
+            assertThatThrownBy(() -> executor.update(managed))
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessage("实体 " + AllReadOnlyFlags.class.getName()
+                            + " 没有可写标量列，update 无法生成 SET 子句：可写标量列都带"
+                            + " @Column(updatable=false)，也没有 @Version 列可以自增；请至少保留一个可更新列");
+            return null;
+        });
+        assertThat(normalized(drainSql()))
+                .as("拒绝时不得下发任何 UPDATE（find 的 select 不算）")
+                .noneMatch(sql -> sql.startsWith("update"));
+
+        AllReadOnlyFlags read = inTx(entityManager -> entityManager.find(AllReadOnlyFlags.class, 1L));
+        assertThat(read.getState()).as("只读列的库内值不得被覆盖").isEqualTo("orig");
+        assertThat(read.getMemo()).as("只读列的库内值不得被覆盖").isEqualTo("orig-memo");
+    }
 }
