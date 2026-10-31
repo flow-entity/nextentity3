@@ -797,6 +797,7 @@ orders.updateAll(List.of(order));
 | `@GeneratedValue(strategy = SEQUENCE)` | `UOE` | 尚未验证（无跨方言取号钩子；autocommit 下取号有空洞；各方言取号形态未实测） | 应用侧发号（`IdGenerator`）后手动赋值 id；或改用 `IDENTITY`/`AUTO` |
 | `@GeneratedValue(strategy = TABLE)` | `UOE` | 外部约束（需要序列表 DDL，本模块不生成 DDL） | 应用侧发号或换 `IDENTITY`/`AUTO` |
 | `@Version` 为 `Timestamp` | `UOE` | 尚未验证（应用侧生成当前时间需 `Clock` 注入；两后端同时拒绝，版本类型集已一致） | 改用六种数值型版本（到类型上界会显式拒绝，不回绕） |
+| `@Version` + `@Convert` | `UOE`（`@Version 不支持 @Convert: <实体全名>.<属性>`，元数据期） | 对齐 JPA（Hibernate 元数据期就拒绝该组合）：本层版本自增直接 +1 写回、不经 converter，写侧 `SET` 绑原值而读侧与 `WHERE`（实体 `update(entity)` 与条件写）过 converter，两者永不相等，乐观锁永久失效（静默错数据） | 去掉版本列上的 `@Convert`，改用六种数值型版本；`@Id` + `@Convert` 不受影响 |
 | 嵌套 `@Embedded` / 点号形式的嵌套 `@AttributeOverride` | `UOE` | 尚未验证 | 拍平成一层的嵌入字段或标量列，覆盖只写单层属性名 |
 | `@AttributeOverride` 指向不存在的属性名（拼错、或指向 `@Transient` 字段） | `UOE`（`未命中的 @AttributeOverride: <嵌入路径>.<属性名>`） | 自设规则：JPA 在元模型构建期就报错；静默忽略会让列名悄悄回落成默认值 | 改成嵌入类型里真实存在的属性名 |
 | `@Embeddable` 的父子类字段重名（子类遮蔽父类字段） | `UOE`（`嵌入类型内字段名重复（父类字段被子类遮蔽）: <嵌入路径>.<字段名>`） | 自设规则：同一嵌入类型里列名/属性名必须唯一，否则扁平化会生成重复列名的 SQL（执行期才报错） | 改掉重名字段；父类字段改名或下移成独立嵌入 |

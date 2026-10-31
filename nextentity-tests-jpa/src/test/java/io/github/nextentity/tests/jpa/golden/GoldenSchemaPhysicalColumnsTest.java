@@ -17,15 +17,23 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
-/// golden schema 的**物理列形状**证据：Hibernate 按实体注解经 `hbm2ddl` 建出的 H2 表，必须与 JDBC 侧
-/// `schema-h2.sql` 的 golden 三表逐列同形。
+/// golden schema 的**物理列形状**证据：Hibernate 按实体注解经 `hbm2ddl` 建出的 H2 表，其 varchar 宽度
+/// 与 `decimal` 精度必须与 JDBC 侧 `schema-h2.sql` 的 golden 三表一致。
+///
+/// 本类只钉两个维度：列宽、精度。**未断言**的维度与实测差异（按构造不同形，不属「漏写长度/精度 →
+/// 默认值漂移」那一类，故不并入断言）：
+/// - 可空性：`@Version` 列在 DDL 侧 `not null default 0`，Hibernate 侧可空且无默认值；`boolean`/`int`
+///   这类 Java 基础类型字段 Hibernate 侧建 `not null`，DDL 侧可空。
+/// - 时间列类型：`Instant` 字段 Hibernate 侧建 `timestamp with time zone`，DDL 侧是 `timestamp`。
+/// - 枚举类型族：见下方 `tier` 一段。
 ///
 /// 为什么单独立一条：`JpaGoldenSchemaLandingContract` 的往返断言只覆盖「写入什么、读回什么」。
 /// 注解漏写 `length`/`precision`/`scale` 时 Hibernate 的默认值（`varchar(255)` / `numeric(38,2)`）
 /// 照样装得下夹具值、也照样往返成功，两侧 DDL 的真实差异抓不住——现有唯一精度断言
 /// `creditLimit().scale()==2` 在 `(38,2)` 下同样成立。
 ///
-/// 期望值逐列抄自 `schema-h2.sql` 的 golden 段（7 个有宽度的 varchar 列 + `decimal(12,2)` 3 列），
+/// 期望值逐列抄自 `schema-h2.sql` 的 golden 段（7 个 varchar 列中 `tier` 见下方例外、实际断言 6 个，另有
+/// `decimal(12,2)` 3 列），
 /// 不取注解、也不从 Hibernate 元数据反推——否则就是拿实现验实现。
 ///
 /// `golden_customer.tier` 是唯一的例外，不并入宽度断言：JDBC DDL 写的是 `varchar(16)`，但 Hibernate 7.1.8

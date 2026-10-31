@@ -677,6 +677,15 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
             continue
         base = fresh.get("%s:%s" % (kind.split("-", 1)[0], info["module"]))
         if not base:
+            # 容器方言步用 profile 把 failsafe 报告目录整个换掉，基础通道不在同一 receipt 里；
+            # 这类步的「同批用例」等式无处可判，只剩与基础通道相等的 --min-tests 下限兜底——
+            # 下限相等也不保证是同一批用例。不计 finding，但必须在凭证里留痕，否则「守卫未生效」
+            # 与「守卫通过」在 receipt.json 里长得一模一样。
+            warnings_extra.append(
+                "%s：同一 receipt 内没有基础通道 %s:%s，方言矩阵等式未生效——"
+                "跨 receipt 的方言通道只由与该基础通道相等的 --min-tests 兜底，用例是否同一批无凭证"
+                % (name, kind.split("-", 1)[0], info["module"])
+            )
             continue
         if info["tests"] != base["tests"]:
             problems.append(
