@@ -248,7 +248,7 @@ query().where(Order::getOrderNo).substring(0, 3).eq("A01").list();
 query().where(Order::getOrderNo).length().gt(5).list();
 ```
 
-每层函数各是一个 spec 节点，谓词主语由内到外组装（`lower().trim().contains("ann")` 的主语是 `TRIM(LOWER(name))`）；`substring(int)` 省略长度时上界取 `StringFunctions.MAX_SUBSTRING_LENGTH`（沿用 2.2.3 `StringExpression` 的取值）。两条边界：函数结果**不能**再接 `in` / `notIn` / `isNull` / `isNotNull`（`in`/`isNull` 的语义针对属性，对函数结果没有确定的 SQL 对应物，命中抛 `UnsupportedOperationException`）；`length()` 返回 `NumberOperator`，只能继续比较/区间，**不能**作为 `select(...)` 的投影列——要投影长度先自己查出来再在内存计算。
+每层函数各是一个 spec 节点，谓词主语由内到外组装（`lower().trim().contains("ann")` 的主语是 `TRIM(LOWER(name))`）；`substring(int)` 省略长度时不下发长度参数（H2 / MySQL / PostgreSQL 渲染 `substring(x, pos)`；SQL Server 用 `substring(x, pos, 2147483647)` 表达「到结尾」，见 §13.4.5）。两条边界：函数结果**不能**再接 `in` / `notIn` / `isNull` / `isNotNull`（`in`/`isNull` 的语义针对属性，对函数结果没有确定的 SQL 对应物，命中抛 `UnsupportedOperationException`）；`length()` 返回 `NumberOperator`，只能继续比较/区间，**不能**作为 `select(...)` 的投影列——要投影长度先自己查出来再在内存计算。
 
 ## 4. 排序与分页
 
@@ -649,7 +649,7 @@ int clearedFk = operations.update()
 
 **并发语义（与 2.2.3 一致）**：条件更新/删除**不参与乐观锁**——既不校验、也不自增 `@Version`，也不回写调用方对象（Hibernate 的 `CriteriaUpdate`/`CriteriaDelete` 与 JDBC 批量语句都不施加版本列；只有 §10 的单实体 `update(entity)` 会把版本写回入参对象）。代价是：并发下批量更新可能覆盖别人刚提交的行，而调用方看不到 `OptimisticLockException`。要行级版本保护，改用单实体 `update(entity)`；或把版本列显式写进 `where(...)` 条件（`where(Employee::getVersion).eq(expectedVersion)`），再按受影响行数判断是否被并发改过并重试。
 
-**只读列**：条件更新命中 `@Column(updatable=false)` / `@JoinColumn(updatable=false)` 的列时（含 `@Embedded` 叶子与 `关联.id` 这种嵌套形态），**两个后端一致 fail-fast 抛 `UnsupportedOperationException`**（消息点名该列）——JDBC 与 JPA（3.1.0 起）都是同一口径；静默跳过会让「更新了但某列没变」难以察觉。替代：去掉该列标志；或改走单实体 `update(entity)`（只读列按映射本来就不进 `SET` 集）；或直接发原生 SQL。写操作必须在调用方事务里执行（§11）。
+**只读列**：条件更新命中 `@Column(updatable=false)` / `@JoinColumn(updatable=false)` 的列时（含 `@Embedded` 叶子与 `关联.id` 这种嵌套形态），**两个后端一致 fail-fast 抛 `UnsupportedOperationException`**（消息点名该列）——JDBC 与 JPA（3.1.0 起）都是同一口径；静默跳过会让「更新了但某列没变」难以察觉。替代：去掉该列标志；或改走单实体 `update(entity)`（只读列按映射本来就不进 `SET` 集）；或直接发原生 SQL。写操作必须在调用方事务里执行（§11）。覆盖出来的只读列按**成员级**声明（写在嵌入字段 / 关联 getter 上）识别：`@AttributeOverride` 两个后端都识别（JDBC 自 3.1.0 起，覆盖声明的 `insertable` / `updatable` 与列名一并生效）；`@AssociationOverride` 只在 JPA 后端有意义——JDBC 不支持嵌入内的关联，元数据期就抛 `UnsupportedOperationException`。**类级（TYPE 级、点号路径形态，含 `@MappedSuperclass` 覆盖）两后端都不识别**——命中时该列会被当作可写列，单实体 `update(entity)` 与条件写都可能写它，属已知限制（见 §13.4.3）。
 
 > ⚠️ **不写 `where(...)` 就是整表更新/删除**（`update()` / `delete()` 没有「空条件拒绝」的保护）；批量语句请始终显式给出条件，Javadoc 也写了同一句警告。
 
@@ -767,7 +767,7 @@ orders.updateAll(List.of(order));
 | 生成键类型 | `short`/`Short`、`int`/`Integer`、`long`/`Long`、`BigInteger`（按 `id.type()` 转换，窄类型做范围校验） |
 | `@Version` 类型 | `int`/`long`/`short`/`Integer`/`Long`/`Short`（应用侧 +1 写回；`WHERE id [AND version]` 0 行抛 `OptimisticLockException`） |
 | `@Column` / `@JoinColumn` 的 `insertable/updatable=false` | 支持：读回照常；`insertable=false` 不进 `INSERT` 列集、`updatable=false` 不进 `UPDATE SET`；该列仍可出现在 `WHERE`/`ORDER BY`（2.2.3 examples 用的是 `@JoinColumn` 形态） |
-| `@Embedded`/`@Embeddable` | 支持**扁平**嵌入：列名默认 `<嵌入字段名>_<嵌套字段名>`（与 JPA 默认命名一致），可用 `@AttributeOverride` 覆盖；嵌套 `@Embedded`、点号形式的嵌套 `@AttributeOverride` 不提供（见 13.4.3） |
+| `@Embedded`/`@Embeddable` | 支持**扁平**嵌入：列名默认 `<嵌入字段名>_<嵌套字段名>`（与 JPA 默认命名一致），可用 `@AttributeOverride` 覆盖；`@AttributeOverride` 覆盖的是**整份列映射**（列名 + `insertable`/`updatable` 标志，与 JPA 对齐）；嵌套 `@Embedded`、点号形式的嵌套 `@AttributeOverride` 不提供（见 13.4.3） |
 | `@Convert` | 支持**显式** `@Convert(converter = ...)`（`AttributeConverter` 无参实例化；`convertsTo` 的列类型必须落在上表内，否则拒绝并提示改用受支持类型） |
 | 关联写入 | `@ManyToOne`/`@OneToOne`（持有外键一侧）可写：关联值非 `null` 时读关联对象 `@Id` 写外键列；缺 `@JoinColumn(name)` 时按 JPA 默认命名 `字段名_被引用列名` 推断；`@OneToOne(mappedBy=...)` 反侧不写（见 13.4.2） |
 | 无参构造 | 实体必须有可调用的无参构造（`private`/`protected` 会 `setAccessible`）；缺失抛 `IllegalArgumentException`（消息含实体类名）；**record 实体不支持**（无无参构造、字段 final） |
@@ -787,13 +787,15 @@ orders.updateAll(List.of(order));
 |---|---|---|---|
 | `@Inheritance` 继承映射 | `UnsupportedOperationException` | 自设规则（当前只支持单表扁平映射） | 拆成独立实体 + 标量列；或换 JPA 后端 |
 | `@IdClass` / 复合主键 / `@EmbeddedId` | `UOE` | 自设规则 | 增加单列代理主键；复合唯一约束交给 DB |
-| `@Access(PROPERTY)` / 把映射注解写在 getter 上 | `UOE`（只支持字段访问） | 自设规则 | 把 `@Id`/`@Column` 等注解移到字段上 |
+| `@Access(PROPERTY)` / 把映射注解写在 getter 上 | `UOE`（JDBC 只支持字段访问）；**JPA 后端支持**（按映射声明成员取注解与取值，仍要求存在同名字段） | 自设规则 | JDBC：把 `@Id`/`@Column` 等注解移到字段上，或改用 JPA 后端 |
 | 缺 `@Entity` / 无 `@Id` / 多 `@Id` / 多 `@Version` | `IllegalArgumentException`（实体结构错误） | 自设规则 | 按 JPA 实体规则修正模型 |
 | `byte`/`Byte`、`char`/`Character`、`byte[]` 列类型 | `UOE` | 尚未验证（`char` 的定长补空格语义、`byte[]` 的 BLOB/VARBINARY 各方言类型名与流式读写未实测） | 改用受支持列类型，或 `@Convert` 转成 `String`/`byte[]` 之外的表示 |
 | `@GeneratedValue(strategy = SEQUENCE)` | `UOE` | 尚未验证（无跨方言取号钩子；autocommit 下取号有空洞；各方言取号形态未实测） | 应用侧发号（`IdGenerator`）后手动赋值 id；或改用 `IDENTITY`/`AUTO` |
 | `@GeneratedValue(strategy = TABLE)` | `UOE` | 外部约束（需要序列表 DDL，本模块不生成 DDL） | 应用侧发号或换 `IDENTITY`/`AUTO` |
 | `@Version` 为 `Timestamp` | `UOE` | 尚未验证（应用侧取当前时间需 `Clock` 注入，JPA 侧本轮未同步，两端口径会分叉） | 改用六种数值型版本 |
 | 嵌套 `@Embedded` / 点号形式的嵌套 `@AttributeOverride` | `UOE` | 尚未验证 | 拍平成一层的嵌入字段或标量列，覆盖只写单层属性名 |
+| 嵌入类型内的单值关联（`@Embeddable` 里放 `@ManyToOne` / `@OneToOne`） | `UOE`（`嵌入属性内的关联未支持: …`） | 尚未验证（扁平嵌入表达不了关联） | JPA 后端支持该形态：写外键、`@JoinColumn(updatable=false)` / `@AssociationOverride` 覆盖出的只读列跳过、条件写拒绝「嵌入.关联」整体赋值；JDBC 侧把关联移出嵌入类型，或换 JPA 后端 |
+| **类级（TYPE）`@AttributeOverride` / `@AssociationOverride`**（点号路径形态，含 `@MappedSuperclass` 覆盖） | **两后端都不识别**（已知限制）：写侧只读判定只看成员级注解，覆盖出的 `updatable=false` 列会被当可写列 | 尚未实现（JPA 规范 / Hibernate 本身支持该形态） | 把覆盖声明到嵌入字段 / 关联 getter 上（成员级）；或用原生 SQL 规避 |
 | 依赖 `@Convert(autoApply = true)`（字段上没有显式 `@Convert`） | 不自动应用；该字段按原 Java 类型走列类型校验（不被自动转换） | 尚未验证（扫描成本 + 无正例） | 在字段上显式标 `@Convert(converter = ...)` |
 | 锁模式：`PESSIMISTIC_READ`/`PESSIMISTIC_WRITE` 之外的三种 | `UOE` | 外部约束（无标准 SQL 形态） | 只使用这两种锁模式，或走原生 SQL |
 | SQL Server 上的行锁（两种模式） | `UOE` | 外部约束：T-SQL 没有 `FOR SHARE`，也没有标准 `FOR UPDATE` 行锁；`with (rowlock)` 是索引提示、不是锁语义（未实测） | 应用层锁（悲观锁表 / 串行队列）、快照隔离（`READ COMMITTED SNAPSHOT`）、或原生 SQL |
@@ -823,8 +825,8 @@ orders.updateAll(List.of(order));
 #### 13.4.5 方言差异（可能出现「会算错」的项）
 
 - **共享锁**：MySQL 与 PostgreSQL 都渲染 `for share`，**两条容器通道均已实测**（MySQL 容器；PostgreSQL 容器 `PostgresItemLockIntegrationTest` 2 条 + `PostgresLockContractIntegrationTest` 4 条全绿，且 PG 与 MySQL 跑同一批 590 条用例）；H2 没有 `FOR SHARE`，用 `for update` 兜底——**比 FOR SHARE 锁更强，是安全方向的近似，不是等价降级**。SQL Server 不提供行锁（13.4.3）。
-- **字符串长度**：默认渲染 `length(x)`；SQL Server 用 `len(x)`，而 `LEN` 会**裁掉尾随空格**（`LEN('ab ')` 与标准 `CHAR_LENGTH` 不等价），是已披露的方言语义差异、不是缺陷——**跨库依赖长度的查询在 SQL Server 上会少算尾随空格**。
-- **`substring` 省略长度**：H2/MySQL/PostgreSQL 可下发 `substring(x, pos)`；SQL Server 的 `SUBSTRING` 必须带长度参数，实现用 `substring(x, pos, 2147483647)`（int 上界）表达「到结尾」，该上界形态**已在 SQL Server 容器实测通过**（方言惯用法，语义为截取到结尾）。
+- **字符串长度**：默认渲染 `length(x)`（H2 / PostgreSQL 的 `LENGTH` 按字符计数）；**MySQL 覆写为 `char_length(x)`——MySQL 的 `LENGTH()` 是字节数，utf8mb4 下多字节字符会多算**（与 JPA 侧 Hibernate 渲染的 `character_length(x)` 语义一致）；SQL Server 用 `len(x)`，而 `LEN` 会**裁掉尾随空格**（`LEN('ab ')` 与标准 `CHAR_LENGTH` 不等价），是已披露的方言语义差异、不是缺陷——**跨库依赖长度的查询在 SQL Server 上会少算尾随空格**。
+- **`substring` 省略长度**：H2/MySQL/PostgreSQL 可下发 `substring(x, pos)`；SQL Server 的 `SUBSTRING` 必须带长度参数，实现用 `substring(x, pos, 2147483647)`（int 上界）表达「到结尾」，该上界形态**已在 SQL Server 容器实测通过**（方言惯用法，语义为截取到结尾）。**JPA 后端未在 SQL Server 上跑过容器通道（本仓无该通道），以下为源码推断、非实测**：Hibernate 把 2 参 `substring` 改写成 `substring(?1, ?2, len(?1)-?2+1)`（`AbstractTransactSQLDialect.substring_substringLen`），与 JDBC 后端下发的 `substring(x, pos, 2147483647)` 在**尾随空格**（`len` 裁空格）和 **`offset ≥ 字符数`**（`len(x)-pos+1 <= 0` 时 Hibernate 路径可能报 Invalid length parameter）两个边界上不同。
 - **生成键策略**：四种内置方言都只支持 `IDENTITY`/`AUTO`；`SEQUENCE`/`TABLE` 统一拒绝（13.4.3）。
 - 以上差异的渲染钩子集中在 `JdbcDialect`，自定义方言必须遵守 [DESIGN.md](DESIGN.md) §6.1「方言接缝」的不变量；语义差异列入 §7.1 对应 CUT 的代价与触发器，而不是当作「实现细节」。
 
@@ -861,7 +863,7 @@ orders.updateAll(List.of(order));
 | 子查询 | `toSubQuery()` | `@Query` 原生 / JPQL | DSL 只覆盖平坦查询，子查询的跨方言渲染与对拍成本远高于收益；重审触发：需要 DSL 内子查询且能给出跨方言差分用例 |
 | `*IfPresent` 命名 | `eqIfPresent(..)` | `eqIfNotNull(..)`（语义相同） | 纯命名别名，没有新语义；重审触发：4.0 允许破坏性重命名时 |
 | `sliceWithoutCount` | 免 count 分页 | `Collector.list(offset, limit)`（`lock` 后的分页靠它），或自己取 `List` 再算总数 | `Slice` 的语义绑定 `total`，免 count 是另一个返回类型；重审触发：免 count 分页成为消费方热点并给出用例 |
-| 多列 `distinct` 的 `count()` / `exists()` | `.distinct().select(a, b).count()` | `distinct().select(a, b).list()` 后内存去重计数 | `COUNT(DISTINCT a, b)` 在 MySQL / PostgreSQL / SQL Server 形状不同，单列近似会静默错数；重审触发：给出跨方言差分 oracle 与口径 |
+| 多列 `distinct` 的 `count()` | `.distinct().select(a, b).count()` | `distinct().select(a, b).list()` 后内存去重计数；`exists()` 不受影响，可直接用（只判是否存在行，不渲染投影列） | `COUNT(DISTINCT a, b)` 在 MySQL / PostgreSQL / SQL Server 形状不同，单列近似会静默错数；重审触发：给出跨方言差分 oracle 与口径 |
 | 字符串算子/函数挂在 `Path.of(...)` 上 | `Path.of(Employee::getName).startsWith(prefix)` | 从 `where(Employee::getName)` 进入算子（§3.8、§3.9） | 这些方法只在 `StringOperator` 上，`StringPath` 保持原 `StringOps`；给 `Path` 的所有实现方（含 JPA/JDBC/自定义路径）加方法会制造源码义务。重审触发：真实消费方需要在 `select(...)` 的路径上调用这些函数 |
 | 函数结果上的 `in` / `notIn` / `isNull` / `isNotNull` | `where(..).lower().in(...)` | 等价改写为显式条件，或在内存里过滤 | `in` / `isNull` 的语义针对**属性**，对函数结果没有确定的 SQL 对应物；命中抛 `UnsupportedOperationException`。重审触发：SQL 方言给出可移植的函数结果 NULL/IN 语义 |
 | 计算列投影（函数结果进 `select`） | `select(Path.of(name).lower())` | 原生 `@Query` 或后端 SQL（§6.3 的 `select(Class)` 只装属性列） | 投影管线只接受属性路径（`NumberOperator` 不 extends `Expression`），不是外部约束；代价是函数计算结果无法直接映射到 DTO 字段。重审触发：examples 或真实消费方出现该用法 |

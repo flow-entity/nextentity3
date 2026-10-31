@@ -14,6 +14,14 @@
 - **JPA 条件更新的嵌套路径绕过只读校验、并可能写错列**：`set` 目标经逐段 `get` 拼出，且只校验首段可写，导致 ①嵌套只读列（`@JoinColumn(updatable=false)` 的 `关联.id`、`@Embedded` 里的只读叶子）被静默写入；②`关联.非id列`（如 `owner.name`）被 Hibernate 展开成 `update 根表 set name=?`，静默改掉根表同名列。现在 `SET` 只接受三类目标：本表标量列、`@Embedded` 叶子、`关联.id`；其余形态抛 `UOE` 并点名路径（`条件更新 SET 目标只能是本表列或关联.id: …`），只读列一律 `UOE`（`条件更新不支持 @Column(updatable=false) 列: …`）。直接关联对象整体 `SET`（`set(Path.of(X::getOwner), ownerObj)`）随之从「接受」变为「拒绝」，改用 `关联.id` 形态，与 JDBC 对齐。
 - **JPA 单实体 `update(entity)` 写 `@Embedded` 里的只读叶子**：补齐 3.0.0 起 `update(entity)` 只读列过滤的残留——本批之前只覆盖直接列，`@Embedded` 仍整体下放给 Hibernate 展开（连 `@Column(updatable=false)` 的叶子一起进 `SET`）。现在逐叶子写入并跳过只读叶子。
 - **文档与 javadoc 的 `Path.of(...).get(...)` 示例不可编译**（`Path` 只有静态 `of(...)` 与 `refs()`，没有 `get(...)`）：`docs/USAGE.md`、`docs/DESIGN.md`、`docs/CHANGELOG.md` 与 `UpdateSetStep` / `FetchStep` 的 javadoc 统一改为 `EntityPath.of(...).get(...)`；同时把条件写的合法 `SET` 目标、只读列口径、JDBC 条件 `WHERE` 的关联路径差异同步进 USAGE §10.1 / §13.4.3 / §13.4.4 与 DESIGN CUT-17。
+- **JDBC 写路径的关联外键与 `WHERE` 主键没过列映射**：`insert` / `update(entity)` 写关联外键、以及 `update` 的 `where 主键=?` 直接绑反射值——目标 `@Id` 带 `@Convert` / `@Enumerated` 时写错值、按主键写不中行（无版本列时 0 行 → `EntityNotFoundException`）。现在与标量列、条件写 `关联.id` 共用同一条 `JdbcTypes` 转换（外键复用目标 `@Id` 的列映射）。
+- **JDBC 值投影的 `@Embedded` 叶子不反转换**：`select(EntityPath.of(X::getEmbedded).get(E::getLeaf))` 返回 JDBC 原始值（`String` / `Integer`），而不是枚举 / `@Convert` 后的对象。读侧 `RowReader` 补嵌入两段解析，与实体装配路径同规则。
+- **JDBC 丢弃 `@AttributeOverride` 的 `insertable` / `updatable` 标志**：嵌入列的覆盖只取列名，覆盖出来的只读列仍进 `INSERT` / `UPDATE SET`、条件写也放行。现在 `@AttributeOverride` 的整份列映射（列名 + `insertable` / `updatable`）随覆盖生效，与 JPA 对齐。
+- **MySQL 上的 `length()` 走字节数**：`MySqlDialect` 未覆写 `lengthOf`（默认 `length(x)`），而 MySQL 的 `LENGTH()` 按字节计，utf8mb4 下 `length('香蕉')` 为 6，与 H2/PG 的字符数、JPA 侧 `character_length(x)` 不一致。MySQL 改渲染 `char_length(x)`。
+- **JPA `update(entity)` 空 `SET` 抛 provider 内部异常**：除 `@Id` 外全部列都 `@Column(updatable=false)` / `@JoinColumn(updatable=false)`、且没有 `@Version` 可自增时，Hibernate 抛 `IllegalArgumentException`（消息依赖 provider）。现在与 JDBC 同口径显式 `UOE`，文案逐字一致。
+- **JPA 只读判定漏 `@AttributeOverride` / `@AssociationOverride` 覆盖出的只读列（成员级）**：覆盖声明写在字段 / getter 上时，`update(entity)` 仍把覆盖出的 `updatable=false` 列写进 `SET`、条件写也放行。现在按覆盖后的生效列判定，两后端一致。**类级（TYPE 级、点号路径形态，含 `@MappedSuperclass` 覆盖）两后端仍不识别，属既有缺口**（见 USAGE §13.4.3「已知限制」）。
+- **JPA 把 `@Embedded` 内的单值关联当标量列**：`update(entity)` 把嵌入关联的外键列当普通列写、条件写放行「嵌入.关联」整体赋值。现在与顶层关联同形处理（写外键、`@JoinColumn(updatable=false)` / `@AssociationOverride` 覆盖出的只读列跳过、条件写拒绝整体赋值）；JDBC 侧该形态在元数据期就 `UOE`（能力差异见 USAGE §13.4.3）。
+- **JPA `@Access(PROPERTY)` 实体的 `update(entity)` 读嵌入值抛 `IllegalArgumentException`**：只按字段读映射成员，getter 上声明的嵌入属性取不到值。现在按映射声明成员（getter / 字段）取值与取注解。限制：仍要求存在同名字段，无字段的纯 getter 属性不支持。
 
 ## [3.1.0] — 2026-10-30
 

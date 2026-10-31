@@ -441,7 +441,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 ### 6.1 方言接缝：`JdbcDialect` 的渲染钩子
 
-`JdbcDialect` 是**公开 API**（`io.github.nextentity.jdbc.dialect`），职责是「SQL 方言差异的**唯一**集中点」，不是名字标签。接口共 10 个成员（静态 `of(String)` + 9 个实例钩子），除必答题 `name()` 外全部有默认实现，默认形态 = H2 / MySQL / PostgreSQL；四个内置方言都覆写 `quote`（H2/PG `"…"`、MySQL 反引号、SQL Server `[…]`），SQL Server 另覆写 `selectHead` / `limitClause` / `lock` / `averageOf` / `likeEscape` / `lengthOf`：
+`JdbcDialect` 是**公开 API**（`io.github.nextentity.jdbc.dialect`），职责是「SQL 方言差异的**唯一**集中点」，不是名字标签。接口共 10 个成员（静态 `of(String)` + 9 个实例钩子），除必答题 `name()` 外全部有默认实现，默认形态 = H2 / MySQL / PostgreSQL；四个内置方言都覆写 `quote`（H2/PG `"…"`、MySQL 反引号、SQL Server `[…]`），MySQL 另覆写 `lengthOf`（`LENGTH` 是字节数，见下表），SQL Server 另覆写 `selectHead` / `limitClause` / `lock` / `averageOf` / `likeEscape` / `lengthOf`：
 
 | 钩子 | 方言差异 | H2 | MySQL | PostgreSQL | SQL Server |
 |---|---|---|---|---|---|
@@ -453,7 +453,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 | `averageOf(String operand)` | 平均值表达式 | `avg(x)` | `avg(x)` | `avg(x)`（PG 的 `avg(int)` 返回 numeric，无需转换） | `avg(cast(x as float))` |
 | `likeEscape()` | 追加在 `like ?` 后的转义子句 | 空串 | 空串 | 空串 | ` escape '\'` |
 | `substring(String operand, int position, Integer length)` | 3.1.0 加性钩子：`SUBSTRING` 形态。`position` 是 **1 起算**（调用方已把 API 的 0 起算偏移 +1），`length == null` 表示「截到结尾」 | `substring(x, pos)` / `substring(x, pos, len)` | 同 H2 | 同 H2 | `substring(x, pos, 2147483647)`（T-SQL 必须 3 参；用 int 上界表达「到结尾」，**该上界形态尚待 SQL Server 容器实测**；见 USAGE §13.4） |
-| `lengthOf(String operand)` | 3.1.0 加性钩子：字符串长度表达式 | `length(x)` | `length(x)` | `length(x)` | `len(x)`——**`LEN` 会裁掉尾随空格，与 `LENGTH` 不等价**，属「同表达式两后端结果不同」的语义差异，已披露在 USAGE §13.4 |
+| `lengthOf(String operand)` | 3.1.0 加性钩子：字符串长度表达式 | `length(x)` | `char_length(x)`（MySQL 的 `LENGTH()` 是字节数，utf8mb4 下多字节字符会多算，故覆写） | `length(x)` | `len(x)`——**`LEN` 会裁掉尾随空格，与 `LENGTH` 不等价**，属「同表达式两后端结果不同」的语义差异，已披露在 USAGE §13.4 |
 
 **自定义方言接入**（用户明确要求的能力）：实现 `JdbcDialect`（只有 `name()` 是必答题，其余用默认实现即可起步），然后：
 
@@ -514,7 +514,7 @@ EntityOperationsFactory factory = new JdbcEntityOperationsFactory(dataSource, my
 | CUT-16 | `@ManyToOne` 缺 `@JoinColumn(name)` 抛 UOE（不推断默认命名） | **自设规则**：要求显式 | 与 JPA 默认命名不兼容，每个关联都要补注解；替代：显式 `@JoinColumn` | **已在 3.1.0 恢复**（按 JPA 默认命名 `字段名_被引用列名` 推断；CHANGELOG「Added → 写关联与默认 `@JoinColumn` 推断」） |
 | CUT-17 | 写关联：JDBC 非 null 抛 UOE、null 跳过；JPA 静默跳过（两后端行为相反） | **尚未验证**（共享套件无写入关联正例）+ 声称「静默置 null 会丢数据」（JPA 侧实际就是静默跳过，理由被自家行为证伪） | 关联列写不进；两后端一个抛炸一个静默丢；替代：关联列拆成标量列手动写 | **已在 3.1.0 恢复**（两后端都从关联对象 `@Id` 写外键；JDBC null 仍跳过列——`update(entity)` 无法置空外键，等价写法是条件更新 `set(EntityPath.of(X::getDept).get(Dept::getId), null)`；条件写的修复让 JDBC 的 `SET` 与 `WHERE` 都支持 `关联.id`（渲染成本表 FK 列），与 CUT-03 互相引用；见 USAGE §13.4）。触发器：真实消费方需要「整实体 update 直接置空外键」时重审 JDBC null 语义 |
 | CUT-18 | 集合关联与 `@OneToOne(mappedBy=...)` 反侧静默忽略（不进 `attributes()`、不参与 SQL） | **自设规则**：不承诺级联写语义 | 集合/反侧关联的写入被静默丢弃，只能靠 DB 默认值、触发器或第二次手写；替代：显式先写子实体（持有外键一侧的 `@ManyToOne`/`@OneToOne` 已可写）。**查询路径穿过集合关联两侧都显式 `UOE`（`SqlPaths`/`JpaPaths`），不是静默忽略**——静默只限写入列集 | **3.1.0 仍不写**，但 USAGE §8/§13.4 明确披露「写入列集不进 `attributes()`、不参与 SQL；查询路径 fail-fast」，不再与「命中即抛 UOE」混为一谈。触发器：出现需要级联写或集合路径投影的消费方 → 按新能力重审，不是修 bug |
-| CUT-19 | 聚合规格与多列 distinct 的 `count`/`exists` 显式拒绝 | **尚未验证**：一致性套件不覆盖该组合 | 组合计数只能取回数据后去重；替代：`select(a,b).distinct().list()` 后 Java 侧计数 | 3.1.0 恢复「groupBy 之后的 `count`/`exists`/分页」（CUT-07）；**多列 distinct 的 count/exists 仍拒绝**。触发器：补出跨方言一致的 distinct-count 差分基类 + 两方言对拍通过 |
+| CUT-19 | 聚合规格与多列 distinct 的 `count`/`exists` 显式拒绝 | **尚未验证**：一致性套件不覆盖该组合 | 组合计数只能取回数据后去重；替代：`select(a,b).distinct().list()` 后 Java 侧计数 | 3.1.0 恢复「groupBy 之后的 `count`/`exists`/分页」（CUT-07）；**多列 `distinct` 的 `count()` 拒绝；`exists()` 可用（只判是否存在行，不渲染投影列）**。触发器：补出跨方言一致的 distinct-count 差分基类 + 两方言对拍通过 |
 | CUT-20 | 锁只支持实体查询：值选择/聚合规格带锁 → UOE | **外部约束**：H2 拒绝 `FOR UPDATE` + DISTINCT/GROUP BY、MySQL 接受，方言行为不一 | 聚合/投影结果不能锁读（对账场景要么放弃锁、要么拆两次查询）；替代：先锁实体行再聚合 | **3.1.0 仍拒绝**。触发器：H2 支持该组合 / 新方言统一行为 / 消费方给出跨方言对拍用例 |
 | CUT-21 | `@JoinColumn(referencedColumnName=...)` 指向非 `@Id` 列 → meta 期 UOE（三段式） | **自设规则**：契约「`count(*)` 不放大、实体行数 = 结果行数」 | 存量 schema 外键指向唯一非主键列时不可映射；替代：标量列 + 手动 join | **3.1.0 仍拒绝**。触发器：需要目标列 join 的去重语义 + 两方言对拍 + 新基类用例 |
 | CUT-22 | MSSQL 不做行锁（`lock` 抛 UOE） | **外部约束**：MSSQL 无标准 `FOR UPDATE`；`with (updlock)` 在 autocommit 下不持锁、语义不等价 | SQL Server 消费方拿不到行锁语义；替代：应用层锁、快照隔离或原生 SQL | **3.1.0 仍不做**。触发器：MSSQL 出现可移植锁实现并被容器用例钉住 |
