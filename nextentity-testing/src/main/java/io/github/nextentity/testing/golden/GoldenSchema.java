@@ -84,13 +84,13 @@ public final class GoldenSchema {
     @Embeddable
     public static class Address {
 
-        @Column(name = "addr_street")
+        @Column(name = "addr_street", length = 64)
         String street;
 
-        @Column(name = "addr_city")
+        @Column(name = "addr_city", length = 32)
         String city;
 
-        @Column(name = "addr_zip")
+        @Column(name = "addr_zip", length = 12)
         String zip;
 
         protected Address() {}
@@ -122,13 +122,14 @@ public final class GoldenSchema {
         @Id
         Long id;
 
-        @Column(name = "display_name")
+        @Column(name = "display_name", length = 64)
         String name;
 
         @Enumerated(EnumType.STRING)
+        @Column(length = 16)
         Tier tier;
 
-        @Column(name = "credit_limit")
+        @Column(name = "credit_limit", precision = 12, scale = 2)
         BigDecimal creditLimit;
 
         boolean active;
@@ -209,16 +210,17 @@ public final class GoldenSchema {
         Customer customer;
 
         @Convert(converter = OrderStateConverter.class)
-        @Column(name = "state")
+        @Column(name = "state", length = 16)
         OrderState state;
 
+        @Column(precision = 12, scale = 2)
         BigDecimal total;
 
         @Column(name = "placed_at")
         LocalDateTime placedAt;
 
         /// 只读备注：`updatable=false` 让 UPDATE 的 SET 里不含它，条件 update 若点名该列必须被拒。
-        @Column(name = "note", updatable = false)
+        @Column(name = "note", updatable = false, length = 128)
         String note;
 
         @Version
@@ -289,7 +291,7 @@ public final class GoldenSchema {
 
         int quantity;
 
-        @Column(name = "unit_price")
+        @Column(name = "unit_price", precision = 12, scale = 2)
         BigDecimal unitPrice;
 
         boolean shipped;
