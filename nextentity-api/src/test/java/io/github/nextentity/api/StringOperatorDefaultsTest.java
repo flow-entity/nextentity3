@@ -1,6 +1,7 @@
 package io.github.nextentity.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -127,6 +128,18 @@ class StringOperatorDefaultsTest {
                 .containsExactly(
                         "like:ann%",
                         "like:%son", "notLikeIfNotNull:a%", "notLike:ann%", "notLike:%son", "notLike:%nn%");
+    }
+
+    @Test
+    @DisplayName("前缀/后缀/否定算子：null 参数按契约拒绝，不拼出 LIKE 'null%'")
+    void patternOperatorsRejectNull() {
+        assertThatThrownBy(() -> operator.startsWith(null)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> operator.endsWith(null)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> operator.notStartsWith(null)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> operator.notEndsWith(null)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> operator.notContains(null)).isInstanceOf(NullPointerException.class);
+
+        assertThat(operator.calls).isEmpty();
     }
 
     @Test
