@@ -12,10 +12,13 @@ import io.github.nextentity.jdbc.support.SnapshotAsset;
 import io.github.nextentity.jdbc.support.SnapshotItem;
 import io.github.nextentity.jdbc.support.SnapshotOwner;
 import io.github.nextentity.jdbc.support.VersionedItem;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.MappedSuperclass;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
@@ -147,6 +150,15 @@ class JdbcMetaTest {
         assertThat(meta.entityType(SuperclassIdEntity.class).id().name()).isEqualTo("id");
     }
 
+    /// legacy `Employee` 的同列双映射：标量字段与**只读**关联指向同一列时合法（写侧只走可写那一侧）。
+    @Test
+    void readOnlyForeignKeySharingScalarColumnIsAllowed() {
+        JdbcEntityType<DualMappedColumnEntity> type = meta.entityType(DualMappedColumnEntity.class);
+
+        assertThat(type.columns()).extracting(JdbcEntityAttribute::column).containsExactly("id", "owner_id", null);
+        assertThat(type.columns()).extracting(JdbcEntityAttribute::joinColumn).containsExactly(null, null, "owner_id");
+    }
+
     /// 无参构造器抛异常：`newInstance()` 的失败路径（承载体只在用例里用）。
     @Entity
     @Table(name = "meta_throwing_constructor")
@@ -192,5 +204,20 @@ class JdbcMetaTest {
     static class SuperclassIdEntity extends BaseWithId {
 
         private String name;
+    }
+
+    @Entity
+    @Table(name = "dual_mapped_column")
+    static class DualMappedColumnEntity {
+
+        @Id
+        private Long id;
+
+        @Column(name = "owner_id")
+        private Long ownerId;
+
+        @ManyToOne
+        @JoinColumn(name = "owner_id", insertable = false, updatable = false)
+        private SnapshotOwner owner;
     }
 }

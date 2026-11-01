@@ -19,6 +19,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.IdClass;
 import jakarta.persistence.Inheritance;
 import jakarta.persistence.InheritanceType;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Version;
 import java.math.BigDecimal;
@@ -274,6 +275,14 @@ class JdbcMetaRejectionTest {
         rejectedUnsupported(
                 NestedOverrideEntity.class,
                 "嵌套 @AttributeOverride 未支持: " + NestedOverrideEntity.class.getName() + ".address.city.name");
+    }
+
+    @Test
+    void associationForeignKeyCollidingWithScalarColumnIsRejected() {
+        rejectedUnsupported(
+                AssociationForeignKeyCollisionEntity.class,
+                "同一实体内列名重复: " + AssociationForeignKeyCollisionEntity.class.getName() + " -> owner_id"
+                        + "（同一可嵌入类型多次嵌入请用 @AttributeOverride 指定不同列名）");
     }
 
     // ===== @Convert 的拒绝分支 =====
@@ -852,6 +861,19 @@ class JdbcMetaRejectionTest {
 
         @Convert(converter = DurationConverter.class)
         ItemStatus status;
+    }
+
+    @Entity
+    static class AssociationForeignKeyCollisionEntity {
+        @Id
+        long id;
+
+        @Column(name = "owner_id")
+        Long ownerId;
+
+        @ManyToOne
+        @JoinColumn(name = "owner_id")
+        OwnerEntity owner;
     }
 
     enum ItemStatus {

@@ -3,10 +3,9 @@ package io.github.nextentity.jdbc.meta;
 import io.github.nextentity.core.meta.EntityType;
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /// `EntityType` 的注解扫描实现：表名、属性表、`@Id` / `@Version` 句柄。
 ///
@@ -106,6 +105,10 @@ public final class JdbcEntityType<T> implements EntityType<T> {
     }
 
     /// 扁平化后同一列名只允许出现一次：重复会让 SELECT 把同一列读进两个属性、写入互相覆盖（静默错数据）。
+    ///
+    /// 例外是 legacy `Employee` 的同列双映射——标量字段与**只读**关联（`@JoinColumn(insertable = false,
+    /// updatable = false)`）指向同一列：写入只走可写的那一侧，语句里该列只出现一次，不是错数据。
+    /// 两侧都可写时才是真冲突（`insert into t (id, c, c)` 由数据库报错）。
     private static List<JdbcEntityAttribute> flattened(Class<?> type, List<JdbcEntityAttribute> attributes) {
         List<JdbcEntityAttribute> columns = new ArrayList<>();
         for (JdbcEntityAttribute attribute : attributes) {
@@ -115,14 +118,25 @@ public final class JdbcEntityType<T> implements EntityType<T> {
                 columns.add(attribute);
             }
         }
-        Set<String> names = new HashSet<>();
+        Map<String, JdbcEntityAttribute> byColumn = new HashMap<>();
         for (JdbcEntityAttribute column : columns) {
-            String name = column.column();
-            if (name != null && !names.add(name)) {
+            String name = column.column() != null ? column.column() : column.joinColumn();
+            if (name != null && writableDuplicate(byColumn.putIfAbsent(name, column), column)) {
                 throw new UnsupportedOperationException(
                         "同一实体内列名重复: " + type.getName() + " -> " + name + "（同一可嵌入类型多次嵌入请用 @AttributeOverride 指定不同列名）");
             }
         }
         return List.copyOf(columns);
+    }
+
+    /// 同一列名的第二次映射：只有「两侧都可写」才是冲突（只读外键那一侧写侧本来就跳过）。
+    private static boolean writableDuplicate(JdbcEntityAttribute previous, JdbcEntityAttribute column) {
+        if (previous == null) {
+            return false;
+        }
+        if (previous.isAssociation() && !previous.isJoinColumnInsertable() && !previous.isJoinColumnUpdatable()) {
+            return false;
+        }
+        return !column.isAssociation() || column.isJoinColumnInsertable() || column.isJoinColumnUpdatable();
     }
 }
