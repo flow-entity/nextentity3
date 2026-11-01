@@ -129,14 +129,13 @@ public final class JdbcEntityType<T> implements EntityType<T> {
         return List.copyOf(columns);
     }
 
-    /// 同一列名的第二次映射：只有「两侧都可写」才是冲突（只读外键那一侧写侧本来就跳过）。
+    /// 同一列名的第二次映射：只有「两侧都可写」才是冲突（只读的那一侧写侧本来就跳过）。
+    ///
+    /// 判据只看**可写侧的数量**，与哪一侧是关联无关：legacy `Employee` 是「可写标量 + 只读外键」，
+    /// 镜像形态是「只读标量 + 可写外键」，两者都只有一侧进写语句、`SELECT` 也只投影标量列
+    /// （`SqlProjections` 跳过全部关联列），该列在整句 SQL 里只出现一次。旧实现只把「先出现的是
+    /// 只读关联」写成特例，标量侧没有对应分支，于是同一规则在两个声明方向上结论相反。
     private static boolean writableDuplicate(JdbcEntityAttribute previous, JdbcEntityAttribute column) {
-        if (previous == null) {
-            return false;
-        }
-        if (previous.isAssociation() && !previous.isJoinColumnInsertable() && !previous.isJoinColumnUpdatable()) {
-            return false;
-        }
-        return !column.isAssociation() || column.isJoinColumnInsertable() || column.isJoinColumnUpdatable();
+        return previous != null && previous.isWritable() && column.isWritable();
     }
 }

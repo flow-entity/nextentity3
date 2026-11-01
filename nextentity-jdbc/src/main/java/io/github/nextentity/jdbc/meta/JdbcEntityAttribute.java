@@ -206,6 +206,18 @@ public final class JdbcEntityAttribute implements EntityAttribute {
         return association != null && association.joinColumnUpdatable();
     }
 
+    /// 本属性在写侧是否会被写入：标量看 `@Column(insertable / updatable)`，关联外键看
+    /// `@JoinColumn(insertable / updatable)`——两条写路径分别按这两个标志裁列集
+    /// （`WriteSql#insert` / `#appendScalars`），所以「可写」必须是这两个标志的或。
+    ///
+    /// 同列双映射的合法性判据（`JdbcEntityType#flattened`）只看这个值：只有两侧都可写才是真冲突，
+    /// 与哪一侧是关联无关。
+    public boolean isWritable() {
+        return isAssociation()
+                ? isJoinColumnInsertable() || isJoinColumnUpdatable()
+                : isColumnInsertable() || isColumnUpdatable();
+    }
+
     /// 关联对象的 `@Id` 值（写关联时作为 FK 值绑定）；`null` 关联返回 `null`。
     ///
     /// 调用方保证本属性是关联属性（[#isAssociation()] 为真）：关联目标的 `@Id` 在扫描期必已解析，
