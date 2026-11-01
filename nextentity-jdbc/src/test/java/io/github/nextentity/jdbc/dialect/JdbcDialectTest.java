@@ -9,8 +9,8 @@ import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/// 方言探测与 10 成员默认形态：内置四方言、前缀容错、unknown UOE、
-/// 默认窗口五形态、默认锁/字符串函数、PG 锁、MSSQL 的 head/分页/锁/avg/LIKE/len 覆写，
+/// 方言探测与 11 成员默认形态：内置四方言、前缀容错、unknown UOE、
+/// 默认窗口五形态、默认锁/字符串函数/无列表 INSERT、PG 锁、MSSQL 的 head/分页/锁/avg/LIKE/len 覆写，
 /// 以及自定义方言只实现 `name()` 时的默认输出。
 class JdbcDialectTest {
 
@@ -67,6 +67,14 @@ class JdbcDialectTest {
         assertThat(dialect.substring("t0.name", 2, 3)).isEqualTo("substring(t0.name, 2, 3)");
         assertThat(dialect.averageOf("t0.score")).isEqualTo("avg(t0.score)");
         assertThat(dialect.likeEscape()).isEmpty();
+        assertThat(dialect.noColumnsInsert("item")).isEqualTo("insert into item () values ()");
+    }
+
+    /// H2 / MySQL 沿用「无列表 INSERT」默认形态（PG / SQL Server 的覆写见各自的 rendering 用例）。
+    @Test
+    void h2AndMySqlUseDefaultNoColumnsInsert() {
+        assertThat(new H2Dialect().noColumnsInsert("item")).isEqualTo("insert into item () values ()");
+        assertThat(new MySqlDialect().noColumnsInsert("item")).isEqualTo("insert into item () values ()");
     }
 
     @Test
@@ -133,7 +141,7 @@ class JdbcDialectTest {
     }
 
     @Test
-    void postgresOverridesOnlyLock() {
+    void postgresOverridesLockAndNoColumnsInsert() {
         JdbcDialect dialect = new PostgresDialect();
 
         assertThat(dialect.name()).isEqualTo("postgresql");
@@ -144,6 +152,7 @@ class JdbcDialectTest {
         assertThat(dialect.selectHead("1", true)).isEqualTo("select 1");
         assertThat(dialect.likeEscape()).isEmpty();
         assertThat(dialect.averageOf("t0.score")).isEqualTo("avg(t0.score)");
+        assertThat(dialect.noColumnsInsert("item")).isEqualTo("insert into item default values");
 
         List<Object> bound = new ArrayList<>();
         assertThat(dialect.limitClause(new Window(0, 5), false, true, bound::add))
@@ -221,6 +230,7 @@ class JdbcDialectTest {
         assertThat(dialect.lengthOf("t0.name")).isEqualTo("len(t0.name)");
         assertThat(dialect.substring("t0.name", 2, null)).isEqualTo("substring(t0.name, 2, 2147483647)");
         assertThat(dialect.substring("t0.name", 2, 3)).isEqualTo("substring(t0.name, 2, 3)");
+        assertThat(dialect.noColumnsInsert("[item]")).isEqualTo("insert into [item] default values");
     }
 
     /// 只实现 `name()` 的自定义方言：其余成员必须回落到默认形态。

@@ -5,7 +5,8 @@ import io.github.nextentity.core.spec.Window;
 import java.util.List;
 
 /// SQL Server 2022 方言：`top (1)` 单行上限、`offset ... rows fetch next ...` 分页、
-/// `avg(cast(x as float))`、`like ... escape '\'`；锁显式拒绝（没有等价的 `for update`）。
+/// `avg(cast(x as float))`、`like ... escape '\'`、无列表 INSERT 用 `default values`；
+/// 锁显式拒绝（没有等价的 `for update`）。
 public final class SqlServerDialect implements JdbcDialect {
 
     @Override
@@ -17,6 +18,12 @@ public final class SqlServerDialect implements JdbcDialect {
     @Override
     public String quote(String identifier) {
         return '[' + identifier.replace("]", "]]") + ']';
+    }
+
+    /// T-SQL 的「无列表 INSERT」必须写 `default values`：`insert into t () values ()` 不是合法 T-SQL。
+    @Override
+    public String noColumnsInsert(String table) {
+        return "insert into " + table + " default values";
     }
 
     /// exists 的单行上限放 SELECT 头（T-SQL 没有可参数化的 LIMIT 尾缀）。

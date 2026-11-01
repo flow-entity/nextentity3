@@ -7,6 +7,7 @@ import io.github.nextentity.api.EntityPath;
 import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
 import io.github.nextentity.jdbc.support.GeneratedItem;
+import io.github.nextentity.jdbc.support.GeneratedOnlyItem;
 import io.github.nextentity.jdbc.support.IntegerGeneratedItem;
 import io.github.nextentity.jdbc.support.IntegerVersionedItem;
 import io.github.nextentity.jdbc.support.NullableIdItem;
@@ -49,6 +50,7 @@ class JdbcPersistExecutorTest {
         execute("delete from versioned_item");
         execute("delete from integer_versioned_item");
         execute("delete from asset");
+        execute("delete from generated_only_item");
     }
 
     @Test
@@ -117,6 +119,18 @@ class JdbcPersistExecutorTest {
         executor(IntegerGeneratedItem.class).insert(item);
 
         assertThat(item.id()).isInstanceOf(Integer.class).isNotNull();
+    }
+
+    /// 生成键-only 实体（没有任何可插入列）：写链路必须落一行并回填生成键，
+    /// 不能把「没有可插入列」当成映射错误拒绝（3.0.0 可用，H2/MySQL 的 `() values ()` 是合法 INSERT）。
+    @Test
+    void insertGeneratedOnlyEntityWritesRowAndBackfillsKey() throws SQLException {
+        GeneratedOnlyItem item = new GeneratedOnlyItem();
+
+        executor(GeneratedOnlyItem.class).insert(item);
+
+        assertThat(item.id()).as("生成键必须回填").isNotNull();
+        assertThat(count("generated_only_item")).as("必须真落一行").isEqualTo(1);
     }
 
     @Test

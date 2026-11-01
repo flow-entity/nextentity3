@@ -6,7 +6,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
-/// 只有生成键列、没有任何可插入列的实体：`insert` 必须 fail-fast 并给出可行动的文案。
+/// 只有生成键列、没有任何可插入列的实体：`insert` 必须按方言渲染无列表 INSERT 并回填生成键
+/// （H2/MySQL `insert into t () values ()`；PG/SQL Server `insert into t default values`）。
 @Entity
 @Table(name = "generated_only_item")
 public class GeneratedOnlyItem {

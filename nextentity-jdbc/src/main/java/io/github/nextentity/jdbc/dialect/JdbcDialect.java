@@ -6,10 +6,10 @@ import java.util.List;
 
 /// 对外可实现的方言接缝：实现本接口并 `new JdbcEntityOperationsFactory(dataSource, dialect)` 即完成自定义方言接入。
 ///
-/// 共 10 个成员：静态 `of(String)` + 9 个实例钩子（`name` / `quote` / `selectHead` / `limitClause` /
-/// `lock` / `averageOf` / `likeEscape` / `lengthOf` / `substring`）。除 [JdbcDialect#name()] 外全部实例钩子
+/// 共 11 个成员：静态 `of(String)` + 10 个实例钩子（`name` / `quote` / `selectHead` / `limitClause` /
+/// `lock` / `averageOf` / `likeEscape` / `lengthOf` / `substring` / `noColumnsInsert`）。除 [JdbcDialect#name()] 外全部实例钩子
 /// 有默认实现，默认形态 = H2 / MySQL / PostgreSQL；SQL Server 覆写 `selectHead` / `limitClause` / `lock` /
-/// `averageOf` / `likeEscape` / `lengthOf` / `substring`。允许的渲染点见各钩子的说明，
+/// `averageOf` / `likeEscape` / `lengthOf` / `substring` / `noColumnsInsert`。允许的渲染点见各钩子的说明，
 /// 不在那列的差异不得加钩子。
 public interface JdbcDialect {
 
@@ -146,6 +146,19 @@ public interface JdbcDialect {
     default String substring(String operand, int position, Integer length) {
         String tail = length == null ? ")" : ", " + length + ")";
         return "substring(" + operand + ", " + position + tail;
+    }
+
+    /// 无列表 `INSERT` 的形态：实体没有任何可插入列（只有生成键列，或其余列全是
+    /// `@Column(insertable=false)`）时，`WriteSql` 不能渲染 `(...) values (...)`，改由本钩子给出整句。
+    ///
+    /// 默认渲染 `insert into <table> () values ()`（H2 / MySQL 可用）；PostgreSQL / SQL Server
+    /// 覆写为 `insert into <table> default values`（这两家不接受空列括号）。这是 3.0.0 就存在的写能力，
+    /// 3.1.0 的 fail-fast 收口曾把它误成「没有可插入列」UOE。
+    ///
+    /// @param table 已过 [#quote] 的表名（调用方保证非 null）
+    /// @return 完整 INSERT 语句
+    default String noColumnsInsert(String table) {
+        return "insert into " + table + " () values ()";
     }
 
     private static boolean startsWithIgnoreCase(String value, String prefix) {

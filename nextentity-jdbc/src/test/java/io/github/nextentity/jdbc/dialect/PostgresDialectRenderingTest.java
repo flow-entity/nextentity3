@@ -114,6 +114,12 @@ class PostgresDialectRenderingTest {
         assertThat(executor.last.sql()).isEqualTo("select avg(t0.score) from item t0");
     }
 
+    /// 无列表 INSERT（生成键-only 实体）：PG 不接受 `() values ()`，必须 `default values`。
+    @Test
+    void noColumnsInsertUsesDefaultValues() {
+        assertThat(new PostgresDialect().noColumnsInsert("item")).isEqualTo("insert into item default values");
+    }
+
     private static final class CapturingExecutor implements Executor<JdbcQuery> {
 
         private JdbcQuery last;

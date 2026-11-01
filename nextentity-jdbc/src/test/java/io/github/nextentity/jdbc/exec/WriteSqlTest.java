@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.jdbc.compile.SqlStatement;
 import io.github.nextentity.jdbc.dialect.JdbcDialect;
+import io.github.nextentity.jdbc.dialect.PostgresDialect;
+import io.github.nextentity.jdbc.dialect.SqlServerDialect;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
 import io.github.nextentity.jdbc.support.ColumnFlagsItem;
 import io.github.nextentity.jdbc.support.ConvertedIdAssociationItem;
@@ -72,15 +74,26 @@ class WriteSqlTest {
         assertThat(statement.parameters()).containsExactly("generated");
     }
 
+    /// 只有生成键列的实体：没有可插入列**不是拒绝**，而是按方言渲染无列表 INSERT
+    /// （H2/MySQL `insert into t () values ()`，PG/SQL Server `insert into t default values`）。
+    /// 3.0.0 本来就能插这种实体，3.1.0 的 fail-fast 收口把它误删成 UOE（CHANGELOG [Unreleased] 登记）。
     @Test
-    void insertRejectsEntityWithoutInsertableColumnWithActionableMessage() {
+    void insertWithoutInsertableColumnRendersDialectNoColumnsForm() {
         GeneratedOnlyItem item = new GeneratedOnlyItem();
 
-        assertThatThrownBy(() -> WriteSql.insert(meta, meta.entityType(GeneratedOnlyItem.class), item, dialect))
-                .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessageStartingWith("实体 " + GeneratedOnlyItem.class.getName() + " 没有可插入列")
-                .hasMessageContaining("请至少保留一个可插入的标量列")
-                .hasMessageContaining("@GeneratedValue");
+        SqlStatement h2 = WriteSql.insert(meta, meta.entityType(GeneratedOnlyItem.class), item, dialect);
+        assertThat(h2.sql()).isEqualTo("insert into generated_only_item () values ()");
+        assertThat(h2.parameters()).isEmpty();
+
+        SqlStatement postgres =
+                WriteSql.insert(meta, meta.entityType(GeneratedOnlyItem.class), item, new PostgresDialect());
+        assertThat(postgres.sql()).isEqualTo("insert into generated_only_item default values");
+        assertThat(postgres.parameters()).isEmpty();
+
+        SqlStatement sqlServer =
+                WriteSql.insert(meta, meta.entityType(GeneratedOnlyItem.class), item, new SqlServerDialect());
+        assertThat(sqlServer.sql()).isEqualTo("insert into generated_only_item default values");
+        assertThat(sqlServer.parameters()).isEmpty();
     }
 
     @Test

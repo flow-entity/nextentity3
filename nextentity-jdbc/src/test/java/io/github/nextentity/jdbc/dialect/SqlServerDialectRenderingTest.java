@@ -79,6 +79,12 @@ class SqlServerDialectRenderingTest {
         assertThat(executor.last.sql()).isEqualTo("select avg(cast(t0.score as float)) from item t0");
     }
 
+    /// 无列表 INSERT（生成键-only 实体）：T-SQL 不接受 `() values ()`，必须 `default values`。
+    @Test
+    void noColumnsInsertUsesDefaultValues() {
+        assertThat(new SqlServerDialect().noColumnsInsert("[item]")).isEqualTo("insert into [item] default values");
+    }
+
     @Test
     void lockIsRejectedExplicitly() {
         for (LockMode mode : List.of(LockMode.PESSIMISTIC_WRITE, LockMode.PESSIMISTIC_READ)) {

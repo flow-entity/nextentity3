@@ -9,3 +9,4 @@ create table if not exists integer_versioned_item (id bigint primary key, name v
 create table if not exists ordinal_item (id bigint primary key, status int);
 create table if not exists ignored_association_item (id bigint primary key);
 create table if not exists nullable_id_item (id bigint primary key, name varchar(255));
+create table if not exists generated_only_item (id bigint auto_increment primary key);

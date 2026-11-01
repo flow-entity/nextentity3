@@ -7,6 +7,8 @@ import java.util.List;
 ///
 /// 锁差异：LEFT JOIN 下裸 `for update` 报错，必须 `for update of <根表别名>`（probe 实证）；
 /// 共享锁同理用 `for share of <根表别名>`。
+///
+/// 无列表 INSERT：PG 不接受 `() values ()`，必须写 `default values`（`noColumnsInsert`）。
 public final class PostgresDialect implements JdbcDialect {
 
     @Override
@@ -18,6 +20,12 @@ public final class PostgresDialect implements JdbcDialect {
     @Override
     public String quote(String identifier) {
         return '"' + identifier.replace("\"", "\"\"") + '"';
+    }
+
+    /// PG 的「无列表 INSERT」必须写 `default values`：`insert into t () values ()` 在 PG 是语法错。
+    @Override
+    public String noColumnsInsert(String table) {
+        return "insert into " + table + " default values";
     }
 
     @Override

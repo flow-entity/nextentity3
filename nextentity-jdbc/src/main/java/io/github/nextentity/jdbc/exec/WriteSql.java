@@ -26,7 +26,8 @@ final class WriteSql {
     private WriteSql() {}
 
     /// `insert into t (a, b) values (?, ?)`：跳过自增主键列与 `insertable=false` 的列；
-    /// 关联属性非 `null` 时写 FK 列，`null` 时该列不出现。
+    /// 关联属性非 `null` 时写 FK 列，`null` 时该列不出现；一个可插入列都没有时按
+    /// [JdbcDialect#noColumnsInsert(String)] 渲染方言的无列表 INSERT（3.0.0 起的能力，不拒绝）。
     ///
     /// 版本列没有特例：它的 `insertable` 已在元数据期被约束成必须为 `true`
     /// （`JdbcEntityRules.VERSION_INSERTABLE_UNSUPPORTED`——该标志会让版本初值的责任在两后端分叉），
@@ -45,10 +46,12 @@ final class WriteSql {
             }
         }
         if (columns.isEmpty()) {
-            throw new UnsupportedOperationException("实体 " + entityType.type().getName()
-                    + " 没有可插入列，insert 无法生成 VALUES 子句：该实体的列全是生成键列或"
-                    + " @Column(insertable=false) 列，请至少保留一个可插入的标量列（或用 @GeneratedValue"
-                    + " 让主键由数据库生成）");
+            // 只有生成键列（或其余列全是 insertable=false）：没有 VALUES 可渲染，但 INSERT 仍然成立——
+            // H2/MySQL 用 `insert into t () values ()`，PG/SQL Server 用 `default values`（见方言钩子）。
+            return new SqlStatement(
+                    dialect.noColumnsInsert(identifier(entityType.table(), entityType.isTableQuoted(), dialect)),
+                    List.of(),
+                    List.of());
         }
         String sql = "insert into " + identifier(entityType.table(), entityType.isTableQuoted(), dialect) + " ("
                 + String.join(", ", columns) + ") values (" + placeholders(columns.size()) + ")";
