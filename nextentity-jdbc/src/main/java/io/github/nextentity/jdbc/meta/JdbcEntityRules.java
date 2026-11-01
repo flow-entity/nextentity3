@@ -186,8 +186,18 @@ final class JdbcEntityRules {
 
     /// `@ManyToOne` / `@OneToOne` 的 FK 列：`@JoinColumn(name)` 优先，缺省按 JPA 默认命名
     /// `<字段名>_<被引用列名>` 推断（被引用列 = 目标 `@Id` 的实际列名）。
+    ///
+    /// `@JoinColumn` 是**可重复注解**：`@JoinColumns(@JoinColumn(...))`（容器写法，单列时与单列写法同义）
+    /// 也要读——`getAnnotation(JoinColumn.class)` 对容器写法返回 `null`，会把容器声明的列名 / 只读标志
+    /// 静默丢掉（列名回落默认命名、`updatable=false` 的外键照常进 SET）。复合外键（>1 列）本层只建模
+    /// 单列外键，元数据期显式拒绝而不是静默取第一列（文案与 JPA 后端逐字一致）。
     private static JdbcEntityAttribute association(Field field, String path) {
-        JoinColumn joinColumn = field.getAnnotation(JoinColumn.class);
+        JoinColumn[] joinColumns = field.getAnnotationsByType(JoinColumn.class);
+        if (joinColumns.length > 1) {
+            throw new UnsupportedOperationException(
+                    "复合外键关联未支持: " + path + "（@JoinColumns 列数=" + joinColumns.length + "，本层只建模单列外键）");
+        }
+        JoinColumn joinColumn = joinColumns.length == 0 ? null : joinColumns[0];
         String declared = joinColumn == null ? "" : JdbcNames.bare(joinColumn.name(), path);
         String joinColumnName =
                 declared.isEmpty() ? field.getName() + "_" + JdbcColumns.idColumn(field.getType()) : declared;
