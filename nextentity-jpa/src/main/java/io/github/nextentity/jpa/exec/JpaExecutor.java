@@ -3,6 +3,7 @@ package io.github.nextentity.jpa.exec;
 import io.github.nextentity.core.exec.Executor;
 import io.github.nextentity.core.spec.AttributePath;
 import io.github.nextentity.core.spec.CountScope;
+import io.github.nextentity.core.spec.EntitySelection;
 import io.github.nextentity.core.spec.PathProjection;
 import io.github.nextentity.core.spec.QuerySpec;
 import io.github.nextentity.core.spec.ValueSelection;
@@ -53,6 +54,12 @@ public final class JpaExecutor implements Executor<JpaQuery> {
             typedQuery.setMaxResults(window.limit());
         }
         if (spec.lock() != null) {
+            if (!(spec.selection() instanceof EntitySelection)) {
+                // Hibernate 对非实体选择只记 LockOptions、生成的 SQL 不带锁：静默丢锁比抛错危险得多，
+                // 与 JDBC 后端的拒绝分支保持同一契约（USAGE §9）
+                throw new UnsupportedOperationException(
+                        "锁只支持实体查询: " + spec.entityType().getName());
+            }
             // api.LockMode 与 jakarta LockModeType 同名闭集，名字映射即可，不写 5 分支 switch
             typedQuery.setLockMode(LockModeType.valueOf(spec.lock().name()));
         }

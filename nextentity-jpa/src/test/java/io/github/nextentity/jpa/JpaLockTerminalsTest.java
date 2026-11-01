@@ -1,8 +1,10 @@
 package io.github.nextentity.jpa;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.api.LockMode;
+import io.github.nextentity.api.Path;
 import io.github.nextentity.core.repo.EntityOperations;
 import io.github.nextentity.jpa.entity.OrderStatus;
 import io.github.nextentity.jpa.entity.ShopOrder;
@@ -63,6 +65,18 @@ class JpaLockTerminalsTest extends JpaTestSupport {
 
         assertThat(locked.getId()).isEqualTo(100L);
         assertThat(singleStatement()).contains("for update");
+    }
+
+    @Test
+    @DisplayName("值选择上调用 lock：按 USAGE §9 契约拒绝，不静默丢锁")
+    void lockOnValueSelectionIsRejected() {
+        assertThatThrownBy(() -> inTx(entityManager -> orders(entityManager)
+                        .query()
+                        .select(Path.of(ShopOrder::getId))
+                        .lock(LockMode.PESSIMISTIC_WRITE)
+                        .list()))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessage("锁只支持实体查询: " + ShopOrder.class.getName());
     }
 
     private <R> R lastStatementOf(Function<EntityManager, R> work) {
