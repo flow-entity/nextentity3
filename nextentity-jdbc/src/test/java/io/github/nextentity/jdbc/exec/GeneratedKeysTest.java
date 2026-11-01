@@ -97,10 +97,23 @@ class GeneratedKeysTest {
     }
 
     @Test
-    void fallsBackToFirstColumnWhenIdColumnMissingButReadable() {
-        long id = insertedId(FakeKeys.resultSet(new String[] {"key", NAME}, new Object[] {46L, "n"}));
+    void reportsKeyColumnsWhenIdColumnMissingEvenIfFirstColumnIsReadable() {
+        ResultSet keys = FakeKeys.resultSet(new String[] {"key", NAME}, new Object[] {46L, "n"});
 
-        assertThat(id).isEqualTo(46L);
+        assertThatThrownBy(() -> insertedId(keys))
+                .isInstanceOf(PersistenceException.class)
+                .hasMessageContaining("未找到生成键列 id")
+                .hasMessageContaining("实际列: key, name");
+    }
+
+    @Test
+    void rejectsNonNumericValueInLocatedIdColumn() {
+        // id 列按名定位到了，但驱动把键回传成字符串：读不出数值必须拒绝，不能静默当 0。
+        ResultSet keys = FakeKeys.resultSet(new String[] {"key", ID}, new Object[] {46L, "abc"});
+
+        assertThatThrownBy(() -> insertedId(keys))
+                .isInstanceOf(PersistenceException.class)
+                .hasMessageContaining("SQL 执行失败: ");
     }
 
     @Test

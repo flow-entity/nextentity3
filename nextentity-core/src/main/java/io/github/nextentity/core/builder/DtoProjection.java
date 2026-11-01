@@ -48,7 +48,7 @@ record DtoProjection(List<Projection> items, RowMapper<?> mapper) {
     /// @param type       DTO 类型，非 `null`
     /// @param entityType 实体类型，非 `null`
     /// @return 投影列与装配器
-    /// @throws IllegalArgumentException DTO 没有可映射的属性，普通类缺无参构造器，或 DTO 是接口/抽象类
+    /// @throws IllegalArgumentException DTO 没有可映射的属性，普通类缺无参构造器、有同名 setter 重载，或 DTO 是接口/抽象类
     static DtoProjection of(Class<?> type, Class<?> entityType) {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(entityType, "entityType");
@@ -83,19 +83,17 @@ record DtoProjection(List<Projection> items, RowMapper<?> mapper) {
     }
 
     /// 普通类 DTO：属性名由 `setXxx` 给，需要无参构造器，列序按属性名排序（反射方法序不保证稳定）。
+    ///
+    /// 合成方法（`isSynthetic()`——javac 为泛型接口、协变返回生成的桥方法必然同时是合成的）不是
+    /// 独立属性，跳过——否则「同一属性两个方法」里选中哪个由 `Class#getMethods()` 的未定义顺序决定。
+    /// 去掉合成方法之后仍有同名 setter 时，光看名字判断不出该装进哪一列，当场拒绝，不猜。
     private static DtoProjection bean(Class<?> type, Class<?> entityType) {
         Constructor<?> constructor = constructor(type);
         Map<String, Method> setters = new TreeMap<>();
         for (Method method : type.getMethods()) {
-            String name = method.getName();
-            if (name.length() <= 3
-                    || !name.startsWith("set")
-                    || method.getParameterCount() != 1
-                    || Modifier.isStatic(method.getModifiers())) {
-                continue;
+            if (isSetter(method)) {
+                register(setters, type, method);
             }
-            method.setAccessible(true); // DTO 可以是包私有类，公开方法在其上也调不动
-            setters.put(propertyName(name), method);
         }
         if (setters.isEmpty()) {
             throw new IllegalArgumentException(NO_PROPERTIES + type.getName() + "（需要至少一个 setXxx，或用 record 声明）");
@@ -112,6 +110,28 @@ record DtoProjection(List<Projection> items, RowMapper<?> mapper) {
             }
             return instance;
         });
+    }
+
+    /// 一个方法是不是 DTO 属性 setter：`setXxx` 单参数实例方法，且不是编译器生成的合成方法。
+    private static boolean isSetter(Method method) {
+        String name = method.getName();
+        return name.length() > 3
+                && name.startsWith("set")
+                && method.getParameterCount() == 1
+                && !Modifier.isStatic(method.getModifiers())
+                && !method.isSynthetic();
+    }
+
+    /// 登记属性 → setter：同名 setter 不止一个时无法确定该装进哪一列，当场拒绝，不猜。
+    private static void register(Map<String, Method> setters, Class<?> type, Method method) {
+        method.setAccessible(true); // DTO 可以是包私有类，公开方法在其上也调不动
+        String property = propertyName(method.getName());
+        Method existing = setters.putIfAbsent(property, method);
+        if (existing != null) {
+            throw new IllegalArgumentException("DTO 的 setter 重载无法确定映射目标: " + type.getName() + "."
+                    + property + "（多个 setter: " + setter(existing) + "、" + setter(method)
+                    + "）；改用 record 或 project(ProjectionMapper)");
+        }
     }
 
     /// DTO 列：列名是 DTO 属性名，允许后端（JPA）在实体上没有同名直接属性时回找 `@Embedded` 同名叶子。
@@ -138,6 +158,11 @@ record DtoProjection(List<Projection> items, RowMapper<?> mapper) {
             return rest;
         }
         return Character.toLowerCase(rest.charAt(0)) + rest.substring(1);
+    }
+
+    /// 重载冲突消息里的 setter 形状：`setValue(String)` / `setValue(int)`。
+    private static String setter(Method method) {
+        return method.getName() + "(" + method.getParameterTypes()[0].getSimpleName() + ")";
     }
 
     private static Object instantiate(Constructor<?> constructor, Object[] arguments, Class<?> type) {

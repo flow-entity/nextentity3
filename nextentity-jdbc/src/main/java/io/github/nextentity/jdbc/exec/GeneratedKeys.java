@@ -7,7 +7,7 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 
-/// 读取 `RETURN_GENERATED_KEYS` 结果集：驱动返回单列时直接读；返回整行时按 id 列名定位（PG 会返回整行）。
+/// 读取 `RETURN_GENERATED_KEYS` 结果集：驱动返回单列时直接读；返回整行时按 id 列名定位（PG 会返回整行），定位不到即拒绝。
 /// 不按方言分支，列名比较大小写不敏感。
 ///
 /// 3.1.0 起生成键类型放宽到 JPA 允许的数值型（`short` / `int` / `long` / `BigInteger`，含包装），
@@ -23,7 +23,7 @@ final class GeneratedKeys {
         ResultSetMetaData metadata = keys.getMetaData();
         int index = metadata.getColumnCount() == 1 ? 1 : index(metadata, idColumn);
         if (index == 0) {
-            index = 1;
+            throw missingColumn(sql, idColumn, metadata, null);
         }
         return value(keys, index, idType, idColumn, metadata, sql);
     }
@@ -45,8 +45,7 @@ final class GeneratedKeys {
         try {
             value = keys.getBigDecimal(index);
         } catch (SQLException e) {
-            throw new PersistenceException(
-                    EXECUTION_FAILED + sql + "；未找到生成键列 " + idColumn + "，实际列: " + labels(metadata), e);
+            throw missingColumn(sql, idColumn, metadata, e);
         }
         if (value == null) {
             throw new PersistenceException("生成键为 null: " + sql);
@@ -80,5 +79,13 @@ final class GeneratedKeys {
             return "未知";
         }
         return result.toString();
+    }
+
+    /// 整行结果集里按列名定位不到 id 列：拒绝而不是退回第 1 列，避免把无关列当主键回写实体。
+    /// `cause` 是读取 id 列失败的原因，按列名定位不到时传 `null`（两参构造的 cause 本就是 `null`）。
+    private static PersistenceException missingColumn(
+            String sql, String idColumn, ResultSetMetaData metadata, Throwable cause) {
+        String message = EXECUTION_FAILED + sql + "；未找到生成键列 " + idColumn + "，实际列: " + labels(metadata);
+        return new PersistenceException(message, cause);
     }
 }

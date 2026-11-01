@@ -267,6 +267,29 @@ class DtoProjectionTest {
                 .hasCauseInstanceOf(IllegalStateException.class);
     }
 
+    @Test
+    @DisplayName("setter 重载：无法确定映射目标就拒绝，而不是按反射顺序任选一个")
+    void beanOverloadedSettersRejected() {
+        assertThatThrownBy(() -> query().select(OverloadedSetters.class))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("setter 重载无法确定映射目标")
+                .hasMessageContaining("OverloadedSetters")
+                .hasMessageContaining("value")
+                // 两个候选都要点名（反射序不保证谁先谁后），否则读者不知道该改哪个
+                .hasMessageContaining("setValue(String)")
+                .hasMessageContaining("setValue(int)");
+    }
+
+    @Test
+    @DisplayName("实现泛型接口的 DTO：编译器生成的桥方法不是属性，装配走真实 setter")
+    void beanGenericInterfaceBridgeMethodIgnored() {
+        query().select(GenericSetterDto.class).list();
+
+        assertThat(selection().items()).containsExactly(new PathProjection(path("value"), true));
+        Object row = assemble(new Object[] {"ann"}).getFirst();
+        assertThat(((GenericSetterDto) row).value()).isEqualTo("ann");
+    }
+
     // ---------------------------------------------------------------- fixture
 
     private ValueSelection selection() {
@@ -513,6 +536,39 @@ class DtoProjectionTest {
 
         public void setAge(Integer age) {
             throw new IllegalStateException("boom");
+        }
+    }
+
+    /// 同名 setter 重载：`value` 到底该从哪一列装进去，光看名字判断不出来。
+    @SuppressWarnings("unused")
+    private static final class OverloadedSetters {
+
+        public void setValue(String value) {
+            // 重载之一
+        }
+
+        public void setValue(int value) {
+            // 重载之二
+        }
+    }
+
+    /// 泛型接口的 setter：`implements ValueSetter<String>` 会让编译器额外生成 `setValue(Object)` 桥方法。
+    private interface ValueSetter<T> {
+
+        void setValue(T value);
+    }
+
+    private static final class GenericSetterDto implements ValueSetter<String> {
+
+        private String value;
+
+        @Override
+        public void setValue(String value) {
+            this.value = value;
+        }
+
+        String value() {
+            return value;
         }
     }
 

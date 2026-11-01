@@ -415,12 +415,13 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
         return assemble(executor.list(compileForRows(spec)));
     }
 
-    /// 编译列表规格：锁形态校验与后端的编译期拒绝（JDBC 的 `fetch`）都在这一步。
+    /// 编译列表规格：锁与 `fetch` 的形态校验、以及后端的编译期拒绝（JDBC 的 `fetch`）都在这一步。
     ///
     /// 单独拆出来是为了让 [slice] 能在短路**之前**编译——校验若留在执行那一半，
     /// 「同一条调用是否抛异常」就取决于数据。
     private S compileForRows(QuerySpec spec) {
         requireLockable(spec);
+        requireFetchable(spec);
         return compiler.compile(spec);
     }
 
@@ -442,6 +443,21 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
         if (spec.lock() != null && spec.aggregate()) {
             throw new UnsupportedOperationException(
                     "锁只支持实体查询: " + spec.entityType().getName());
+        }
+    }
+
+    /// `fetch(...)` 只允许与「实体行」查询组合：投影查询的行不是实体，没有关联可填。
+    ///
+    /// 不放行的理由与 [#requireLockable] 同款——**同一调用在不同后端上行为不一致**：JPA 的
+    /// `JpaQueryBuilder#valueQuery` 根本不读 `spec.fetch()`（静默不预取，调用方以为已经预加载），
+    /// JDBC 的 `JdbcCompiler#rejectFetch` 直接 UOE。「静默少查」与「当场报错」本库不猜，统一 fail-fast。
+    ///
+    /// `count()` / `exists()` 不经过这里：它们把 fetch 清掉（[QuerySpec#forCounting] /
+    /// [QuerySpec#forExistence]），计数语句里没有预加载。
+    private void requireFetchable(QuerySpec spec) {
+        if (!spec.fetch().isEmpty() && !(spec.selection() instanceof EntitySelection)) {
+            throw new UnsupportedOperationException(
+                    "fetch 只支持实体查询: " + spec.entityType().getName());
         }
     }
 
