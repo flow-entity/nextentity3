@@ -11,6 +11,7 @@ import io.github.nextentity.core.spec.NullCheck;
 import io.github.nextentity.core.spec.Operand;
 import io.github.nextentity.core.spec.Spec;
 import java.util.Collection;
+import java.util.Objects;
 
 /// 语义映射的唯一出口：把「路径 + 运算 + 参数」变成 `core.spec` 节点。
 ///
@@ -44,11 +45,15 @@ final class Specs {
 
     /// 包含子串：`%value%`。
     ///
+    /// 入参先 `requireNonNull` 再拼串：`null` 直接拼进去会变成 `LIKE '%null%'`（查的是字面量 `null`
+    /// 子串），调用方拿到的是空集而不是异常。同族 `like` / `notContains` / `startsWith` 都已 fail-fast，
+    /// 提示文案也统一是 `"value"`。`null` 的正确写法是 `containsIfNotNull` / `containsIfNotEmpty`。
+    ///
     /// @param subject 主语操作数
-    /// @param value   子串
+    /// @param value   子串，非 `null`（空串合法：命中所有非 `null` 值）
     /// @return 比较节点
     static Spec contains(Operand subject, Object value) {
-        return like(subject, "%" + value + "%");
+        return like(subject, "%" + Objects.requireNonNull(value, "value") + "%");
     }
 
     /// 集合成员：空集合折成恒假/恒真。
