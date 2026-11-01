@@ -49,14 +49,15 @@ public final class JpaEntityType<T> implements EntityType<T> {
                     || attributeType == PersistentAttributeType.ONE_TO_ONE;
             AnnotatedElement declared =
                     attribute.getJavaMember() instanceof AnnotatedElement annotated ? annotated : null;
-            EntityAttribute meta = new JpaEntityAttribute(type, attribute.getName(), association, declared);
+            JpaEntityAttribute meta = new JpaEntityAttribute(type, attribute.getName(), association, declared);
             attributes.put(attribute.getName(), meta);
             if (attribute instanceof SingularAttribute<?, ?> singular) {
                 if (singular.isId()) {
                     id = meta;
                 } else if (singular.isVersion()) {
                     version = meta;
-                    rejectInsertableFalseVersion((JpaEntityAttribute) meta, type);
+                    rejectUnsupportedVersionType(meta, type);
+                    rejectInsertableFalseVersion(meta, type);
                 }
             }
         }
@@ -64,6 +65,29 @@ public final class JpaEntityType<T> implements EntityType<T> {
             throw new IllegalArgumentException("实体 " + type.getName() + " 没有 @Id 属性");
         }
         return new JpaEntityType<>(type, id, version, attributes);
+    }
+
+    /// `@Version` 的类型集：只放行 `int` / `long` / `short`（含包装类型），其余在元数据期拒绝。
+    ///
+    /// 版本递增只实现这三个类型族（`JpaPersistExecutor#nextVersion`），别的类型要等到 `update(entity)`
+    /// 拼 `SET` 才抛——同一实体于是「读能用、写不能用」：`operations()` / `insert` / `query().list()` /
+    /// `count()` / 条件更新全部可用，只有 `update(entity)` 抛 UOE。JDBC 后端则在解析期整类拒绝，
+    /// 两后端口径就此分裂，而 USAGE §13.4.3 承诺「两后端同时拒绝，版本类型集已一致」。
+    ///
+    /// 文案与 JDBC 后端（`JdbcEntityRules#VERSION_UNSUPPORTED`）逐字一致：jpa 模块不依赖 jdbc，
+    /// 字面量只能在本模块内重复一份，理由同 USAGE §13.4.3——改一边必须同步另一边。
+    private static void rejectUnsupportedVersionType(JpaEntityAttribute version, Class<?> type) {
+        Class<?> javaType = version.type();
+        if (javaType == Integer.class
+                || javaType == int.class
+                || javaType == Long.class
+                || javaType == long.class
+                || javaType == Short.class
+                || javaType == short.class) {
+            return;
+        }
+        throw new UnsupportedOperationException(
+                "@Version 只支持 int / long / short（含包装类型）: " + type.getName() + "." + version.name());
     }
 
     /// `@Version` 列上的 `@Column(insertable = false)` 在元数据期拒绝。
