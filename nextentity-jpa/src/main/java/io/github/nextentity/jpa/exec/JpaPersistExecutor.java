@@ -31,8 +31,10 @@ import java.util.Map;
 ///   本表外键列，仍不写（3.1.0 起即如此）。
 ///
 /// 约定：① 异常用标准 JPA 异常（`OptimisticLockException` / `EntityNotFoundException`）；
-/// ② `@Version` 支持 Integer 与 Long（其它类型会 `ClassCastException`），
-/// point-mall 的 27 处版本列全是 `integer`。
+/// ② `@Version` 支持 `int` / `long` / `short` 三族（含包装类型），其它类型与「版本值到该类型上界」
+/// 都在构造 `SET` 子句时抛 `UnsupportedOperationException`（文案与 JDBC 后端逐字一致）；
+/// 版本列上的 `@Column(insertable=false)` 由 `JpaEntityType` 在元数据期拒绝（本层无法让 provider
+/// 写入该列，两后端也就无法同口径，见 `USAGE.md` §13.4.3）。
 ///
 /// @param <T> 实体类型
 @SuppressWarnings("PMD.TooManyMethods") // 方法数由 PersistExecutor 契约面 + 版本自增的类型上界守卫决定，不是上帝类

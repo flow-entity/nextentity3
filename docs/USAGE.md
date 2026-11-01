@@ -433,7 +433,8 @@ List<OrderRow> uniq = query().distinct().select(OrderRow.class).list();
 - **改名与计算列仍不覆盖**：DTO 属性名必须与某个叶子属性名相同，2.2.3 `@EntityPath` 里「DTO 字段名 ≠ 叶子名」的写法（如字段 `zipCode` 指向叶子 `code`）表达不出来，改用 `project(ProjectionMapper)` 手写列集；
 - **同名叶子出现在多个 `@Embedded` 组件里时显式失败**：抛 `IllegalArgumentException` 并点名属性与实体、提示改用映射器——不静默挑第一个（挑错只是让结果看着像数据问题）；
 - 接口与抽象类不支持（接口投影要靠运行期代理）：抛 `IllegalArgumentException` 并提示改用映射器；DTO 无可映射属性、普通类缺无参构造器同样在 `select(...)` 阶段抛 `IllegalArgumentException`；
-- 属性名写错**无法在编译期校验**（实体属性清单不在编译期可见），会在后端渲染/装配时失败，不会静默跳过；
+- 属性名写错**无法在编译期校验**（实体属性清单不在编译期可见），会在后端渲染/装配时失败，不会静默跳过；`count()` / `exists()` 的计数语句本身不含投影列，但查询在计数前仍被完整编译，所以写错的属性名在它们上面同样会失败；
+- **DTO 属性落在关联属性上时两后端都拒绝**：`record Dto(Long id, Customer customer)` 抛 `UnsupportedOperationException: 投影关联对象未支持: <实体全名>.<属性>`。JPA 侧若放行，Criteria 会把该列渲染成对被关联表的 inner join，外键为 `null` 的行被静默丢掉（`count()` 不注册这个 join，两个终止符互相矛盾）；跨表列请写进 `project(ProjectionMapper)`；
 - 目标类型恰好是实体类型本身时退化为整实体查询；此时 `distinct()` 不可用——`SELECT DISTINCT 实体` 表达不出来，运行期抛 `UnsupportedOperationException`，不让旗标静默失效。
 
 > 边界：`select(Class)` 只负责「列 → 对象」的装配，不负责懒加载——它查的是列，不是实体图；要预取关联仍用 §8.1 的 `fetch(...)`。
@@ -520,12 +521,15 @@ boolean any = query().select(Path.of(Order::getCustomerId), Path.of(Order::getId
         .having(Path.of(Order::getId).count().gt(5L))
         .exists();
 
-// 对分组结果分页：offset/limit 作用在「组」上
+// 对分组结果分页：offset/limit 作用在「组」上。
+// 分组查询**没有**默认主键排序（主键不在分组键里，补 ORDER BY 主键是非法 SQL），页间顺序要稳定
+// 就显式 orderBy 一个分组键或投影列——`orderBy` 只接 `Path` / `PathRef`，接不了 `count()` 这类聚合值。
 List<Tuple2<Long, Long>> page = query().select(
                 Path.of(Order::getCustomerId), Path.of(Order::getId).count())
         .groupBy(Order::getCustomerId)
         .having(Path.of(Order::getId).count().gt(5L))
-        .orderBy(Path.of(Order::getId).count()).desc()
+        .orderBy(Order::getCustomerId)
+        .asc()
         .list(10, 10);
 ```
 
@@ -770,10 +774,10 @@ orders.updateAll(List.of(order));
 | 数值 | `Integer`/`int`、`Long`/`long`、`Short`/`short`、`Double`/`double`、`Float`/`float`、`BigDecimal`、`BigInteger`（主要服务于生成键；普通列同样可用，绑定走 `BigDecimal`、读回精确转回 `BigInteger`） |
 | 布尔 | `Boolean`/`boolean` |
 | 枚举 | 任意 `enum`；`@Enumerated(STRING)` 存名字、`@Enumerated(ORDINAL)` 存序号，缺省 `ORDINAL`（与 JPA 默认一致） |
-| 时间 | `LocalDate`、`LocalDateTime`、`LocalTime`、`Instant`、`java.sql.Date`/`Time`/`Timestamp` |
+| 时间 | `LocalDate`、`LocalDateTime`、`LocalTime`、`Instant`、`java.sql.Date`/`Time`/`Timestamp`。`LocalTime` 走 JDBC 4.2 的 java.time 形态（`setObject(LocalTime)` / `getObject(LocalTime.class)`），**小数秒按列精度保留**——不要转成 `java.sql.Time`（那个形态只到秒，写入值与读回值会静默不等） |
 | 生成键策略 | `@GeneratedValue(strategy = IDENTITY)` 与 `AUTO`（按方言落到 `IDENTITY`） |
 | 生成键类型 | `short`/`Short`、`int`/`Integer`、`long`/`Long`、`BigInteger`（按 `id.type()` 转换，窄类型做范围校验） |
-| `@Version` 类型 | `int`/`long`/`short`/`Integer`/`Long`/`Short`（应用侧 +1 写回；到该类型上界显式 `UOE`、不回绕；`WHERE id [AND version]` 0 行抛 `OptimisticLockException`） |
+| `@Version` 类型 | `int`/`long`/`short`/`Integer`/`Long`/`Short`（应用侧 +1 写回；到该类型上界显式 `UOE`、不回绕；`WHERE id [AND version]` 0 行抛 `OptimisticLockException`）。版本列**必须可插入**（`@Column(insertable=false)` 在元数据期拒绝，见 13.4.3）；`@Column(updatable=false)` 不影响版本自增 |
 | `@Column` / `@JoinColumn` 的 `insertable/updatable=false` | 支持：读回照常；`insertable=false` 不进 `INSERT` 列集、`updatable=false` 不进 `UPDATE SET`；该列仍可出现在 `WHERE`/`ORDER BY`（2.2.3 examples 用的是 `@JoinColumn` 形态） |
 | `@Embedded`/`@Embeddable` | 支持**扁平**嵌入：列名默认取嵌入类型的字段名（与 Hibernate/JPA 默认命名一致：`address.street` → `street`），可用 `@AttributeOverride` 覆盖；`@AttributeOverride` 覆盖的是**整份列映射**（列名 + `insertable`/`updatable` 标志，与 JPA 对齐），且必须**逐条命中**叶子列，拼错名字抛 `UOE`（见 13.4.3）；`@Embeddable` 可继承 `@MappedSuperclass` 父类（父类字段排在前面，与实体侧同规则；父类为 `@Entity` 拒绝）；嵌入类型同样只支持字段访问（见 13.4.3）；嵌套 `@Embedded`、点号形式的嵌套 `@AttributeOverride` 不提供（见 13.4.3） |
 | `@Convert` | 支持**显式** `@Convert(converter = ...)`（`AttributeConverter` 无参实例化；`convertsTo` 的列类型必须落在上表内，否则拒绝并提示改用受支持类型） |
@@ -795,6 +799,7 @@ orders.updateAll(List.of(order));
 |---|---|---|---|
 | `@Inheritance` 继承映射（含 `@Embeddable` 继承带 `@Entity` 的父类） | `UnsupportedOperationException` | 自设规则（当前只支持单表扁平映射） | 拆成独立实体 + 标量列；或换 JPA 后端 |
 | `@IdClass` / 复合主键 / `@EmbeddedId` | `UOE` | 自设规则 | 增加单列代理主键；复合唯一约束交给 DB |
+| `@Table(schema = …)` / `@Table(catalog = …)` | `UOE`（`@Table(schema/catalog) 未支持: <实体全名>`，元数据期） | 尚未实现：本后端表名只取 `@Table(name)`，schema / catalog 从不进 SQL。静默丢弃会让语句打到默认 schema 的**同名表**上（写入落到别处、查询读到别的数据，全程不报错） | 用默认 schema（连接 URL 里指定当前 schema）；或改用 JPA 后端（Hibernate 渲染 `schema.table`） |
 | `@Access(PROPERTY)` / 把映射注解写在 getter 上（含 `@Embeddable` 内的 getter 注解与类级 `@Access(PROPERTY)`） | `UOE`（JDBC 只支持字段访问；嵌入类型同样校验，否则 getter 上的 `@Column`/`@Convert`/`@Enumerated` 会静默失效）；**JPA 后端支持**（按映射声明成员取注解与取值，仍要求存在同名字段） | 自设规则 | JDBC：把 `@Id`/`@Column` 等注解移到字段上，或改用 JPA 后端 |
 | 缺 `@Entity` / 无 `@Id` / 多 `@Id` / 多 `@Version` | `IllegalArgumentException`（实体结构错误） | 自设规则 | 按 JPA 实体规则修正模型 |
 | `byte`/`Byte`、`char`/`Character`、`byte[]` 列类型 | `UOE` | 尚未验证（`char` 的定长补空格语义、`byte[]` 的 BLOB/VARBINARY 各方言类型名与流式读写未实测） | 改用受支持列类型，或 `@Convert` 转成 `String`/`byte[]` 之外的表示 |
@@ -802,6 +807,7 @@ orders.updateAll(List.of(order));
 | `@GeneratedValue(strategy = TABLE)` | `UOE` | 外部约束（需要序列表 DDL，本模块不生成 DDL） | 应用侧发号或换 `IDENTITY`/`AUTO` |
 | `@Version` 为 `Timestamp` | `UOE` | 尚未验证（应用侧生成当前时间需 `Clock` 注入；两后端同时拒绝，版本类型集已一致） | 改用六种数值型版本（到类型上界会显式拒绝，不回绕） |
 | `@Version` + `@Convert` | `UOE`（`@Version 不支持 @Convert: <实体全名>.<属性>`，元数据期） | 对齐 JPA（Hibernate 元数据期就拒绝该组合）：本层版本自增直接 +1 写回、不经 converter，写侧 `SET` 绑原值而读侧与 `WHERE`（实体 `update(entity)` 与条件写）过 converter，两者永不相等，乐观锁永久失效（静默错数据） | 去掉版本列上的 `@Convert`，改用六种数值型版本；`@Id` + `@Convert` 不受影响 |
+| `@Version` + `@Column(insertable=false)` | `UOE`（`@Version 列不支持 @Column(insertable=false)（版本初值由本层写入，insertable 只约束业务列）: <实体全名>.<属性>`，**两后端同文案、元数据期**） | 自设规则：版本初值是乐观锁协议的一部分，而 Hibernate 遵守该标志把版本列摘出 `INSERT`——库内版本停在 `NULL`，基本类型版本读回直接 `PropertyAccessException`、包装类型让下一次 `update(entity)` 抛假的 `OptimisticLockException`。本层无法让 provider 写入该值，两后端也就无法同口径，故 fail-fast | 去掉版本列上的 `insertable=false`（版本初值由本层写 0）；`@Version` + `@Column(updatable=false)` 不受影响 |
 | 嵌套 `@Embedded` / 点号形式的嵌套 `@AttributeOverride` | `UOE` | 尚未验证 | 拍平成一层的嵌入字段或标量列，覆盖只写单层属性名 |
 | `@AttributeOverride` 指向不存在的属性名（拼错、或指向 `@Transient` 字段） | `UOE`（`未命中的 @AttributeOverride: <嵌入路径>.<属性名>`） | 自设规则：JPA 在元模型构建期就报错；静默忽略会让列名悄悄回落成默认值 | 改成嵌入类型里真实存在的属性名 |
 | `@Embeddable` 的父子类字段重名（子类遮蔽父类字段） | `UOE`（`嵌入类型内字段名重复（父类字段被子类遮蔽）: <嵌入路径>.<字段名>`） | 自设规则：同一嵌入类型里列名/属性名必须唯一，否则扁平化会生成重复列名的 SQL（执行期才报错） | 改掉重名字段；父类字段改名或下移成独立嵌入 |
@@ -825,12 +831,13 @@ orders.updateAll(List.of(order));
 | 条件 SET 的目标 | 只接受三类：本表标量列、`@Embedded` 叶子、`关联.id`；其余目标 `UOE`（消息点名路径） | **无差异**：共享 DSL 契约，两后端都拒绝；消息措辞不同不构成契约（拒绝清单见 §13.4.3） |
 | 条件 WHERE 的关联路径 | 只支持本表列、嵌入叶子与 `关联.id`（后者渲染成本表 FK 列，不 join）；其余关联路径 `UOE` | **不同（能力差异）**：JPA 支持任意关联路径（渲染为 `LEFT JOIN`），JDBC 只拼单表语句（见 §13.4.3） |
 | 读回关联对象 | 只装标量列，关联字段为 `null` | JPA 按映射/预取加载关联 |
-| `@Version` 自增 | 应用侧读取后 +1 写回；支持 `int`/`long`/`short` 三族，到类型上界显式 `UOE`（不回绕） | **无差异**：JPA 侧同样支持三族并同文案拒绝上界（`SET version = ?` 里自增）；差别只在 `insert`：JPA 由提供方管理版本并可 DB 侧生成 |
-| 条件更新命中只读列（`updatable=false`） | `UOE`（走共享 DSL 契约，消息点名列） | **无差异**：条件更新是 3.1.0 新增入口，两个后端同版落地并一致 fail-fast（DSL 契约见 §10.1）。与 3.0.0 的差别在**单实体**更新路径：JPA 侧曾静默写只读列，JDBC 侧在映射期直接拒绝该标志 |
+| `@Version` 自增 | 应用侧读取后 +1 写回；支持 `int`/`long`/`short` 三族，到类型上界显式 `UOE`（不回绕） | **无差异**：JPA 侧同样支持三族并同文案拒绝上界（`SET version = ?` 里自增）；`insert` 的初值 0 由各后端自己写（JPA 由 provider 在 flush 时写），版本列上的 `@Column(insertable=false)` 两后端同文案拒绝（§13.4.3） |
+| 条件更新命中只读列（`updatable=false`） | `UOE`（走共享 DSL 契约，消息点名列） | **无差异**：条件更新是 3.1.0 新增入口，两个后端同版落地并一致 fail-fast（DSL 契约见 §10.1）。与 3.0.0 的差别在**单实体**更新路径：JPA 侧曾静默写只读列；JDBC 侧 3.0.0 在映射期直接拒绝该标志，3.1.0 起改为「支持该标志、写侧裁列」（见 §13.4.1） |
 | 生成键回读 | 单列结果集取第 1 列；多列按列标签/列名匹配 id 列名；`BigInteger` 走 `getBigDecimal` 转换；窄类型做范围校验 | JPA 由提供方回填 |
 | 分组 `count()`（`groupBy` + `count()`） | 派生表原生支持（子查询计数） | JPA 侧依赖 Hibernate 6+ 的 `createCountQuery()`（单条 SQL）；其它 provider 抛 `UOE`（文案指名 provider），见 §7.4 |
 | `fetch(...)` 预取 | 显式拒绝：`UOE`（JDBC 不组装实体图、无懒加载代理，没有可兑现的语义；不静默 no-op） | JPA 渲染为 `LEFT JOIN FETCH`（同一条 SQL 载入关联），消除 N+1；JDBC 侧要读关联列请用 `project(...)` 投影或原生 SQL |
 | `select(Class)` 的 `@Embedded` 同名叶子回找 | **未实现**：DTO 属性名必须是实体的直接属性名；嵌入叶子改用 `select(EntityPath.of(X::getEmbedded).get(E::getLeaf))` 单列投影或 `project(...)`（见 §6.3） | **不同（能力差异）**：JPA 后端 3.2.0 起按名回找到 `@Embedded` 组件（可多级），多个组件同名叶子显式 `IAE` |
+| `select(Class)` 的 DTO 属性是**关联属性**（如 `record Dto(Long id, Customer customer)`） | `UOE: 投影关联对象未支持: <实体全名>.<属性>` | **无差异**：两后端同文案拒绝。JPA 侧若放行，Criteria 会把 `root.get(关联)` 渲染成对被关联表的 **inner join**——外键为 `null` 的行被静默丢掉（`list()` 少行，而 `count()` 不注册该 join、答的是行数），两个终止符互相矛盾。跨表列请写进 `project(ProjectionMapper)` |
 | 分页 `limit = 0` | 视为不限行 | 与 JPA 一致（api 契约），单列在此说明避免误读 |
 | 事务 | 写入建立在 JDBC 自动提交上：无事务时 `update` 立即生效、不抛异常；`insertAll` 同走自动提交（`insertAll` 证据同上，见 §11） | **不同约定**（理由类型=外部约束：自动提交是 JDBC 连接层的默认行为）：JPA 侧无事务 `update` 抛 `TransactionRequiredException`、`insertAll` 静默不落库（证据在 `nextentity-tests-jpa`）。需要原子性时两个后端都用 `TransactionTemplate` 或 Spring `@Transactional` 包住（§11） |
 | DDL | 不生成，表结构自己建（测试按方言引号建表） | 不生成 |
