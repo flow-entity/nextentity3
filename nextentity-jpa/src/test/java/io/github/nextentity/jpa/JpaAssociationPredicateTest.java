@@ -1,11 +1,15 @@
 package io.github.nextentity.jpa;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.nextentity.api.EntityPath;
 import io.github.nextentity.api.Path;
 import io.github.nextentity.core.repo.EntityOperations;
 import io.github.nextentity.jpa.entity.Customer;
 import io.github.nextentity.jpa.entity.OrderStatus;
+import io.github.nextentity.jpa.entity.Seal;
+import io.github.nextentity.jpa.entity.SealHolder;
 import io.github.nextentity.jpa.entity.ShopOrder;
 import jakarta.persistence.EntityManager;
 import java.util.List;
@@ -13,12 +17,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /// 关联属性作为**谓词末段**是合法形态：`where(关联).isNull()` / `eq(关联对象)` / `in(...)` 表达的是
-/// 本表外键列的条件，谓词渲染走 `JpaPaths#path`，与「关联对象不能当**投影列**」是两件事。
+/// 本表外键列的条件，谓词渲染走 `JpaPaths#predicatePath`（宽松版本：只跳过单值关联末段拒绝），与
+/// 「关联对象不能当**投影列**」是两件事。
 ///
 /// 3.2.0 把 `rejectAssociationLeaf` 放进了共享的 `path()`（它是谓词、排序、分组、条件写 WHERE 的
 /// 唯一路径解析点），于是一批基线可用的关联谓词在发 SQL 前抛 `UOE: 投影关联对象未支持`——文案自己
-/// 说的就是「投影」，而调用点不是投影。本类把谓词 / 计数 / 存在性 / 条件写 WHERE 四个入口钉住，
-/// 同时由 `JpaAssociationProjectionTest` 继续钉住「投影列上的关联对象仍拒绝」。
+/// 说的就是「投影」，而调用点不是投影。本类把谓词 / 计数 / 存在性 / 条件写 WHERE / 条件 delete WHERE
+/// 几个入口钉住，同时钉住宽松路径的边界：投影 / 聚合 / groupBy 仍严格拒绝，反侧 `@OneToOne(mappedBy)`
+/// 谓词同样拒绝（本表没有外键列）。
 ///
 /// 语义约定（与 `EntityPath` javadoc 一致）：LEFT 语义，外键为 `null` 的行在 `isNull` 下命中、
 /// 在 `eq`/`in` 下不命中；条件写 WHERE 用的是同一条外键条件。
@@ -160,8 +166,78 @@ class JpaAssociationPredicateTest extends JpaTestSupport {
                 .hasMessageContaining("投影关联对象未支持");
     }
 
+    @Test
+    @DisplayName("投影外延不外溢：having 的聚合操作数仍走严格路径（count(关联) 拒绝）")
+    void aggregateOverAssociationInHavingIsStillRejected() {
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> inTx(entityManager -> orders(entityManager)
+                        .query()
+                        .groupBy(ShopOrder::getStatus)
+                        .having(EntityPath.of(ShopOrder::getCustomer).count().gt(1L))
+                        .list())))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining("投影关联对象未支持");
+    }
+
+    @Test
+    @DisplayName("条件 delete WHERE 的关联谓词：只删外键为 null 的那一行")
+    void conditionalDeleteWhereAcceptsAssociationPredicate() {
+        int affected = inTx(entityManager -> orders(entityManager)
+                .delete()
+                .where(ShopOrder::getCustomer)
+                .isNull()
+                .execute());
+
+        assertThat(affected).isEqualTo(1);
+        inTx(entityManager -> {
+            assertThat(entityManager.find(ShopOrder.class, 101L))
+                    .as("条件 delete 命中的是外键为 null 的 101 号")
+                    .isNull();
+            assertThat(entityManager.find(ShopOrder.class, 100L))
+                    .as("100 号有客户，不得被连带删掉")
+                    .isNotNull();
+            return null;
+        });
+    }
+
+    @Test
+    @DisplayName("反侧 @OneToOne(mappedBy) 作为谓词末段：本表没有外键列，显式 UOE")
+    void inverseOneToOnePredicateIsRejected() {
+        inTx(entityManager -> {
+            assertThatThrownBy(() -> operations(entityManager, Seal.class)
+                            .query()
+                            .where(Seal::getHolder)
+                            .isNull()
+                            .list())
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessage("关联谓词只支持持有外键列的单值关联: " + Seal.class.getName() + ".holder"
+                            + "（@OneToOne(mappedBy) 反侧没有本表外键列）");
+            return null;
+        });
+    }
+
+    @Test
+    @DisplayName("持有外键的单值关联（owning @OneToOne）作为谓词末段：照常渲染本表外键列")
+    void owningOneToOnePredicateIsAllowed() {
+        drainSql();
+
+        List<SealHolder> rows = inTx(entityManager -> operations(entityManager, SealHolder.class)
+                .query()
+                .where(SealHolder::getSeal)
+                .isNull()
+                .list());
+
+        assertThat(rows).isEmpty();
+        assertThat(String.join(" ", normalized(drainSql())))
+                .as("owning @OneToOne 的谓词渲染成本表外键列的空值判断")
+                .contains("from seal_holder")
+                .contains("seal_id is null");
+    }
+
+    private <T> EntityOperations<T> operations(EntityManager entityManager, Class<T> type) {
+        return new JpaEntityOperationsFactory(entityManager, entityManager.getEntityManagerFactory()).operations(type);
+    }
+
     private EntityOperations<ShopOrder> orders(EntityManager entityManager) {
-        return new JpaEntityOperationsFactory(entityManager, entityManager.getEntityManagerFactory())
-                .operations(ShopOrder.class);
+        return operations(entityManager, ShopOrder.class);
     }
 }

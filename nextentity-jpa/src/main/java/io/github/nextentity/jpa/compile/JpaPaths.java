@@ -63,18 +63,36 @@ final class JpaPaths {
         return parent.get(attribute);
     }
 
-    /// 谓词专用路径：与 [#path] 相同，但**跳过末段单值关联的拒绝**。
+    /// 谓词专用路径：与 [#path] 相同，但**跳过末段单值关联的拒绝**——只对**持有本表外键列**的单值
+    /// 关联（`@ManyToOne` / owning `@OneToOne`）跳过。
     ///
     /// 谓词主语里的 `where(关联).isNull()` / `eq(关联对象)` / `in(...)` 表达的是本表外键列的条件——
     /// Hibernate 在谓词上下文把 `root.get(关联)` 渲染成 FK 列，不会像 `select` 那样补 inner join，
     /// 因此是合法形态；它只和「关联对象不能当投影列 / 聚合参数」是两件事。集合关联仍拒绝（join 出
-    /// 子行会放大结果集），聚合、投影、排序、分组继续走严格的 [#path]。
+    /// 子行会放大结果集）。反侧 `@OneToOne(mappedBy = ...)` 也拒绝：它的外键列在对端表，本表没有
+    /// 可渲染的外键列（USAGE §8「反侧关联不在查询路径上提供」），放行只会让 provider 自行补 join 或
+    /// 静默给出空集。聚合、投影、排序、分组继续走严格的 [#path]。
     Path<?> predicatePath(AttributePath attributePath) {
         List<String> names = attributePath.names();
         Path<?> parent = navigate(names.subList(0, names.size() - 1));
+        Class<?> owner = parent.getJavaType();
         String attribute = names.getLast();
-        rejectPluralAssociation(parent.getJavaType(), attribute);
+        rejectPluralAssociation(owner, attribute);
+        rejectInverseAssociation(attributePath, owner, attribute);
         return parent.get(attribute);
+    }
+
+    /// 拒绝「谓词末段是反侧单值关联」：`@OneToOne(mappedBy = ...)` 的外键列在对端表，本表没有可写/
+    /// 可比较的外键列，「按外键列比较」这个谓词语义不存在。
+    ///
+    /// 只影响谓词入口：投影 / 聚合走严格的 [#path]（另有「关联对象未支持」文案），条件写 SET 目标
+    /// 由 `ConditionalWrite#writableTarget` 单独判定。
+    private void rejectInverseAssociation(AttributePath path, Class<?> owner, String attribute) {
+        if (meta.association(owner, attribute) && !meta.owningAssociation(owner, attribute)) {
+            throw new UnsupportedOperationException("关联谓词只支持持有外键列的单值关联: "
+                    + path.entityType().getName() + "." + String.join(".", path.names())
+                    + "（@OneToOne(mappedBy) 反侧没有本表外键列）");
+        }
     }
 
     /// 拒绝「路径末段是单值关联」：关联对象不是一个列。
