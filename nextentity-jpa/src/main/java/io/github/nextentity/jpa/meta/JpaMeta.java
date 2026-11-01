@@ -26,7 +26,9 @@ import java.util.concurrent.ConcurrentHashMap;
 ///
 /// 元数据是**应用级**的，所以从 `EntityManagerFactory` 取一次 `Metamodel` 并缓存解析结果；
 /// 不用 `EntityManager.getMetamodel()`（那是请求级对象，按它解析等于每次查询重算）。
-@SuppressWarnings("PMD.TooManyMethods") // 方法数由「实体元数据查询面」决定（type/id/version/属性注解/read），拆类会把共享缓存边界拆散
+@SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"
+}) // 方法数由「实体元数据查询面」决定（type/id/version/属性注解/read）；类复杂度是注解形态穷举（单列 / 可重复容器 / 成员级覆盖 / 嵌入叶子回退 /
+// 复合外键拒绝）的累加，不是算法分支，拆类会把共享缓存边界拆散
 public final class JpaMeta {
 
     private final Metamodel metamodel;
