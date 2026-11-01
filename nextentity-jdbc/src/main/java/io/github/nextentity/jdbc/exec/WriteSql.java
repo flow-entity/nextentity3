@@ -25,9 +25,14 @@ final class WriteSql {
 
     private WriteSql() {}
 
-    /// `insert into t (a, b) values (?, ?)`：跳过自增主键列与 `insertable=false` 的列；
+    /// `insert into t (a, b) values (?, ?)`：跳过生成键列与 `insertable=false` 的业务列；
     /// 关联属性非 `null` 时写 FK 列，`null` 时该列不出现；一个可插入列都没有时按
     /// [JdbcDialect#noColumnsInsert(String)] 渲染方言的无列表 INSERT（3.0.0 起的能力，不拒绝）。
+    ///
+    /// 非生成键的主键列**无条件写入**，不看 `insertable`：与 Hibernate 对齐（标识列上的
+    /// `@Column(insertable=false)` 在 Hibernate 里是 no-op，INSERT 仍带主键列并写入应用给的值）。
+    /// 若这里跟着摘列，主键就由库默认值决定，实体持有的 id 与落库行分叉，后续 `update` / `delete`
+    /// 按实体 id 命中 0 行——那是本层自己造出来的静默错数据。
     ///
     /// 版本列没有特例：它的 `insertable` 已在元数据期被约束成必须为 `true`
     /// （`JdbcEntityRules.VERSION_INSERTABLE_UNSUPPORTED`——该标志会让版本初值的责任在两后端分叉），
@@ -40,7 +45,7 @@ final class WriteSql {
                 if (attribute.isJoinColumnInsertable()) {
                     associationColumn(meta, attribute, entity, columns, parameters, dialect);
                 }
-            } else if (!attribute.isGenerated() && attribute.isColumnInsertable()) {
+            } else if (!attribute.isGenerated() && (attribute.isId() || attribute.isColumnInsertable())) {
                 columns.add(identifier(attribute.column(), attribute.isColumnQuoted(), dialect));
                 parameters.add(JdbcTypes.toJdbc(attribute.get(entity), attribute));
             }

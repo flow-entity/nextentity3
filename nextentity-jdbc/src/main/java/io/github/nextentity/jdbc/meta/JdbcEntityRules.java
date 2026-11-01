@@ -40,7 +40,7 @@ final class JdbcEntityRules {
     private static final String PROPERTY_ACCESS = "只支持字段访问（注解须在字段上）: ";
     private static final String TABLE_QUALIFIER_UNSUPPORTED = "@Table(schema/catalog) 未支持: ";
     private static final String INHERITANCE = "实体继承未支持: ";
-    private static final String COMPOSITE_ID = "复合主键未支持: ";
+    static final String COMPOSITE_ID = "复合主键未支持: ";
     static final String VERSION_UNSUPPORTED = "@Version 只支持 int / long / short（含包装类型）: ";
     static final String VERSION_CONVERT_UNSUPPORTED = "@Version 不支持 @Convert: ";
     static final String VERSION_INSERTABLE_UNSUPPORTED =

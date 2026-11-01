@@ -26,7 +26,9 @@ import java.util.Set;
 ///
 /// 列名默认取嵌入类型的字段名（与 Hibernate/JPA 默认命名一致），`@AttributeOverride` 覆盖；
 /// 嵌套 `@Embedded`、容器字段上的 `@Convert`、嵌入内的 `@Id` / `@Version` / `@GeneratedValue` / 关联本轮显式拒绝——
-/// 扁平化层面表达不了这些形态，静默忽略会让实体映射出一张缺列的表。容器上的 `@Convert` 两种形态都拒：
+/// 扁平化层面表达不了这些形态，静默忽略会让实体映射出一张缺列的表。容器字段自身的
+/// `@Id`（Hibernate 里是合法复合主键）/ `@Version` / `@GeneratedValue`（Hibernate 侧构建期错误）同样拒绝，
+/// 否则注解被吞掉、实体映射出一张没有版本列的表。容器上的 `@Convert` 两种形态都拒：
 /// 不带 `attributeName` 在 JPA 侧本身非法，带 `attributeName` 需要子属性寻址。
 final class JdbcEmbedded {
 
@@ -45,6 +47,7 @@ final class JdbcEmbedded {
                     "@Embedded 目标缺少 @Embeddable: " + path + ": " + embeddable.getName());
         }
         rejectContainerConvert(field, path);
+        rejectContainerAnnotations(field, path);
         JdbcEntityRules.rejectClassLevel(embeddable);
         Constructor<?> constructor = constructor(embeddable, path);
         Map<String, Column> overrides = overrides(field, path);
@@ -75,6 +78,24 @@ final class JdbcEmbedded {
         Convert convert = field.getAnnotation(Convert.class);
         if (convert != null && !convert.disableConversion()) {
             throw new UnsupportedOperationException("@Embedded 字段上的 @Convert 未支持: " + path);
+        }
+    }
+
+    /// 容器字段自身的主键 / 版本 / 生成键注解：容器属性没有 `Column` 形态（`JdbcEntityAttribute#column()`
+    /// 为 `null`，`isId()` / `isVersion()` / `isGenerated()` 恒为 `false`），不拒绝就等于静默吞注解。
+    ///
+    /// `@Id @Embedded` 在 Hibernate 里是合法的复合主键，本层不支持复合主键，所以按 `COMPOSITE_ID` 拒绝
+    /// （而不是「注解非法」）；`@Version` / `@GeneratedValue` 标在容器上在 Hibernate 侧是 `EntityManagerFactory`
+    /// 构建期错误，这里同样拒绝。`@Version` 最危险：实体声明了版本列却不生成版本列，乐观锁静默失效。
+    private static void rejectContainerAnnotations(Field field, String path) {
+        if (field.isAnnotationPresent(Id.class)) {
+            throw new UnsupportedOperationException(JdbcEntityRules.COMPOSITE_ID + path);
+        }
+        if (field.isAnnotationPresent(Version.class)) {
+            throw new UnsupportedOperationException("@Embedded 字段上的 @Version 未支持: " + path);
+        }
+        if (field.isAnnotationPresent(GeneratedValue.class)) {
+            throw new UnsupportedOperationException("@Embedded 字段上的 @GeneratedValue 未支持: " + path);
         }
     }
 

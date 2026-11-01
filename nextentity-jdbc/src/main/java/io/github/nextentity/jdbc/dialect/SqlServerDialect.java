@@ -96,7 +96,7 @@ public final class SqlServerDialect implements JdbcDialect {
 
     /// T-SQL 的 `SUBSTRING` 是三参形态，没有「到结尾」的省略写法，只能用长度上界表达；
     /// 这里下 `2147483647`（int 上界），与 H2 / MySQL / PostgreSQL 的 `substring(x, pos)` 语义对应。
-    /// 该上界形态待 SQL Server 容器通道实测（H2 / MySQL / PostgreSQL 走默认两参形态）。
+    /// 已在 SQL Server 容器通道实测通过（`SqlServerItemStringOperatorConsistencyIntegrationTest`，见 USAGE §13.4.5）。
     @Override
     public String substring(String operand, int position, Integer length) {
         int effective = length == null ? Integer.MAX_VALUE : length;

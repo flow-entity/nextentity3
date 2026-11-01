@@ -5,6 +5,7 @@ import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /// `EntityType` 的注解扫描实现：表名、属性表、`@Id` / `@Version` 句柄。
@@ -109,6 +110,12 @@ public final class JdbcEntityType<T> implements EntityType<T> {
     /// 例外是 legacy `Employee` 的同列双映射——标量字段与**只读**关联（`@JoinColumn(insertable = false,
     /// updatable = false)`）指向同一列：写入只走可写的那一侧，语句里该列只出现一次，不是错数据。
     /// 两侧都可写时才是真冲突（`insert into t (id, c, c)` 由数据库报错）。
+    ///
+    /// 查重键按「是否引用」归一：未用反引号标记的标识符在库侧不区分大小写（H2 / MySQL / PostgreSQL /
+    /// SQL Server 上 `code` 与 `CODE` 是同一列，H2 连 DDL 都拒绝），折成小写再比；引用过的标识符按原文比
+    /// （大小写敏感）。混合写法（一侧引用、一侧不引用）不在本层判定范围内——两侧各按自己的形态归一，
+    /// 是否同列取决于数据库的标识符折叠规则，交给库在运行期裁决（不为此引入方言知识，见 USAGE §13.4.3）。
+    @SuppressWarnings("PMD.CyclomaticComplexity") // 摊平 + 列名取值 + 查重键归一（引用/未引用）三段都在同一循环里
     private static List<JdbcEntityAttribute> flattened(Class<?> type, List<JdbcEntityAttribute> attributes) {
         List<JdbcEntityAttribute> columns = new ArrayList<>();
         for (JdbcEntityAttribute attribute : attributes) {
@@ -121,7 +128,13 @@ public final class JdbcEntityType<T> implements EntityType<T> {
         Map<String, JdbcEntityAttribute> byColumn = new HashMap<>();
         for (JdbcEntityAttribute column : columns) {
             String name = column.column() != null ? column.column() : column.joinColumn();
-            if (name != null && writableDuplicate(byColumn.putIfAbsent(name, column), column)) {
+            if (name == null) {
+                continue;
+            }
+            // 未引用的标识符在库侧不区分大小写（折成小写再比），引用的保持原文（大小写敏感）
+            boolean quoted = column.column() != null ? column.isColumnQuoted() : column.isJoinColumnQuoted();
+            String key = quoted ? name : name.toLowerCase(Locale.ROOT);
+            if (writableDuplicate(byColumn.putIfAbsent(key, column), column)) {
                 throw new UnsupportedOperationException(
                         "同一实体内列名重复: " + type.getName() + " -> " + name + "（同一可嵌入类型多次嵌入请用 @AttributeOverride 指定不同列名）");
             }

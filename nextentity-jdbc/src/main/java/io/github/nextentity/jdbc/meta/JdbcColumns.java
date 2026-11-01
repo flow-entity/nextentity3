@@ -58,6 +58,9 @@ final class JdbcColumns {
         if (version && flags != null && !flags.insertable()) {
             throw new UnsupportedOperationException(JdbcEntityRules.VERSION_INSERTABLE_UNSUPPORTED + path);
         }
+        // 主键不走这条规则：标识列上的 @Column(insertable=false) 在 Hibernate 里是 no-op（INSERT 仍带主键列），
+        // 本层在 `WriteSql#insert` 侧对非生成键主键无条件写列，因此这里既不能拒绝也不能丢标志。
+        // `updatable=false` 落在主键上同样无害：`UPDATE SET` 侧本来就跳过 id。
         ColumnName column = columnName(field, path, overrideColumn, defaultColumn);
         return new JdbcEntityAttribute(
                 field,
@@ -187,6 +190,8 @@ final class JdbcColumns {
 
     /// `@Convert`：实例化 `AttributeConverter`，从泛型实参取数据库类型并要求落在列类型白名单里（枚举除外）。
     /// `@Convert(disableConversion = true)` 按 JPA 语义整体关闭转换（本轮不实现 `autoApply`），按无转换器处理。
+    /// 剩下的两种「没有可用转换器」的写法（只写 `@Convert`、只写 `attributeName`）在 JPA 侧都非法，必须同样拒绝：
+    /// 裸 `@Convert` 放行等于把注解静默吞掉，用户以为值被转换了。
     @SuppressWarnings("PMD.CyclomaticComplexity") // 分支覆盖 @Convert 的四种声明形态（关闭转换 / 缺转换器 / attributeName / 正常）
     private static Converter converter(Field field, String path) {
         Convert annotation = field.getAnnotation(Convert.class);
@@ -195,9 +200,6 @@ final class JdbcColumns {
         }
         Class<?> converterType = annotation.converter();
         if (converterType == void.class || converterType == AttributeConverter.class) {
-            if (annotation.attributeName().isEmpty()) {
-                return null;
-            }
             throw new UnsupportedOperationException("@Convert 缺少 converter: " + path);
         }
         if (!annotation.attributeName().isEmpty()) {
