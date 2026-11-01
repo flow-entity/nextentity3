@@ -90,8 +90,9 @@ public interface SelectStep<T> extends DistinctStep<T> {
     /// 接口/抽象类）在本方法内抛 `IllegalArgumentException`；**属性名**解析失败（实体上既没有该属性、
     /// 嵌入组件里也没有同名叶子，或同名叶子出现在多个 `@Embedded` 组件里）要到后端渲染投影列时才抛。
     /// 计数语句本身不含投影列，但**查询在计数前仍被完整编译**（投影列随之解析），所以写错的属性名在
-    /// `count()` / `exists()` 上同样会失败，不会拖到 `list()` 才暴露。JDBC 后端没有嵌入回找，属性名只按
-    /// 实体直接属性匹配。
+    /// `count()` / `exists()` 上同样会失败，不会拖到 `list()` 才暴露。`groupBy(...)` 之后的 `count()` 是
+    /// 例外：分组计数把投影换成组键（内层 `select` 只渲染分组键，DTO 投影列不参与编译），写错的属性名
+    /// 要到 `list()` 才暴露。JDBC 后端没有嵌入回找，属性名只按实体直接属性匹配。
     ///
     /// DTO 属性落在**关联属性**上（如 `record Dto(Long id, Customer customer)`）不是本形态：两个后端都
     /// 显式拒绝（`投影关联对象未支持`），跨表列请写进 [#project(ProjectionMapper)]。
