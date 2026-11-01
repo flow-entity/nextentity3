@@ -54,7 +54,24 @@ final class JpaPaths {
         Path<?> parent = navigate(names.subList(0, names.size() - 1));
         String attribute = names.getLast();
         rejectPluralAssociation(parent.getJavaType(), attribute);
+        rejectAssociationLeaf(attributePath, parent.getJavaType(), attribute);
         return parent.get(attribute);
+    }
+
+    /// 拒绝「路径末段是单值关联」：关联对象不是一个列。
+    ///
+    /// Criteria 允许 `root.get("customer")`，投影时 Hibernate 会把它当**实体选择**处理，自动补一条
+    /// 对被关联表的 **inner join**——外键为 `null` 的行被 join 掉（`list()` 少行），而 `count()`
+    /// 不渲染投影列、不注册这个 join，于是 `count()` 与 `list().size()` 互相矛盾，`slice().total()`
+    /// 也会与 `data` 打架。要跨表列请写多段路径（`EntityPath.of(X::getCustomer).get(Customer::getName)`）
+    /// 或用 `project(ProjectionMapper)`。
+    ///
+    /// 文案与 JDBC 后端（`SqlPaths#resolve`）逐字一致：同一调用打到两个后端必须拿到同一句话。
+    private void rejectAssociationLeaf(AttributePath path, Class<?> owner, String attribute) {
+        if (meta.association(owner, attribute)) {
+            throw new UnsupportedOperationException(
+                    "投影关联对象未支持: " + path.entityType().getName() + "." + String.join(".", path.names()));
+        }
     }
 
     /// DTO 投影列的路径：单段属性名在实体上不存在时，按 `@Embedded` 组件回找同名叶子
