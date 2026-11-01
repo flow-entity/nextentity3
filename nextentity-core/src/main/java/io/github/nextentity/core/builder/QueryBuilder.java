@@ -315,12 +315,15 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
         // `slice(4, -1)` 就静默返回空页，而契约（`SliceStep#slice`）无条件承诺 IAE。
         Window window = new Window(offset, limit);
         long total = count();
+        // 列表规格先编译：后端的编译期拒绝（JDBC 的 `fetch`）与锁形态校验都在编译期，
+        // 放到短路之后就变成「同一条调用是否抛异常取决于表里有没有行」。
+        S statement = compileForRows(spec(window));
         // offset/limit 原样带出：`Slice#limit()` 承诺的是「请求的页大小」，短路路径下 data 为空，
         // 用 `data.size()` 会把请求的 limit 报成 0。
         if (total <= offset) {
             return new SliceResult<>(List.of(), total, offset, limit);
         }
-        return new SliceResult<>(fetch(window), total, offset, limit);
+        return new SliceResult<>(assemble(executor.list(statement)), total, offset, limit);
     }
 
     // -------------------------------------------------------------- internal
@@ -408,10 +411,21 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
     /// （`lock(...)` 返回终止符、`groupBy(...)` 返回步骤，调用顺序两种都合法），只有组装好的规格
     /// 同时带着两者。放在 core 是因为两后端的后果不同但都违反同一条契约（见 [#requireLockable]），
     /// 一处收口比改两处小。
-    @SuppressWarnings("unchecked")
     private List<T> fetch(QuerySpec spec) {
+        return assemble(executor.list(compileForRows(spec)));
+    }
+
+    /// 编译列表规格：锁形态校验与后端的编译期拒绝（JDBC 的 `fetch`）都在这一步。
+    ///
+    /// 单独拆出来是为了让 [slice] 能在短路**之前**编译——校验若留在执行那一半，
+    /// 「同一条调用是否抛异常」就取决于数据。
+    private S compileForRows(QuerySpec spec) {
         requireLockable(spec);
-        List<Object> rows = executor.list(compiler.compile(spec));
+        return compiler.compile(spec);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<T> assemble(List<Object> rows) {
         return (List<T>) RowAssembler.assemble(rows, selection);
     }
 
