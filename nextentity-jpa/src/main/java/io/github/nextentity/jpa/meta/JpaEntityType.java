@@ -56,6 +56,7 @@ public final class JpaEntityType<T> implements EntityType<T> {
                     id = meta;
                 } else if (singular.isVersion()) {
                     version = meta;
+                    rejectInsertableFalseVersion((JpaEntityAttribute) meta, type);
                 }
             }
         }
@@ -63,6 +64,20 @@ public final class JpaEntityType<T> implements EntityType<T> {
             throw new IllegalArgumentException("实体 " + type.getName() + " 没有 @Id 属性");
         }
         return new JpaEntityType<>(type, id, version, attributes);
+    }
+
+    /// `@Version` 列上的 `@Column(insertable = false)` 在元数据期拒绝。
+    ///
+    /// 版本初值是本层乐观锁协议的一部分（`insert` 写 0，之后 `where version = 0` 命中）。Hibernate
+    /// 遵守这个标志把版本列从 `INSERT` 摘掉，库内版本停在 `NULL`：基本类型版本读回直接
+    /// `PropertyAccessException`，包装类型则让下一次 `update(entity)` 抛假的 `OptimisticLockException`
+    /// （丢失更新被伪装成并发冲突）。本层无法让 Hibernate 把这个值写进去，两后端也就无法同口径，
+    /// 所以 fail-fast——文案与 JDBC 后端（`JdbcColumns#scalar`）逐字一致。
+    private static void rejectInsertableFalseVersion(JpaEntityAttribute version, Class<?> type) {
+        if (!version.columnInsertable()) {
+            throw new UnsupportedOperationException("@Version 列不支持 @Column(insertable=false)"
+                    + "（版本初值由本层写入，insertable 只约束业务列）: " + type.getName() + "." + version.name());
+        }
     }
 
     @Override

@@ -25,9 +25,12 @@ final class WriteSql {
 
     private WriteSql() {}
 
-    /// `insert into t (a, b) values (?, ?)`：跳过自增主键列与 `insertable=false` 的列，
-    /// **版本列除外**（初值 0 由本层写，与 `update` 侧无视 `updatable=false` 同口径：版本是乐观锁的职责）；
+    /// `insert into t (a, b) values (?, ?)`：跳过自增主键列与 `insertable=false` 的列；
     /// 关联属性非 `null` 时写 FK 列，`null` 时该列不出现。
+    ///
+    /// 版本列没有特例：它的 `insertable` 已在元数据期被约束成必须为 `true`
+    /// （`JdbcEntityRules.VERSION_INSERTABLE_UNSUPPORTED`——该标志会让版本初值的责任在两后端分叉），
+    /// 因此这里按普通可插入列处理，初值 0 照常写。
     static SqlStatement insert(JdbcMeta meta, JdbcEntityType<?> entityType, Object entity, JdbcDialect dialect) {
         List<String> columns = new ArrayList<>();
         List<Object> parameters = new ArrayList<>();
@@ -36,7 +39,7 @@ final class WriteSql {
                 if (attribute.isJoinColumnInsertable()) {
                     associationColumn(meta, attribute, entity, columns, parameters, dialect);
                 }
-            } else if (attribute.isVersion() || (!attribute.isGenerated() && attribute.isColumnInsertable())) {
+            } else if (!attribute.isGenerated() && attribute.isColumnInsertable()) {
                 columns.add(identifier(attribute.column(), attribute.isColumnQuoted(), dialect));
                 parameters.add(JdbcTypes.toJdbc(attribute.get(entity), attribute));
             }

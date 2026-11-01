@@ -38,17 +38,14 @@ class WriteSqlVersionTest {
         assertThat(integerVersion.parameters()).containsExactly(4L, "v", 0);
     }
 
+    /// 版本列上的 `insertable=false` 在元数据期拒绝（文案与 JPA 后端逐字一致）：这个标志会让
+    /// 「谁写版本初值」在两后端分叉——Hibernate 遵守它、库内版本停在 NULL，本层若无视它则与 JPA 不一致。
     @Test
-    void insertIgnoresInsertableFalseOnVersionColumn() {
-        SqlStatement statement = WriteSql.insert(
-                meta,
-                meta.entityType(NonInsertableVersionedItem.class),
-                new NonInsertableVersionedItem(7L, "v"),
-                dialect);
-
-        assertThat(statement.sql())
-                .isEqualTo("insert into non_insertable_versioned_item (id, name, version) values (?, ?, ?)");
-        assertThat(statement.parameters()).containsExactly(7L, "v", 0L);
+    void insertableFalseVersionColumnIsRejectedAtMetadata() {
+        assertThatThrownBy(() -> meta.entityType(NonInsertableVersionedItem.class))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining("@Version 列不支持 @Column(insertable=false)")
+                .hasMessageContaining(NonInsertableVersionedItem.class.getName() + ".version");
     }
 
     @Test

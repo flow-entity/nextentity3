@@ -30,6 +30,7 @@ final class JpaEntityAttribute implements EntityAttribute {
     private final Method getter;
     private final boolean association;
     private final boolean columnUpdatable;
+    private final boolean columnInsertable;
     private final boolean joinColumnUpdatable;
 
     /// 标量属性（非关联）的简写：`association = false`。
@@ -52,6 +53,7 @@ final class JpaEntityAttribute implements EntityAttribute {
         this.getter = annotations instanceof Method method ? accessible(method) : null;
         Column column = annotations.getAnnotation(Column.class);
         this.columnUpdatable = column == null || column.updatable();
+        this.columnInsertable = column == null || column.insertable();
         JoinColumn joinColumn = annotations.getAnnotation(JoinColumn.class);
         this.joinColumnUpdatable = joinColumn == null || joinColumn.updatable();
     }
@@ -82,6 +84,12 @@ final class JpaEntityAttribute implements EntityAttribute {
     /// 标量列是否可写（`@Column(updatable = false)` → 否）。
     boolean columnUpdatable() {
         return columnUpdatable;
+    }
+
+    /// 标量列是否进 `INSERT`（`@Column(insertable = false)` → 否）。唯一用处是元数据期拒绝
+    /// 「`@Version` 列 + `insertable = false`」这个无法被两后端一致实现的映射（见 `JpaEntityType#of`）。
+    boolean columnInsertable() {
+        return columnInsertable;
     }
 
     /// 关联外键列是否可写（`@JoinColumn(updatable = false)` → 否）。

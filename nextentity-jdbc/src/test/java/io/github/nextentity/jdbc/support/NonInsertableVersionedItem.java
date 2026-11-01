@@ -6,10 +6,11 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
-/// `@Version` + `@Column(insertable=false)`：版本列由本层初始化（写 0），`insertable` 只约束业务列。
+/// `@Version` + `@Column(insertable=false)`：两后端都在元数据期拒绝的映射（拒绝用例见 `WriteSqlVersionTest`）。
 ///
-/// 与 `@Version @Column(updatable=false)` 同口径——版本自增/初始化是乐观锁的职责，
-/// 跳过版本列会让库内版本永远停在 NULL，之后的 `update(entity)` 每次 `where version=?` 都命中 0 行。
+/// 版本初值由本层写入（`insert` 写 0，之后 `where version = ?` 做乐观锁），而这个标志会让「谁负责初值」
+/// 在两后端分叉：Hibernate 遵守它把版本列摘出 `INSERT`（库内停在 NULL，读回即炸），本层若无视它又与
+/// JPA 不一致。既然无法被一致实现，就 fail-fast，而不是各自静默给出不同结果。
 @Entity
 @Table(name = "non_insertable_versioned_item")
 public class NonInsertableVersionedItem {

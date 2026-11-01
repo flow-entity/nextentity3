@@ -52,6 +52,12 @@ final class JdbcColumns {
             rejectColumnType(field, path);
         }
         Column flags = overrideColumn != null ? overrideColumn : field.getAnnotation(Column.class);
+        // 版本初值由本层写入（`insert` 写 0），这个标志会让「谁负责初值」变得两后端不一致：
+        // Hibernate 遵守它把版本列摘出 INSERT（库内停在 NULL，读回即炸），本层若无视它又与 JPA 分叉。
+        // 该标志在版本列上无法被一致实现，所以两后端都在元数据期拒绝。
+        if (version && flags != null && !flags.insertable()) {
+            throw new UnsupportedOperationException(JdbcEntityRules.VERSION_INSERTABLE_UNSUPPORTED + path);
+        }
         ColumnName column = columnName(field, path, overrideColumn, defaultColumn);
         return new JdbcEntityAttribute(
                 field,
