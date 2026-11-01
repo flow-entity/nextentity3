@@ -167,12 +167,15 @@ class JpaJoinColumnsReadOnlyTest {
     @DisplayName("实体侧 @AssociationOverride 覆盖出两列外键：写路径 UOE（元数据期不扫嵌入内部）")
     void associationOverrideWithMultipleJoinColumnsIsRejectedOnWrite() {
         inTx(entityManager -> {
-            assertThatThrownBy(() -> operations(entityManager, AssociationOverrideMultiRef.class)
-                            .update(new AssociationOverrideMultiRef(
-                                    1L, "renamed", new CompositeEmbeddedTargetRef(null))))
+            // operations(...) 先建：它若在元数据期就抛，用例必须红在这里，而不是被下面的 assertThatThrownBy 掩盖
+            EntityOperations<AssociationOverrideMultiRef> operations =
+                    operations(entityManager, AssociationOverrideMultiRef.class);
+            assertThatThrownBy(() -> operations.update(
+                            new AssociationOverrideMultiRef(1L, "renamed", new CompositeEmbeddedTargetRef(null))))
                     .isInstanceOf(UnsupportedOperationException.class)
                     .hasMessageContaining("复合外键关联未支持")
                     .hasMessageContaining(AssociationOverrideMultiRef.class.getName() + ".ref.target")
+                    .hasMessageContaining("@AssociationOverride.joinColumns")
                     .hasMessageContaining("列数=2");
             return null;
         });
@@ -182,11 +185,14 @@ class JpaJoinColumnsReadOnlyTest {
     @DisplayName("嵌入内关联的 @JoinColumns 两列：写路径 UOE（嵌入内部不走元数据期属性解析）")
     void embeddedAssociationWithMultipleJoinColumnsIsRejectedOnWrite() {
         inTx(entityManager -> {
-            assertThatThrownBy(() -> operations(entityManager, EmbeddedCompositeRef.class)
-                            .update(new EmbeddedCompositeRef(1L, "renamed", new CompositeInnerRef(null))))
+            EntityOperations<EmbeddedCompositeRef> operations = operations(entityManager, EmbeddedCompositeRef.class);
+            assertThatThrownBy(() ->
+                            operations.update(new EmbeddedCompositeRef(1L, "renamed", new CompositeInnerRef(null))))
                     .isInstanceOf(UnsupportedOperationException.class)
                     .hasMessageContaining("复合外键关联未支持")
                     .hasMessageContaining(EmbeddedCompositeRef.class.getName() + ".ref.target")
+                    .hasMessageContaining("@JoinColumns")
+                    .hasMessageNotContaining("@AssociationOverride")
                     .hasMessageContaining("列数=2");
             return null;
         });

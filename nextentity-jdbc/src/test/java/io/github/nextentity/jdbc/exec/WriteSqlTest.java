@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.nextentity.jdbc.compile.SqlStatement;
 import io.github.nextentity.jdbc.dialect.JdbcDialect;
+import io.github.nextentity.jdbc.dialect.MySqlDialect;
 import io.github.nextentity.jdbc.dialect.PostgresDialect;
 import io.github.nextentity.jdbc.dialect.SqlServerDialect;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
@@ -25,6 +26,7 @@ import io.github.nextentity.jdbc.support.NumbersItem;
 import io.github.nextentity.jdbc.support.OrdinalIdAssociationItem;
 import io.github.nextentity.jdbc.support.OrdinalIdOwner;
 import io.github.nextentity.jdbc.support.OwnsMappedOwner;
+import io.github.nextentity.jdbc.support.QuotedGeneratedOnlyItem;
 import io.github.nextentity.jdbc.support.ReadOnlyOverrideProfile;
 import io.github.nextentity.jdbc.support.SnapshotAsset;
 import io.github.nextentity.jdbc.support.SnapshotItem;
@@ -94,6 +96,25 @@ class WriteSqlTest {
                 WriteSql.insert(meta, meta.entityType(GeneratedOnlyItem.class), item, new SqlServerDialect());
         assertThat(sqlServer.sql()).isEqualTo("insert into generated_only_item default values");
         assertThat(sqlServer.parameters()).isEmpty();
+    }
+
+    /// quoted 表名 + 生成键-only：空列分支的 `identifier(table, isTableQuoted, dialect)` 必须仍按方言引用表名
+    /// （未引号的夹具对「删掉 isTableQuoted 实参」这一变异体不敏感）。
+    @Test
+    void insertWithoutInsertableColumnKeepsQuotedTable() {
+        QuotedGeneratedOnlyItem item = new QuotedGeneratedOnlyItem();
+
+        SqlStatement h2 = WriteSql.insert(meta, meta.entityType(QuotedGeneratedOnlyItem.class), item, dialect);
+        assertThat(h2.sql()).isEqualTo("insert into \"generated_only_item\" () values ()");
+        assertThat(h2.parameters()).isEmpty();
+
+        SqlStatement postgres =
+                WriteSql.insert(meta, meta.entityType(QuotedGeneratedOnlyItem.class), item, new PostgresDialect());
+        assertThat(postgres.sql()).isEqualTo("insert into \"generated_only_item\" default values");
+
+        SqlStatement mysql =
+                WriteSql.insert(meta, meta.entityType(QuotedGeneratedOnlyItem.class), item, new MySqlDialect());
+        assertThat(mysql.sql()).isEqualTo("insert into `generated_only_item` () values ()");
     }
 
     @Test

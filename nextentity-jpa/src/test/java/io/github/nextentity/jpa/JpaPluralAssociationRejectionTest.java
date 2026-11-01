@@ -91,6 +91,19 @@ class JpaPluralAssociationRejectionTest extends JpaTestSupport {
                 .hasMessageContaining("集合关联路径未支持");
     }
 
+    /// 值投影入口走严格的 `JpaPaths#path`（谓词的宽松只开给 `predicatePath`）：末段是集合关联时
+    /// `path` 里的末段检查必须照样拒绝——否则 `select(集合属性)` 会被渲染成实体选择 + join。
+    @Test
+    @DisplayName("值投影末段是集合关联：同样拒绝（path 的末段检查在投影上下文也生效）")
+    void pluralAssociationAsValueProjectionIsRejected() {
+        assertThatThrownBy(() -> inTx(entityManager -> operations(entityManager, Article.class)
+                        .query()
+                        .select(EntityPath.of(Article::getTags))
+                        .list()))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining("集合关联路径未支持");
+    }
+
     /// 按原始 `QuerySpec` 跑一次并返回归一化后的语句；拒绝时异常直接抛出。
     private List<String> renderSql(Class<?> entityType, AttributePath path) {
         return inTx(entityManager -> {

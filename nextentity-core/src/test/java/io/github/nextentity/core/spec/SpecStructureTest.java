@@ -218,6 +218,10 @@ class SpecStructureTest {
 
         assertThat(path).isEqualTo(new PathProjection(CREATED_AT));
         assertThat(max).isEqualTo(new AggregateProjection(AggregateFunction.MAX, CREATED_AT));
+        // embeddedFallback 是后端能力开关：显式投影的一参形态缺省 false，DTO 列显式置 true 且参与相等性
+        assertThat(new PathProjection(CREATED_AT).embeddedFallback()).isFalse();
+        assertThat(new PathProjection(CREATED_AT, true).embeddedFallback()).isTrue();
+        assertThat(new PathProjection(CREATED_AT)).isNotEqualTo(new PathProjection(CREATED_AT, true));
     }
 
     @Test

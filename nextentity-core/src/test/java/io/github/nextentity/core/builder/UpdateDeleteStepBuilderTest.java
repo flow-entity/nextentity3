@@ -164,7 +164,7 @@ class UpdateDeleteStepBuilderTest {
     }
 
     @Test
-    @DisplayName("*IfNotNull(null)：整条条件不进语句（写语句里尤其不能变成 IS NULL 或整表更新）")
+    @DisplayName("*IfNotNull(null)：整条条件不进语句（等价于没写这一条 where；写语句因此是整表写，调用方自担）")
     void ifNotNullSkipsNull() {
         update(1)
                 .set(Order::getStatus, "A")
@@ -213,7 +213,7 @@ class UpdateDeleteStepBuilderTest {
     }
 
     @Test
-    @DisplayName("where(被短路条件)：占位谓词不加条件，写语句不因它退回整表")
+    @DisplayName("where(被短路条件)：占位谓词不加条件，等价于不写这一条 where")
     void wherePlaceholderSkipped() {
         update(1)
                 .set(Order::getStatus, "A")
