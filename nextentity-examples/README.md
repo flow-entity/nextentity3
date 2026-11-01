@@ -29,4 +29,4 @@
 ## 发布与门禁
 
 - **不发布**：不在发布集（`api/core/jpa/jdbc/spring/bom`），pom 未配 deploy / install / gpg / javadoc。
-- **跳过 spotless / checkstyle / PMD**：保持上游排版便于与 `D:\source\java\nextentity` 逐文件 diff；范围例外，新代码仍受全量门禁约束。
+- **静态检查豁免以凭证为准**：`tools/gate-receipt.py` 的 `STATIC_EXEMPT` 豁免本模块 checkstyle / PMD / SpotBugs 三项，spotless 另由 pom 的 `<skip>true</skip>` 跳过；保持上游排版便于与 `D:\source\java\nextentity` 逐文件 diff，范围例外，新代码仍受全量门禁约束。

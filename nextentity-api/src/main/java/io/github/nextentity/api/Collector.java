@@ -44,8 +44,8 @@ public interface Collector<T> {
     /// [Collector]，没有它「带锁分页」就表达不出来，而收窄 `lock` 的返回类型会破坏 3.0.0 的兼容基线。
     ///
     /// `groupBy(...)` 之后窗口作用在**组**上（对组分页，与 `count()` 的组口径一致）。
-    /// 本方法自己不做形态拒绝：没有 `groupBy` 的聚合形态（只有聚合投影或只有 `having`）由**后端**拒绝
-    /// （[UnsupportedOperationException]，见本接口 `count()` / `exists()` 的说明），不是这条取行路径抛的。
+    /// 取行路径不做形态拒绝：没有 `groupBy` 的聚合投影查询照常渲染成单行取回；
+    /// `UnsupportedOperationException` 只由 `count()` / `exists()` 抛（见其说明），与这条路径无关。
     ///
     /// 默认实现抛 [UnsupportedOperationException]：它是**明确的契约**（"本实现不支持带窗口分页"），
     /// 不是能用的兜底——刻意不做内存内的 skip/limit，那会把分页静默退化成全表加载。
