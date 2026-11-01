@@ -99,9 +99,13 @@ final class JpaPaths {
 
     /// 逐段解析路径，前缀结果按 `List<String>` 缓存（同一前缀只解析一次，也复用同一个 `join`）。
     ///
-    /// 关联走 `join(LEFT)`、非关联（含 `@Embedded`）走 `get`。判定的**可观测性**有一处依赖：
-    /// Hibernate 7 把嵌入属性的 `join` 摊平成同一张表的列，所以现在把这里换成恒 `join`
-    /// 语句与结果都不变（`JpaEmbeddedChainTest` 实测）。但那是实现细节：若某个实现给嵌入
+    /// 关联与 `@Embedded` 都走 `join(LEFT)`，其余走 `get`。嵌入段也 `join` 是为了**可继续下钻**：
+    /// `get` 拿到的是嵌入路径（Hibernate 的 `SqmEmbeddedValuedSimplePath`），不是 `From`，
+    /// 下一段是关联时无处 join（`EntityPath.of(X::getContact).get(ContactInfo::getCountry).get(...)`
+    /// 会直接 `ClassCastException`）；`join` 返回 `From`，被关联表因此能正常 `LEFT JOIN` 出来。
+    ///
+    /// 嵌入段 `join` 的**可观测性**有一处依赖：Hibernate 7 把嵌入属性的 `join` 摊平成同一张表的列，
+    /// 所以语句与结果都不变（`JpaEmbeddedChainTest` 实测）。但那是实现细节：若某个实现给嵌入
     /// `join` 加上 `is not null` 谓词，嵌入列全 null 的行会静默消失；
     /// `JpaEmbeddedChainTest#nullEmbeddedRowIsReturned` 钉住"该行必须返回"，换大版本或接
     /// 第二后端时由它先报。
@@ -121,9 +125,11 @@ final class JpaPaths {
         Path<?> parent = navigate(prefix.subList(0, prefix.size() - 1));
         String attribute = prefix.getLast();
         rejectPluralAssociation(parent.getJavaType(), attribute);
-        Path<?> resolved = meta.association(parent.getJavaType(), attribute)
-                ? ((From<?, ?>) parent).join(attribute, JoinType.LEFT)
-                : parent.get(attribute);
+        // 单值关联要在被关联表上 join；@Embedded 段也 join，是为了拿到 From 让「嵌入里的 to-one」
+        // 能继续下钻（get 得到的是嵌入路径，不是 From），见上方关于可观测性的说明。
+        boolean join =
+                meta.association(parent.getJavaType(), attribute) || meta.embedded(parent.getJavaType(), attribute);
+        Path<?> resolved = join ? ((From<?, ?>) parent).join(attribute, JoinType.LEFT) : parent.get(attribute);
         prefixes.put(key, resolved);
         return resolved;
     }
