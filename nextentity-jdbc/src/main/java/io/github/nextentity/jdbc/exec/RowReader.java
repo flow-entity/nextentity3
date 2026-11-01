@@ -1,6 +1,8 @@
 package io.github.nextentity.jdbc.exec;
 
+import io.github.nextentity.core.spec.AggregateProjection;
 import io.github.nextentity.core.spec.AttributePath;
+import io.github.nextentity.core.spec.ComputedProjection;
 import io.github.nextentity.core.spec.EntitySelection;
 import io.github.nextentity.core.spec.PathProjection;
 import io.github.nextentity.core.spec.Projection;
@@ -75,12 +77,27 @@ final class RowReader {
         return cells.length == 1 ? cells[0] : cells;
     }
 
-    /// 值投影若是枚举属性（单列或 join 末段的路径），读出后要转成枚举常量。
+    /// 值投影对应的列映射：路径投影（单列、join 末段、嵌入叶子）与 `max` / `min` 聚合都按列反转换
+    /// （枚举存储形态 → 常量、`@Convert` 的数据库形态 → 属性值）；其余投影返回 `null`，交回原始值。
     private JdbcEntityAttribute enumAttribute(Projection projection) {
-        if (projection instanceof PathProjection path) {
-            return resolve(path.path());
-        }
-        return null;
+        return switch (projection) {
+            case PathProjection path -> resolve(path.path());
+            case AggregateProjection aggregate -> aggregateAttribute(aggregate);
+            case ComputedProjection ignored -> null;
+        };
+    }
+
+    /// 聚合投影的列映射：只有 `max` / `min` 是**保形**的——结果就是该列的某一个实际存储值，交给
+    /// `ColumnReader#readCell` 与路径投影读回同一列完全同域，反转换因此是双射的。
+    ///
+    /// `count` / `countDistinct` 的结果是 `Long`、`avg` 是 `Double`，结果域与列值域无关（对枚举列套
+    /// `Enum.valueOf` 会炸）；`sum` 的结果域是「转换器保值的和」，只有加性转换器才落在列值域上，
+    /// 非保值转换器会把和值转成非法属性值——三者一律不反转换，交回原始值。
+    private JdbcEntityAttribute aggregateAttribute(AggregateProjection aggregate) {
+        return switch (aggregate.function()) {
+            case MAX, MIN -> resolve(aggregate.path());
+            case AVG, SUM, COUNT, COUNT_DISTINCT -> null;
+        };
     }
 
     private JdbcEntityAttribute resolve(AttributePath path) {
