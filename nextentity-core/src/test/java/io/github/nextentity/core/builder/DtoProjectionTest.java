@@ -41,7 +41,7 @@ class DtoProjectionTest {
 
         ValueSelection selection = selection();
         assertThat(selection.items())
-                .containsExactly(new PathProjection(path("name")), new PathProjection(path("age")));
+                .containsExactly(new PathProjection(path("name"), true), new PathProjection(path("age"), true));
         assertThat(selection.distinct()).isFalse();
     }
 
@@ -82,7 +82,7 @@ class DtoProjectionTest {
         query().select(BeanDto.class).list();
 
         assertThat(selection().items())
-                .containsExactly(new PathProjection(path("age")), new PathProjection(path("name")));
+                .containsExactly(new PathProjection(path("age"), true), new PathProjection(path("name"), true));
     }
 
     @Test
@@ -101,7 +101,7 @@ class DtoProjectionTest {
     void beanKeepsAllCapsPropertyName() {
         query().select(UrlDto.class).list();
 
-        assertThat(selection().items()).containsExactly(new PathProjection(path("URL")));
+        assertThat(selection().items()).containsExactly(new PathProjection(path("URL"), true));
     }
 
     @Test
@@ -109,7 +109,7 @@ class DtoProjectionTest {
     void beanIgnoresSettersWithoutSingleParameter() {
         query().select(SetterShapes.class).list();
 
-        assertThat(selection().items()).containsExactly(new PathProjection(path("name")));
+        assertThat(selection().items()).containsExactly(new PathProjection(path("name"), true));
         Object row = assemble(new Object[] {"ann"}).getFirst();
         assertThat(((SetterShapes) row).name()).isEqualTo("ann");
     }
@@ -240,7 +240,8 @@ class DtoProjectionTest {
     void shortSetterNamesFollowJavaBeansRule() {
         query().select(ShortNames.class).list();
 
-        assertThat(selection().items()).containsExactly(new PathProjection(path("AB")), new PathProjection(path("a")));
+        assertThat(selection().items())
+                .containsExactly(new PathProjection(path("AB"), true), new PathProjection(path("a"), true));
     }
 
     @Test

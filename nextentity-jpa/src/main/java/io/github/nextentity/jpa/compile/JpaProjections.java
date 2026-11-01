@@ -22,7 +22,7 @@ final class JpaProjections {
 
     Expression<?> projection(Projection projection) {
         return switch (projection) {
-            case PathProjection pathProjection -> paths.projectionPath(pathProjection.path());
+            case PathProjection pathProjection -> paths.projectionPath(pathProjection);
             case AggregateProjection aggregateProjection ->
                 operands.expression(new AggregateOperand(aggregateProjection.function(), aggregateProjection.path()));
             case ComputedProjection computedProjection -> operands.expression(computedProjection.operand());

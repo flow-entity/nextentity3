@@ -1,6 +1,7 @@
 package io.github.nextentity.jpa.compile;
 
 import io.github.nextentity.core.spec.AttributePath;
+import io.github.nextentity.core.spec.PathProjection;
 import io.github.nextentity.jpa.meta.JpaMeta;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.Expression;
@@ -92,17 +93,22 @@ final class JpaPaths {
         }
     }
 
-    /// DTO 投影列的路径：单段属性名在实体上不存在时，按 `@Embedded` 组件回找同名叶子
-    /// （`street` → `address.street`）。
+    /// 投影列的路径：DTO 列（[PathProjection#embeddedFallback] 为 `true`）在单段属性名于实体上不存在时，
+    /// 按 `@Embedded` 组件回找同名叶子（`street` → `address.street`）。
     ///
-    /// 只有 `select(Dto.class)` 的列集走这里：那些列名就是 DTO 属性名，嵌平字段在实体上没有同名属性，
-    /// 没有注解面显式指路（`@EntityPath` 那种写法），按名回找是唯一可表达的形态。直接属性永远优先：
-    /// 实体上有同名属性时就是那一列，不去嵌入里找。同名叶子出现在多个嵌入组件里时由
-    /// [io.github.nextentity.jpa.meta.JpaEmbeddedPaths] 显式拒绝。
-    Path<?> projectionPath(AttributePath attributePath) {
+    /// 只有 `select(Dto.class)` 的列集带这个标记（`DtoProjection` 置位）：那些列名就是 DTO 属性名，
+    /// 嵌平字段在实体上没有同名属性，没有注解面显式指路（`@EntityPath` 那种写法），按名回找是唯一
+    /// 可表达的形态。显式投影（`select(Path.of(...))` / `project(ProjectionMapper)`）的列是调用方
+    /// 显式写出的路径，标记为 `false`，走严格 [#path]：解析不到属性就该在渲染时报错，静默改写成
+    /// 嵌入列会让写错的路径读成另一列。
+    ///
+    /// 直接属性永远优先：实体上有同名属性时就是那一列，不去嵌入里找。同名叶子出现在多个嵌入组件里时
+    /// 由 [io.github.nextentity.jpa.meta.JpaEmbeddedPaths] 显式拒绝。
+    Path<?> projectionPath(PathProjection projection) {
+        AttributePath attributePath = projection.path();
         List<String> names = attributePath.names();
         Class<?> type = attributePath.entityType();
-        if (names.size() == 1 && !meta.hasAttribute(type, names.getFirst())) {
+        if (projection.embeddedFallback() && names.size() == 1 && !meta.hasAttribute(type, names.getFirst())) {
             List<String> embedded = meta.embeddedPaths().resolve(type, names.getFirst());
             if (!embedded.isEmpty()) {
                 return path(new AttributePath(type, embedded));

@@ -3,6 +3,10 @@ package io.github.nextentity.jpa;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.nextentity.api.Expression;
+import io.github.nextentity.api.Path;
+import io.github.nextentity.api.ProjectionMapper;
+import io.github.nextentity.api.model.Tuple;
 import io.github.nextentity.core.repo.EntityOperations;
 import io.github.nextentity.jpa.entity.AmbiguousEmbeddedHolder;
 import io.github.nextentity.jpa.entity.Datum;
@@ -176,5 +180,40 @@ class JpaEmbeddedPathsTest extends JpaTestSupport {
                 .list());
         assertThat(rows).containsExactly(new ShadowedCityDto("direct"));
         assertThat(String.join("\n", normalized(drainSql()))).doesNotContain("address_city");
+    }
+
+    @Test
+    @DisplayName("显式 select(Path)：非持久化 getter 不被嵌入回找静默改写，渲染时失败")
+    void explicitPathProjectionIsNotRewrittenByEmbeddedFallback() {
+        assertThatThrownBy(() -> inTx(entityManager -> operations(entityManager, TransientGetterHolder.class)
+                        .query()
+                        .select(Path.of(TransientGetterHolder::getCity))
+                        .list()))
+                .as("显式投影列不是 DTO 列，不回找 address.city；写错/取不到列必须报错而不是读另一列")
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("显式 project(ProjectionMapper)：同一路径同样不被嵌入回找改写")
+    void projectionMapperPathIsNotRewrittenByEmbeddedFallback() {
+        ProjectionMapper<TransientGetterHolder, Object> mapper = new ProjectionMapper<>() {
+
+            @Override
+            public List<Expression<TransientGetterHolder, ?>> expressions() {
+                return List.of(Path.of(TransientGetterHolder::getCity));
+            }
+
+            @Override
+            public Object map(Tuple row) {
+                return row.get(0);
+            }
+        };
+
+        assertThatThrownBy(() -> inTx(entityManager -> operations(entityManager, TransientGetterHolder.class)
+                        .query()
+                        .project(mapper)
+                        .list()))
+                .as("映射器声明的路径是显式列，不参与 DTO 的按名回找")
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

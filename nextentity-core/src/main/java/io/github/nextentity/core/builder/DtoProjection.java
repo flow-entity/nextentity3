@@ -114,8 +114,10 @@ record DtoProjection(List<Projection> items, RowMapper<?> mapper) {
         });
     }
 
+    /// DTO 列：列名是 DTO 属性名，允许后端（JPA）在实体上没有同名直接属性时回找 `@Embedded` 同名叶子。
+    /// 显式投影（`select(Path)` / `project(mapper)`）不走这里，因此不参与回找。
     private static Projection column(Class<?> entityType, String property) {
-        return new PathProjection(AttributePath.of(entityType, property));
+        return new PathProjection(AttributePath.of(entityType, property), true);
     }
 
     private static Constructor<?> constructor(Class<?> type, Class<?>... parameterTypes) {

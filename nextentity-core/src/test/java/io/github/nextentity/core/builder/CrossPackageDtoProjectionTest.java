@@ -44,7 +44,7 @@ class CrossPackageDtoProjectionTest {
         List<?> rows = select(query, type);
 
         assertThat(((ValueSelection) backend.last().selection()).items())
-                .containsExactly(new PathProjection(AttributePath.of(FakeEntity.class, "name")));
+                .containsExactly(new PathProjection(AttributePath.of(FakeEntity.class, "name"), true));
         assertThat(rows).singleElement();
         Method name = type.getDeclaredMethod("name");
         name.setAccessible(true);
