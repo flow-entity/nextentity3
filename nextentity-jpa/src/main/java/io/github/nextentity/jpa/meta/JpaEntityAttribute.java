@@ -67,7 +67,9 @@ final class JpaEntityAttribute implements EntityAttribute {
     ///
     /// @param annotations 映射声明所在成员（字段 / getter）
     /// @param describe    报错用的「实体.属性」全名
-    /// @param association 该属性是不是单值关联
+    /// @param association 该属性是不是**单值关联**（single-valued association / to-one：`@ManyToOne` 或
+    ///                    owning `@OneToOne`）；标量 / 集合关联传 `false`，此时多列 `@JoinColumns`
+    ///                    不是可写外键建模问题（防御分支，实际不可达）
     /// @return 全部 `@JoinColumn`（容器写法已展开）；非关联属性为空数组
     static JoinColumn[] joinColumns(AnnotatedElement annotations, String describe, boolean association) {
         JoinColumn[] joinColumns = annotations.getAnnotationsByType(JoinColumn.class);

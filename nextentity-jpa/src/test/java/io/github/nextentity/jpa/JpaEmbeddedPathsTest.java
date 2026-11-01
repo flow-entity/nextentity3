@@ -190,7 +190,8 @@ class JpaEmbeddedPathsTest extends JpaTestSupport {
                         .select(Path.of(TransientGetterHolder::getCity))
                         .list()))
                 .as("显式投影列不是 DTO 列，不回找 address.city；写错/取不到列必须报错而不是读另一列")
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("city");
     }
 
     @Test
@@ -214,6 +215,7 @@ class JpaEmbeddedPathsTest extends JpaTestSupport {
                         .project(mapper)
                         .list()))
                 .as("映射器声明的路径是显式列，不参与 DTO 的按名回找")
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("city");
     }
 }

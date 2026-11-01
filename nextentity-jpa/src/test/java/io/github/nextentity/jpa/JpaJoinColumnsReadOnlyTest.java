@@ -7,7 +7,10 @@ import io.github.nextentity.api.EntityPath;
 import io.github.nextentity.core.repo.EntityOperations;
 import io.github.nextentity.jpa.entity.Organization;
 import io.github.nextentity.jpa.meta.JpaMeta;
+import jakarta.persistence.AssociationOverride;
 import jakarta.persistence.Column;
+import jakarta.persistence.Embeddable;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityTransaction;
@@ -34,6 +37,12 @@ import org.junit.jupiter.api.TestInstance;
 /// 外键列、条件更新 `set(关联.id)` 显式 UOE。3.2.0 的 `getAnnotation(JoinColumn.class)` 对容器写法
 /// 返回 `null`，于是只读外键被静默写库（单列写法正常拒绝）——同一映射写两种声明就两种行为。
 ///
+/// 拒绝时机分两类，用例各自钉实际发生点：**顶层关联**的复合外键在元数据期（`JpaEntityType#of` →
+/// `JpaEntityAttribute`）；**`@Embedded` 里的关联叶子**（`@JoinColumns` 多列 / `@AssociationOverride`
+/// 覆盖多列 / 容器单列只读）要等到写路径才判定——`update(entity)` 的 `setEmbedded` 调
+/// `JpaMeta#embeddedForeignKeyUpdatable → embeddedJoinColumn` 时抛 UOE 或跳过只读列，
+/// 元数据期不扫描嵌入内部（可嵌入类型不是实体，不构造 `JpaEntityAttribute`）。
+///
 /// 独立 `Configuration`：本用例的实体只服务这几条规则，塞进 `JpaTestSupport` 的共享配置会波及
 /// 所有子类的 `hbm2ddl` 与实体集。
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -57,6 +66,9 @@ class JpaJoinColumnsReadOnlyTest {
         configuration.addAnnotatedClass(SingularReadOnlyRef.class);
         configuration.addAnnotatedClass(CompositeTarget.class);
         configuration.addAnnotatedClass(CompositeRef.class);
+        configuration.addAnnotatedClass(AssociationOverrideMultiRef.class);
+        configuration.addAnnotatedClass(EmbeddedCompositeRef.class);
+        configuration.addAnnotatedClass(EmbeddedContainerReadOnlyHolder.class);
         this.sessionFactory = configuration.buildSessionFactory();
         this.meta = new JpaMeta(sessionFactory);
     }
@@ -73,6 +85,9 @@ class JpaJoinColumnsReadOnlyTest {
                     .createNativeQuery("delete from container_readonly_ref")
                     .executeUpdate();
             entityManager.createNativeQuery("delete from singular_readonly_ref").executeUpdate();
+            entityManager
+                    .createNativeQuery("delete from embedded_container_readonly_holder")
+                    .executeUpdate();
             entityManager.createNativeQuery("delete from organization").executeUpdate();
             entityManager.persist(new Organization(1L, "one"));
             entityManager.persist(new Organization(2L, "two"));
@@ -80,6 +95,8 @@ class JpaJoinColumnsReadOnlyTest {
                     new ContainerReadOnlyRef(1L, "orig", entityManager.getReference(Organization.class, 1L)));
             entityManager.persist(
                     new SingularReadOnlyRef(1L, "orig", entityManager.getReference(Organization.class, 1L)));
+            entityManager.persist(new EmbeddedContainerReadOnlyHolder(
+                    1L, "orig", new ContainerReadOnlyEmbeddedRef(entityManager.getReference(Organization.class, 1L))));
             return null;
         });
     }
@@ -146,6 +163,57 @@ class JpaJoinColumnsReadOnlyTest {
                 .hasMessageContaining("列数=2");
     }
 
+    @Test
+    @DisplayName("实体侧 @AssociationOverride 覆盖出两列外键：写路径 UOE（元数据期不扫嵌入内部）")
+    void associationOverrideWithMultipleJoinColumnsIsRejectedOnWrite() {
+        inTx(entityManager -> {
+            assertThatThrownBy(() -> operations(entityManager, AssociationOverrideMultiRef.class)
+                            .update(new AssociationOverrideMultiRef(
+                                    1L, "renamed", new CompositeEmbeddedTargetRef(null))))
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessageContaining("复合外键关联未支持")
+                    .hasMessageContaining(AssociationOverrideMultiRef.class.getName() + ".ref.target")
+                    .hasMessageContaining("列数=2");
+            return null;
+        });
+    }
+
+    @Test
+    @DisplayName("嵌入内关联的 @JoinColumns 两列：写路径 UOE（嵌入内部不走元数据期属性解析）")
+    void embeddedAssociationWithMultipleJoinColumnsIsRejectedOnWrite() {
+        inTx(entityManager -> {
+            assertThatThrownBy(() -> operations(entityManager, EmbeddedCompositeRef.class)
+                            .update(new EmbeddedCompositeRef(1L, "renamed", new CompositeInnerRef(null))))
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessageContaining("复合外键关联未支持")
+                    .hasMessageContaining(EmbeddedCompositeRef.class.getName() + ".ref.target")
+                    .hasMessageContaining("列数=2");
+            return null;
+        });
+    }
+
+    @Test
+    @DisplayName("嵌入内关联的容器单列只读外键：update(entity) 不进 SET、库内值不变")
+    void entityUpdateSkipsEmbeddedContainerReadOnlyForeignKey() {
+        inTx(entityManager -> {
+            EmbeddedContainerReadOnlyHolder row = entityManager.find(EmbeddedContainerReadOnlyHolder.class, 1L);
+            entityManager.detach(row);
+            operations(entityManager, EmbeddedContainerReadOnlyHolder.class)
+                    .update(new EmbeddedContainerReadOnlyHolder(
+                            1L,
+                            "renamed",
+                            new ContainerReadOnlyEmbeddedRef(entityManager.getReference(Organization.class, 2L))));
+            return null;
+        });
+
+        assertThat(labelOf("embedded_container_readonly_holder"))
+                .as("可写业务列必须照常写")
+                .isEqualTo("renamed");
+        assertThat(columnValueOf("embedded_container_readonly_holder", "locked_owner_id"))
+                .as("@Embedded 里 @JoinColumns(@JoinColumn(updatable=false)) 的只读外键不得被 update(entity) 写入")
+                .isEqualTo(1L);
+    }
+
     private <T> EntityOperations<T> operations(EntityManager entityManager, Class<T> type) {
         return new JpaEntityOperationsFactory(entityManager, entityManager.getEntityManagerFactory()).operations(type);
     }
@@ -156,8 +224,12 @@ class JpaJoinColumnsReadOnlyTest {
     }
 
     private Long foreignKeyOf(String table) {
+        return columnValueOf(table, "owner_id");
+    }
+
+    private Long columnValueOf(String table, String column) {
         return inTx(entityManager -> ((Number) entityManager
-                        .createNativeQuery("select owner_id from " + table)
+                        .createNativeQuery("select " + column + " from " + table)
                         .getSingleResult())
                 .longValue());
     }
@@ -298,5 +370,177 @@ class JpaJoinColumnsReadOnlyTest {
         private CompositeTarget target;
 
         public CompositeRef() {}
+    }
+
+    /// 嵌入内的 to-one：本身不写 `@JoinColumn`，由实体侧 `@AssociationOverride` 给列。
+    @Embeddable
+    public static class CompositeEmbeddedTargetRef {
+
+        @ManyToOne
+        private CompositeTarget target;
+
+        public CompositeEmbeddedTargetRef() {}
+
+        public CompositeEmbeddedTargetRef(CompositeTarget target) {
+            this.target = target;
+        }
+
+        public CompositeTarget getTarget() {
+            return target;
+        }
+    }
+
+    /// 实体侧 `@AssociationOverride` 用**两列**覆盖嵌入内关联：本层单列建模表达不了，写路径 UOE。
+    @Entity
+    @Table(name = "association_override_multi_ref")
+    public static class AssociationOverrideMultiRef {
+
+        @Id
+        private Long id;
+
+        @Column(name = "label")
+        private String label;
+
+        @Embedded
+        @AssociationOverride(
+                name = "target",
+                joinColumns = {
+                    @JoinColumn(name = "ao_t_a", referencedColumnName = "a"),
+                    @JoinColumn(name = "ao_t_b", referencedColumnName = "b")
+                })
+        private CompositeEmbeddedTargetRef ref;
+
+        public AssociationOverrideMultiRef() {}
+
+        public AssociationOverrideMultiRef(Long id, String label, CompositeEmbeddedTargetRef ref) {
+            this.id = id;
+            this.label = label;
+            this.ref = ref;
+        }
+
+        public Long getId() {
+            return id;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public CompositeEmbeddedTargetRef getRef() {
+            return ref;
+        }
+    }
+
+    /// 嵌入内的 to-one 直接写 `@JoinColumns` 两列（多列外键）：写路径 UOE。
+    @Embeddable
+    public static class CompositeInnerRef {
+
+        @ManyToOne
+        @JoinColumns({
+            @JoinColumn(name = "ei_t_a", referencedColumnName = "a"),
+            @JoinColumn(name = "ei_t_b", referencedColumnName = "b")
+        })
+        private CompositeTarget target;
+
+        public CompositeInnerRef() {}
+
+        public CompositeInnerRef(CompositeTarget target) {
+            this.target = target;
+        }
+
+        public CompositeTarget getTarget() {
+            return target;
+        }
+    }
+
+    /// 嵌入内关联直接写 `@JoinColumns` 两列的实体。
+    @Entity
+    @Table(name = "embedded_composite_ref")
+    public static class EmbeddedCompositeRef {
+
+        @Id
+        private Long id;
+
+        @Column(name = "label")
+        private String label;
+
+        @Embedded
+        private CompositeInnerRef ref;
+
+        public EmbeddedCompositeRef() {}
+
+        public EmbeddedCompositeRef(Long id, String label, CompositeInnerRef ref) {
+            this.id = id;
+            this.label = label;
+            this.ref = ref;
+        }
+
+        public Long getId() {
+            return id;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public CompositeInnerRef getRef() {
+            return ref;
+        }
+    }
+
+    /// 嵌入内关联的**容器写法单列只读**外键：`@JoinColumns(@JoinColumn(updatable = false))`。
+    /// `update(entity)` 经 `JpaMeta#embeddedForeignKeyUpdatable → embeddedJoinColumn` 的叶子回退判只读，
+    /// 这条路径此前零覆盖（顶层关联的同类判定走 `JpaEntityAttribute`）。
+    @Embeddable
+    public static class ContainerReadOnlyEmbeddedRef {
+
+        @ManyToOne
+        @JoinColumns(@JoinColumn(name = "locked_owner_id", updatable = false))
+        private Organization owner;
+
+        public ContainerReadOnlyEmbeddedRef() {}
+
+        public ContainerReadOnlyEmbeddedRef(Organization owner) {
+            this.owner = owner;
+        }
+
+        public Organization getOwner() {
+            return owner;
+        }
+    }
+
+    /// 嵌入内容器单列只读外键的实体。
+    @Entity
+    @Table(name = "embedded_container_readonly_holder")
+    public static class EmbeddedContainerReadOnlyHolder {
+
+        @Id
+        private Long id;
+
+        @Column(name = "label")
+        private String label;
+
+        @Embedded
+        private ContainerReadOnlyEmbeddedRef ref;
+
+        public EmbeddedContainerReadOnlyHolder() {}
+
+        public EmbeddedContainerReadOnlyHolder(Long id, String label, ContainerReadOnlyEmbeddedRef ref) {
+            this.id = id;
+            this.label = label;
+            this.ref = ref;
+        }
+
+        public Long getId() {
+            return id;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public ContainerReadOnlyEmbeddedRef getRef() {
+            return ref;
+        }
     }
 }
