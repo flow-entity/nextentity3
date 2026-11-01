@@ -9,8 +9,10 @@ import io.github.nextentity.jdbc.support.SnapshotItem;
 import io.github.nextentity.jdbc.support.SnapshotOwner;
 import jakarta.persistence.Access;
 import jakarta.persistence.AccessType;
+import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.AttributeOverride;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Embeddable;
 import jakarta.persistence.Embedded;
@@ -60,6 +62,39 @@ class JdbcEmbeddedTest {
         assertThatThrownBy(() -> meta.entityType(NestedEmbeddableTypeEntity.class))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessage("嵌套 @Embedded 未支持: " + NestedEmbeddableTypeEntity.class.getName() + ".address.inner");
+    }
+
+    @Test
+    void convertOnEmbeddedFieldIsRejected() {
+        assertThatThrownBy(() -> meta.entityType(ConvertOnEmbeddedEntity.class))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessage("@Embedded 字段上的 @Convert 未支持: " + ConvertOnEmbeddedEntity.class.getName() + ".address");
+    }
+
+    @Test
+    void disabledConversionOnEmbeddedFieldIsFlattened() {
+        JdbcEntityType<DisabledConversionOnEmbeddedEntity> type =
+                meta.entityType(DisabledConversionOnEmbeddedEntity.class);
+
+        JdbcEntityAttribute address = type.attribute("address");
+        assertThat(address.embeddedColumns())
+                .extracting(JdbcEntityAttribute::name)
+                .containsExactly("city");
+        assertThat(address.embeddedColumn("city").converter()).isNull();
+        assertThat(type.columns()).extracting(JdbcEntityAttribute::column).containsExactly("id", "city");
+    }
+
+    @Test
+    void convertOnEmbeddableLeafFieldIsApplied() {
+        JdbcEntityType<LeafConvertInsideEmbeddableEntity> type =
+                meta.entityType(LeafConvertInsideEmbeddableEntity.class);
+
+        JdbcEntityAttribute address = type.attribute("address");
+        assertThat(address.embeddedColumns())
+                .extracting(JdbcEntityAttribute::name)
+                .containsExactly("city", "street");
+        assertThat(address.embeddedColumn("city").converter()).isInstanceOf(CityNameConverter.class);
+        assertThat(address.embeddedColumn("street").converter()).isNull();
     }
 
     @Test
@@ -587,5 +622,62 @@ class JdbcEmbeddedTest {
 
         @Embedded
         private EmbeddedAddressOnly office;
+    }
+
+    @Entity
+    @Table(name = "embedded_convert_container")
+    static class ConvertOnEmbeddedEntity {
+
+        @Id
+        private Long id;
+
+        @Embedded
+        @Convert(converter = CityNameConverter.class, attributeName = "city")
+        private ConvertedAddress address;
+    }
+
+    @Entity
+    @Table(name = "embedded_convert_disabled")
+    static class DisabledConversionOnEmbeddedEntity {
+
+        @Id
+        private Long id;
+
+        @Embedded
+        @Convert(disableConversion = true)
+        private EmbeddedAddressOnly address;
+    }
+
+    @Entity
+    @Table(name = "embedded_convert_leaf")
+    static class LeafConvertInsideEmbeddableEntity {
+
+        @Id
+        private Long id;
+
+        @Embedded
+        private ConvertedAddress address;
+    }
+
+    @Embeddable
+    static class ConvertedAddress {
+
+        @Convert(converter = CityNameConverter.class)
+        private String city;
+
+        private String street;
+    }
+
+    static class CityNameConverter implements AttributeConverter<String, String> {
+
+        @Override
+        public String convertToDatabaseColumn(String attribute) {
+            return attribute == null ? null : "city:" + attribute;
+        }
+
+        @Override
+        public String convertToEntityAttribute(String dbData) {
+            return dbData == null ? null : dbData.substring("city:".length());
+        }
     }
 }

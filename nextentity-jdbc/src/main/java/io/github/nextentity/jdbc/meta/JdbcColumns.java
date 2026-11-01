@@ -185,7 +185,7 @@ final class JdbcColumns {
         return GENERATED_KEY_TYPES.contains(type);
     }
 
-    /// `@Convert`：实例化 `AttributeConverter`，从泛型实参取数据库类型并要求落在列类型白名单里。
+    /// `@Convert`：实例化 `AttributeConverter`，从泛型实参取数据库类型并要求落在列类型白名单里（枚举除外）。
     /// `@Convert(disableConversion = true)` 按 JPA 语义整体关闭转换（本轮不实现 `autoApply`），按无转换器处理。
     @SuppressWarnings("PMD.CyclomaticComplexity") // 分支覆盖 @Convert 的四种声明形态（关闭转换 / 缺转换器 / attributeName / 正常）
     private static Converter converter(Field field, String path) {
@@ -205,7 +205,9 @@ final class JdbcColumns {
         }
         AttributeConverter<Object, Object> converter = instantiate(converterType, path);
         Class<?> databaseType = databaseType(converterType, path);
-        if (!JdbcTypes.supports(databaseType)) {
+        // 枚举数据库类型只服务「字段本身是枚举 + `@Enumerated`」那条路径，写侧 `databaseShape` 与读侧 `JdbcTypes#read`
+        // 都没有枚举分支，转换器落成枚举会一路裸 `ClassCastException`。
+        if (databaseType.isEnum() || !JdbcTypes.supports(databaseType)) {
             throw new UnsupportedOperationException(
                     "@Convert 转换器的数据库类型未支持: " + path + ": " + databaseType.getName() + "（支持的列类型见 JdbcTypes）");
         }

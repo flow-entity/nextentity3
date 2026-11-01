@@ -2,6 +2,7 @@ package io.github.nextentity.jdbc.meta;
 
 import jakarta.persistence.AttributeOverride;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Embeddable;
 import jakarta.persistence.Embedded;
@@ -24,8 +25,9 @@ import java.util.Set;
 /// `@Embedded`：把嵌入类型的标量字段扁平化成列属性。
 ///
 /// 列名默认取嵌入类型的字段名（与 Hibernate/JPA 默认命名一致），`@AttributeOverride` 覆盖；
-/// 嵌套 `@Embedded`、嵌入内的 `@Id` / `@Version` / `@GeneratedValue` / 关联本轮显式拒绝——扁平化层面
-/// 表达不了这些形态，静默忽略会让实体映射出一张缺列的表。
+/// 嵌套 `@Embedded`、容器字段上的 `@Convert`、嵌入内的 `@Id` / `@Version` / `@GeneratedValue` / 关联本轮显式拒绝——
+/// 扁平化层面表达不了这些形态，静默忽略会让实体映射出一张缺列的表。容器上的 `@Convert` 两种形态都拒：
+/// 不带 `attributeName` 在 JPA 侧本身非法，带 `attributeName` 需要子属性寻址。
 final class JdbcEmbedded {
 
     private JdbcEmbedded() {}
@@ -42,6 +44,7 @@ final class JdbcEmbedded {
             throw new UnsupportedOperationException(
                     "@Embedded 目标缺少 @Embeddable: " + path + ": " + embeddable.getName());
         }
+        rejectContainerConvert(field, path);
         JdbcEntityRules.rejectClassLevel(embeddable);
         Constructor<?> constructor = constructor(embeddable, path);
         Map<String, Column> overrides = overrides(field, path);
@@ -63,6 +66,16 @@ final class JdbcEmbedded {
                     + overrides.keySet().iterator().next());
         }
         return new JdbcEntityAttribute(field, embeddable, columns);
+    }
+
+    /// 容器字段上的 `@Convert` 两种形态都拒：不带 `attributeName` 在 JPA 侧本身非法，带 `attributeName`
+    /// 要子属性寻址，扁平化层面无处安放——静默忽略会让列落成未转换的值。`disableConversion` 按 JPA 语义
+    /// 等于「不转换」，放行。
+    private static void rejectContainerConvert(Field field, String path) {
+        Convert convert = field.getAnnotation(Convert.class);
+        if (convert != null && !convert.disableConversion()) {
+            throw new UnsupportedOperationException("@Embedded 字段上的 @Convert 未支持: " + path);
+        }
     }
 
     private static Constructor<?> constructor(Class<?> embeddable, String path) {

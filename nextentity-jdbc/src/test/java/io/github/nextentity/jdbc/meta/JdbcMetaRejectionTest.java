@@ -326,6 +326,14 @@ class JdbcMetaRejectionTest {
                         + Duration.class.getName() + "（支持的列类型见 JdbcTypes）");
     }
 
+    @Test
+    void converterWithEnumDatabaseTypeIsRejected() {
+        rejectedUnsupported(
+                EnumDatabaseTypeConverterEntity.class,
+                "@Convert 转换器的数据库类型未支持: " + EnumDatabaseTypeConverterEntity.class.getName() + ".status: "
+                        + ItemStatus.class.getName() + "（支持的列类型见 JdbcTypes）");
+    }
+
     // ===== 拒绝用例的实体夹具 =====
 
     static class NoEntityClass {
@@ -874,6 +882,27 @@ class JdbcMetaRejectionTest {
         @ManyToOne
         @JoinColumn(name = "owner_id")
         OwnerEntity owner;
+    }
+
+    static class EnumDatabaseTypeConverter implements AttributeConverter<ItemStatus, ItemStatus> {
+        @Override
+        public ItemStatus convertToDatabaseColumn(ItemStatus attribute) {
+            return attribute;
+        }
+
+        @Override
+        public ItemStatus convertToEntityAttribute(ItemStatus dbData) {
+            return dbData;
+        }
+    }
+
+    @Entity
+    static class EnumDatabaseTypeConverterEntity {
+        @Id
+        long id;
+
+        @Convert(converter = EnumDatabaseTypeConverter.class)
+        ItemStatus status;
     }
 
     enum ItemStatus {
