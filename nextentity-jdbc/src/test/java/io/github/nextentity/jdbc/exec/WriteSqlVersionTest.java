@@ -8,6 +8,7 @@ import io.github.nextentity.jdbc.dialect.JdbcDialect;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
 import io.github.nextentity.jdbc.support.IntegerVersionedItem;
 import io.github.nextentity.jdbc.support.ItemStatus;
+import io.github.nextentity.jdbc.support.NonInsertableVersionedItem;
 import io.github.nextentity.jdbc.support.OrdinalItem;
 import io.github.nextentity.jdbc.support.SnapshotItem;
 import io.github.nextentity.jdbc.support.VersionedItem;
@@ -35,6 +36,19 @@ class WriteSqlVersionTest {
         SqlStatement integerVersion = WriteSql.insert(
                 meta, meta.entityType(IntegerVersionedItem.class), new IntegerVersionedItem(4L, "v"), dialect);
         assertThat(integerVersion.parameters()).containsExactly(4L, "v", 0);
+    }
+
+    @Test
+    void insertIgnoresInsertableFalseOnVersionColumn() {
+        SqlStatement statement = WriteSql.insert(
+                meta,
+                meta.entityType(NonInsertableVersionedItem.class),
+                new NonInsertableVersionedItem(7L, "v"),
+                dialect);
+
+        assertThat(statement.sql())
+                .isEqualTo("insert into non_insertable_versioned_item (id, name, version) values (?, ?, ?)");
+        assertThat(statement.parameters()).containsExactly(7L, "v", 0L);
     }
 
     @Test
