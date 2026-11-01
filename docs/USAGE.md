@@ -460,6 +460,8 @@ long distinctCustomers =
 
 聚合结果是 `AggregateValue`：可比较、可区间，但**不能再接聚合**——`max().max()`、`count().count()` 编译期就写不出来。
 
+`max()` / `min()` 的返回值按列映射反转换（枚举存储形态 → 常量、`@Convert` 的数据库形态 → 属性值），与值投影同规则，因此运行期类型与上表一致。`sum()` **不**反转换：`AttributeConverter` 不声明「加性是否保值」，非保值转换器上的和值不落在属性值域内，所以 `@Convert` 数值列上的 `sum()` 返回的是转换器的数据库类型（如 `BigDecimal`），静态类型仍是属性类型——这是已知限制，需要属性类型时自行 `convertToEntityAttribute`，或改用未加转换器的列（`count` / `countDistinct` / `avg` 的结果域与列无关，一律不反转换）。
+
 ### 7.1 分组 + HAVING
 
 ```java
@@ -587,6 +589,8 @@ Order pessimistic = query().where(Order::getId).eq(id).lock(LockMode.PESSIMISTIC
 ```
 
 `lock(...)` 必须跟在产生条件的算子之后（例如 `.eq(id).lock(...)`），返回终止符。`LockMode` 的 5 个常量与 `jakarta.persistence.LockModeType` 同名（同名只为可读，`api` 并不依赖 jakarta），由 `nextentity-jpa` 映射成后端的锁模式。
+
+锁只加在**实体行**查询上：值选择 / 聚合投影，以及 `groupBy(...)` / `having(...)` 之后的取行，抛 `UnsupportedOperationException`（`锁只支持实体查询: <实体全名>`，两后端同文案）。理由不是「渲染不出来」，而是同一调用在各后端行为不一致：JDBC 会渲染 `... group by ... for update`（H2 / PostgreSQL 语法错，MySQL 接受），JPA 侧 Hibernate 会悄悄换成 follow-on locking 并多发语句。`count()` / `exists()` 不受影响——它们会清掉锁（计数语句里没有 `for update`）。
 
 3.1.0 起 JDBC 后端也提供 `PESSIMISTIC_READ`（JPA 后端自 3.0.0 起已按名字映射五种锁模式，本版只补验证与文档；2.2.3 在 MySQL + PostgreSQL 双容器验证过这套读锁用法，写法与 `PESSIMISTIC_WRITE` 同形）：JDBC 后端由方言 `lock` 钩子渲染共享锁（MySQL 与 PostgreSQL 都是 `for share`，**两条容器通道均已实测**：MySQL 容器；PostgreSQL 容器的 `PostgresItemLockIntegrationTest` 2 条、`PostgresLockContractIntegrationTest` 4 条全绿，且与 MySQL 通道跑同一批 590 条用例；H2 没有 `FOR SHARE`，用 `for update` 兜底——比 FOR SHARE 锁更强，是安全方向的近似，不是等价降级；SQL Server 方言不做行锁，显式拒绝；未实现的方言显式拒绝，**不静默降级成写锁**）。JDBC 后端只接受 `PESSIMISTIC_WRITE` 与 `PESSIMISTIC_READ`，其余三种模式显式拒绝（`UnsupportedOperationException`，不静默降级成写锁）。
 
