@@ -11,6 +11,7 @@ import io.github.nextentity.jdbc.support.SnapshotAsset;
 import io.github.nextentity.jdbc.support.SnapshotItem;
 import io.github.nextentity.jdbc.support.SnapshotOwner;
 import io.github.nextentity.jdbc.support.SuperclassConvertedItem;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
@@ -121,6 +122,24 @@ class JdbcEntityAttributeTest {
         assertThat(locked.isJoinColumnUpdatable()).isFalse();
     }
 
+    /// 写侧可写性判据（同列双映射的查重就只看这一个值）：**任一写标志为真即可写**——两条写路径各看一个标志
+    /// （`insert` 看 `insertable`、`SET` 看 `updatable`），只有两者都为假时该列才真的不进任何写语句。
+    /// 标量看 `@Column`、关联外键看 `@JoinColumn`，两条分支分别钉住：任一分支写错都会让
+    /// 「只读副本 + 可写副本」的同列双映射被判成冲突（合法映射被拒），或让真冲突被放过。
+    @Test
+    void isWritableIsTrueWhenEitherWriteFlagIsOn() {
+        JdbcEntityType<WriteFlagEntity> scalars = meta.entityType(WriteFlagEntity.class);
+        assertThat(scalars.attribute("insertOnly").isWritable()).isTrue();
+        assertThat(scalars.attribute("updateOnly").isWritable()).isTrue();
+        assertThat(scalars.attribute("writable").isWritable()).isTrue();
+        assertThat(scalars.attribute("readOnly").isWritable()).isFalse();
+
+        JdbcEntityType<AssociationFlagsEntity> associations = meta.entityType(AssociationFlagsEntity.class);
+        assertThat(associations.attribute("skipped").isWritable()).isTrue();
+        assertThat(associations.attribute("locked").isWritable()).isTrue();
+        assertThat(associations.attribute("readOnly").isWritable()).isFalse();
+    }
+
     @Test
     void converterOnASuperclassIsResolvedThroughTheHierarchy() {
         JdbcEntityAttribute status =
@@ -173,5 +192,28 @@ class JdbcEntityAttributeTest {
         @ManyToOne
         @JoinColumn(name = "locked_id", updatable = false)
         private SnapshotOwner locked;
+
+        @ManyToOne
+        @JoinColumn(name = "read_only_id", insertable = false, updatable = false)
+        private SnapshotOwner readOnly;
+    }
+
+    @Entity
+    @Table(name = "write_flags")
+    static class WriteFlagEntity {
+
+        @Id
+        private Long id;
+
+        @Column(insertable = false)
+        private String insertOnly;
+
+        @Column(updatable = false)
+        private String updateOnly;
+
+        private String writable;
+
+        @Column(insertable = false, updatable = false)
+        private String readOnly;
     }
 }
