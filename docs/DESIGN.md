@@ -28,7 +28,7 @@ spring (自动配置、事务桥接)
 testing / tests-jpa / tests-jdbc / tests-legacy / arch 仅被测试与 CI 使用（bom 只做版本对齐）
 ```
 
-`jpa` 与 `jdbc` 是 `core` 接缝的两个平行实现，**互不依赖**：`jpa` 走 Hibernate/Criteria，`jdbc` 走 `java.sql` + 手写 SQL。`spring` 目前只桥接 `jpa`；`jdbc` 由使用方直接 `new JdbcEntityOperationsFactory(dataSource)` 装配，不经过 Spring。`jdbc` 的方言是**可替换接缝**而不是硬编码分支：内置 H2 / MySQL / PostgreSQL / SQL Server 四个实现，三方（或自研）数据库只需实现 `JdbcDialect` 并 `new JdbcEntityOperationsFactory(dataSource, customDialect)`，窗口/锁/生成键/`avg`/`exists`/字符串函数等渲染差异全部由接口的 9 个实例钩子表达（见 §6）。
+`jpa` 与 `jdbc` 是 `core` 接缝的两个平行实现，**互不依赖**：`jpa` 走 Hibernate/Criteria，`jdbc` 走 `java.sql` + 手写 SQL。`spring` 目前只桥接 `jpa`；`jdbc` 由使用方直接 `new JdbcEntityOperationsFactory(dataSource)` 装配，不经过 Spring。`jdbc` 的方言是**可替换接缝**而不是硬编码分支：内置 H2 / MySQL / PostgreSQL / SQL Server 四个实现，三方（或自研）数据库只需实现 `JdbcDialect` 并 `new JdbcEntityOperationsFactory(dataSource, customDialect)`，窗口/锁/生成键/`avg`/`exists`/字符串函数/无列表 INSERT 等渲染差异全部由接口的 10 个实例钩子表达（见 §6）。
 
 | 模块 | 放什么 | 不放什么 |
 |---|---|---|
@@ -400,7 +400,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 三件事只有凭证能给出、日志给不出：**skip 清单连理由**（`方言跳过必须可数` 从「PR 里手写」变成自动抽取）、**`~/.m2` 与源码的时间戳倒挂**（`-pl` 不带 `-am` 时会读到旧语义）、以及**跨模块合并口径的条数**（`-am` 反应堆会把 jpa/spring 一起带进来，比单看目标模块多）。
 
-档位与「该跑什么」一一对应：`fast` = 格式化检查 + 架构规则 + `api`/`core` 快测试（无容器；跑 `test` 阶段，故不含静态检查——静态检查只在 `verify` 上，落点在 `pr` 及以后各档）；`pr` = 架构规则 + H2 645 + PG 兼容模式 655（基线 9 条）+ 遗留 727（`nextentity-arch` 不在 tests-jpa 的依赖链上，`-am` 带不上它，必须显式写进 `-pl`；漏了就是「提交前红、推之前绿」）；`ci` = 前者 + 真 MySQL 容器通道 + `-Dnextentity.requireContainer=true`；`night` = `install` 刷快照 + 全量含容器 + 遗留 h2/mysql 双跑 + PIT×5；`release` = `clean verify` + api-compat。**`pr` 与 `ci` 都不覆盖遗留语料的 MySQL 通道**：两档的遗留步骤**都不传 `-Ddbc`**，`Env` 在未设置时退化为 `List.of("h2")`，于是只有 H2 一遍（PR 期换 30 秒级反馈），那条通道最早在 `night` 才有结论——所以「遗留方言回归」的反馈延迟是「最长到次日 02:00」，本地要提前看必须自己跑 `-Ddbc=h2,mysql -Dnextentity.requireContainer=true`。`ci`/`pr` 刻意不跑全量 PIT（单模块分钟级，不该挡 push），PIT 的落点在 `night` 与 `release`。
+档位与「该跑什么」一一对应：`fast` = 格式化检查 + 架构规则 + `api`/`core` 快测试（无容器；跑 `test` 阶段，故不含静态检查——静态检查只在 `verify` 上，落点在 `pr` 及以后各档）；`pr` = 架构规则 + H2 655 + PG 兼容模式 655（基线 9 条）+ 遗留 727（`nextentity-arch` 不在 tests-jpa 的依赖链上，`-am` 带不上它，必须显式写进 `-pl`；漏了就是「提交前红、推之前绿」）；`ci` = 前者 + 真 MySQL 容器通道 + `-Dnextentity.requireContainer=true`；`night` = `install` 刷快照 + 全量含容器 + 遗留 h2/mysql 双跑 + PIT×5；`release` = `clean verify` + api-compat。**`pr` 与 `ci` 都不覆盖遗留语料的 MySQL 通道**：两档的遗留步骤**都不传 `-Ddbc`**，`Env` 在未设置时退化为 `List.of("h2")`，于是只有 H2 一遍（PR 期换 30 秒级反馈），那条通道最早在 `night` 才有结论——所以「遗留方言回归」的反馈延迟是「最长到次日 02:00」，本地要提前看必须自己跑 `-Ddbc=h2,mysql -Dnextentity.requireContainer=true`。`ci`/`pr` 刻意不跑全量 PIT（单模块分钟级，不该挡 push），PIT 的落点在 `night` 与 `release`。
 **唯一例外是 `ci` 档多跑一个 `nextentity-core` 的 PIT**（`: ci-pit-core`）。它买到的是**反馈时延**，不是
 「堵住一个漏洞」——这一点初稿写错过，这里改正：等价变异台账是工作树里的数据文件，与被它豁免的用例、生产代码
 同源，**没有独立锚点**。因此「PR 里删一条断言、同时给对应变异体加一行台账」这条路径**在哪一档校验都同样绿**，
@@ -441,7 +441,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 
 ### 6.1 方言接缝：`JdbcDialect` 的渲染钩子
 
-`JdbcDialect` 是**公开 API**（`io.github.nextentity.jdbc.dialect`），职责是「SQL 方言差异的**唯一**集中点」，不是名字标签。接口共 10 个成员（静态 `of(String)` + 9 个实例钩子），除必答题 `name()` 外全部有默认实现，默认形态 = H2 / MySQL / PostgreSQL；四个内置方言都覆写 `quote`（H2/PG `"…"`、MySQL 反引号、SQL Server `[…]`），MySQL 另覆写 `lengthOf`（`LENGTH` 是字节数，见下表），SQL Server 另覆写 `selectHead` / `limitClause` / `lock` / `averageOf` / `likeEscape` / `lengthOf`：
+`JdbcDialect` 是**公开 API**（`io.github.nextentity.jdbc.dialect`），职责是「SQL 方言差异的**唯一**集中点」，不是名字标签。接口共 11 个成员（静态 `of(String)` + 10 个实例钩子），除必答题 `name()` 外全部有默认实现，默认形态 = H2 / MySQL；四个内置方言都覆写 `quote`（H2/PG `"…"`、MySQL 反引号、SQL Server `[…]`），MySQL 另覆写 `lengthOf`（`LENGTH` 是字节数，见下表），PostgreSQL 另覆写 `noColumnsInsert`（`default values`），SQL Server 另覆写 `selectHead` / `limitClause` / `lock` / `averageOf` / `likeEscape` / `lengthOf` / `noColumnsInsert`：
 
 | 钩子 | 方言差异 | H2 | MySQL | PostgreSQL | SQL Server |
 |---|---|---|---|---|---|
@@ -452,8 +452,9 @@ java -jar <同上> report tmp/cov/merged.exec \
 | `lock(LockMode, List<String> aliases)` | 行锁片段（返回 `LockClause(tableSuffix, statementSuffix)`；`aliases` 里根别名在前），按模式区分：`PESSIMISTIC_WRITE` → `for update`；`PESSIMISTIC_READ` → `for share`（3.1.0 恢复） | ` for update`（读模式同为 ` for update`：H2 无 `FOR SHARE`） | ` for share` | ` for share` / ` for share of <根别名>` | 抛 UOE（autocommit 下 `with (rowlock)`/`with (updlock)` 语义不等价；MSSQL 不做行锁的裁决未变） |
 | `averageOf(String operand)` | 平均值表达式 | `avg(x)` | `avg(x)` | `avg(x)`（PG 的 `avg(int)` 返回 numeric，无需转换） | `avg(cast(x as float))` |
 | `likeEscape()` | 追加在 `like ?` 后的转义子句 | 空串 | 空串 | 空串 | ` escape '\'` |
-| `substring(String operand, int position, Integer length)` | 3.1.0 加性钩子：`SUBSTRING` 形态。`position` 是 **1 起算**（调用方已把 API 的 0 起算偏移 +1），`length == null` 表示「截到结尾」 | `substring(x, pos)` / `substring(x, pos, len)` | 同 H2 | 同 H2 | `substring(x, pos, 2147483647)`（T-SQL 必须 3 参；用 int 上界表达「到结尾」，**该上界形态尚待 SQL Server 容器实测**；见 USAGE §13.4） |
+| `substring(String operand, int position, Integer length)` | 3.1.0 加性钩子：`SUBSTRING` 形态。`position` 是 **1 起算**（调用方已把 API 的 0 起算偏移 +1），`length == null` 表示「截到结尾」 | `substring(x, pos)` / `substring(x, pos, len)` | 同 H2 | 同 H2 | `substring(x, pos, 2147483647)`（T-SQL 必须 3 参；用 int 上界表达「到结尾」，**已在 SQL Server 容器通道实测通过**；见 USAGE §13.4） |
 | `lengthOf(String operand)` | 3.1.0 加性钩子：字符串长度表达式 | `length(x)` | `char_length(x)`（MySQL 的 `LENGTH()` 是字节数，utf8mb4 下多字节字符会多算，故覆写） | `length(x)` | `len(x)`——**`LEN` 会裁掉尾随空格，与 `LENGTH` 不等价**，属「同表达式两后端结果不同」的语义差异，已披露在 USAGE §13.4 |
+| `noColumnsInsert(String table)` | 3.2.0 加性钩子：零可插入列（生成键-only / 全 `insertable=false`）的 INSERT 形态。`table` 已按方言引用 | `insert into <table> () values ()`（H2 / MySQL 合法形态） | 同 H2（`INSERT INTO t () VALUES ()`） | `insert into <table> default values` | `insert into <table> default values` |
 
 **自定义方言接入**（用户明确要求的能力）：实现 `JdbcDialect`（只有 `name()` 是必答题，其余用默认实现即可起步），然后：
 
@@ -468,7 +469,7 @@ EntityOperationsFactory factory = new JdbcEntityOperationsFactory(dataSource, my
 
 **标识符引用（保留字 / 存量表，v5）**：注解名（`@Table/@Entity(name)`、`@Column(name)`、`@JoinColumn(name|referencedColumnName)`）**被反引号包裹 ⇒ 需要引用**；未包裹 ⇒ 裸名。反引号是跨后端**标记**，渲染字符由方言决定：JDBC 侧 H2/PG `"…"`、MySQL 反引号、SQL Server `[…]`；**JPA 侧同一规则由 Hibernate 原生支持，生产代码零改动**（H2 上 Hibernate 实测渲染 `"…"`，与 JDBC 的 H2 方言逐字节一致；MySQL 两侧都是反引号）。**JPA 的承诺范围只有 H2 + MySQL**：JPA + PG/MSSQL 未验证、不在矩阵（Hibernate 在该两库上的引用形态属推断），实测失败形态 PG `must appear in the GROUP BY`、MSSQL `INVALID_OBJECT_NAME` 记入已知限制，不据此改 JPA 生产代码、也不引入 `columnQuoting` 类第二套配置。MSSQL 方括号只存在于 JDBC `quote()`。meta 归一化：剥引号存裸名 + `quoted` 标志，所有名字比较/生成键回读用裸名；测试侧 DDL 按方言引号建表（`schema-h2.sql` 用 `"`、`schema-mysql.sql` 反引号、`schema-postgres.sql` `"`、`schema-sqlserver.sql` `[]`）。
 
-**升级指南**：`jdbc` 是 3.0.0 首发模块，无 2.x 兼容负担。相对设计期草稿的唯一破坏点是 `JdbcDialect` 的接口形态（草稿里是「两个方法 + 名字」，定稿是上表 9 个实例钩子 + 静态 `of(String)`，共 10 个成员）——照草稿写过自研方言的消费方需按上表补 `limitClause`/`lock` 的签名；3.1.0 新增的 `substring`/`lengthOf` 两个钩子带默认实现，**加性、不需消费方改源码**。`JdbcEntityOperationsFactory(DataSource)` 单参构造器保留，只装默认路径的代码不受影响。
+**升级指南**：`jdbc` 是 3.0.0 首发模块，无 2.x 兼容负担。相对设计期草稿的唯一破坏点是 `JdbcDialect` 的接口形态（草稿里是「两个方法 + 名字」，定稿是上表 10 个实例钩子 + 静态 `of(String)`，共 11 个成员）——照草稿写过自研方言的消费方需按上表补 `limitClause`/`lock` 的签名；3.1.0 新增的 `substring`/`lengthOf` 与 3.2.0 新增的 `noColumnsInsert` 都带默认实现，**加性、不需消费方改源码**。`JdbcEntityOperationsFactory(DataSource)` 单参构造器保留，只装默认路径的代码不受影响。
 
 
 **装配面契约：`DataSource` 的 `getConnection()` 语义**。`JdbcEntityOperationsFactory` **不持有连接**；`JdbcExecutor` / `JdbcPersistExecutor` 每次操作都向 `DataSource` 取连接、在 try-with-resources 里 close（设计意图：后端不管理事务，见第 7 条）。因此消费方的 `DataSource` 合约是「`getConnection()` 每次返回可用连接（池化，或每次新建）」**或**「返回的包装连接 `close()` 是 no-op」（Spring `SingleConnectionDataSource` 一类需自行包成 no-op 代理）。反例（reviewer 探针实测，非生产缺陷）：把一条物理连接包成「close 真关」的数据源，第二条 SQL 即报 `The object is already closed`；`nextentity-tests-jdbc` 的 `SingleConnectionDataSource` 按 no-op 代理实现，不受影响。
@@ -551,7 +552,7 @@ EntityOperationsFactory factory = new JdbcEntityOperationsFactory(dataSource, my
 | DEC-17 | `attributes()` 含关联属性，但 INSERT/UPDATE 列集与行装配只走标量属性 | **外部约束**：路径解析需要关联属性；与 JPA「关联字段不映射成列」一致 | 集合关联静默不写（CUT-18）；替代：显式先写子实体 | 级联写需求出现时（与 CUT-18 同一触发器） |
 | DEC-18 | `SQLException` 统一包 `jakarta.persistence.PersistenceException` | **外部约束**：后端对调用方只暴露 JPA 异常族 | 顶层异常丢失 `SQLState`（仍在 cause 里可取）；替代：保留 `SQLException`（破坏后端中立） | 消费方需要按 `SQLState` 分支（用 cause，无需改契约） |
 | DEC-19 | 内置方言 = H2 / MySQL / PostgreSQL / SQL Server | **外部约束**：用户明确要求 PG + MSSQL 方言 | 方言维护面 4 倍；替代：只内置 H2/MySQL + 自定义方言 | 新方言需求走自定义接缝（§6.1），不默认内置 |
-| DEC-20 | 方言接口对外可实现：`name()` + `of()` + 8 个 default 钩子（3.1.0 加性的 `substring`/`lengthOf` 各带默认实现）+ `SqlParameterSink`/`LockClause` | **外部约束**：用户要求「碰到没预制的方言能自定义渲染 SQL」 | 方言作者要实现 8 钩子并守不变量 ①-⑤；替代：每子句钩子 / SQL AST / 配置驱动模板 | 自定义方言需要新钩子时按不变量评审（3.1.0 的两次新增即按此加性扩展） |
+| DEC-20 | 方言接口对外可实现：`name()` + `of()` + 9 个 default 钩子（3.1.0 加性的 `substring`/`lengthOf`、3.2.0 加性的 `noColumnsInsert` 各带默认实现）+ `SqlParameterSink`/`LockClause` | **外部约束**：用户要求「碰到没预制的方言能自定义渲染 SQL」 | 方言作者要实现 9 钩子并守不变量 ①-⑤；替代：每子句钩子 / SQL AST / 配置驱动模板 | 自定义方言需要新钩子时按不变量评审（3.1.0 与 3.2.0 的加性扩展即按此） |
 | DEC-21 | 窗口参数由方言经 `SqlParameterSink` 追加，渲染期校验 `?` 数 == append 次数 | **自设规则**：MSSQL 的 offset 参数在文本上先于 limit，按文本序绑定必错 | 方言实现的错误变成确定性异常（这是目的）；替代：「`?` 按文本顺序绑定」契约 | 新方言参数顺序更复杂时 |
 | DEC-22 | `limitClause` 只出尾缀 + `hasOrderBy`；exists 行数上限默认字面量 ` limit 1`、MSSQL 用 `top (1)` | **自设规则**：MSSQL `OFFSET…FETCH` 强制 ORDER BY；exists 走尾缀会改旧快照 | 方言要自己处理 exists 的 SELECT 头差异（已封装）；替代：统一派生表 | 窗口语法重构时 |
 | DEC-23 | `averageOf(operand)` 独立钩子 | **外部约束**：MSSQL 的 `avg(int)` 截断，需要 `avg(cast(x as float))` | 方言接口多一个钩子；替代：在 exec 层按方言转类型 | 新方言出现聚合差异时 |
