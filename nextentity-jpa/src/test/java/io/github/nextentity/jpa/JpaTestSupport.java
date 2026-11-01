@@ -23,6 +23,7 @@ import io.github.nextentity.jpa.entity.EmbeddedResolutionFixtures.OverrideNameMi
 import io.github.nextentity.jpa.entity.EmbeddedResolutionFixtures.PlainEmbeddedFlags;
 import io.github.nextentity.jpa.entity.EmbeddedResolutionFixtures.UnannotatedEmbeddedAssociation;
 import io.github.nextentity.jpa.entity.FetchChain;
+import io.github.nextentity.jpa.entity.NormalizedPropertyAccess;
 import io.github.nextentity.jpa.entity.Note;
 import io.github.nextentity.jpa.entity.OrderStatus;
 import io.github.nextentity.jpa.entity.Organization;
@@ -121,6 +122,7 @@ abstract class JpaTestSupport {
         configuration.addAnnotatedClass(OverrideReadOnlyFlags.class);
         configuration.addAnnotatedClass(UnannotatedLink.class);
         configuration.addAnnotatedClass(PropertyAccessFlags.class);
+        configuration.addAnnotatedClass(NormalizedPropertyAccess.class);
         configuration.addAnnotatedClass(ReadOnlyVersioned.class);
         configuration.addAnnotatedClass(ReadOnlyVersionOnly.class);
         this.sessionFactory = configuration.buildSessionFactory();

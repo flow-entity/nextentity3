@@ -5,9 +5,15 @@ import jakarta.persistence.Column;
 import jakarta.persistence.JoinColumn;
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.Objects;
 
-/// `EntityAttribute` 的 JPA 实现：用反射字段读写，向上找父类声明。
+/// `EntityAttribute` 的 JPA 实现：按**映射声明成员**读写（字段访问读字段，`@Access(PROPERTY)`
+/// 读 getter），向上找父类声明。
+///
+/// 取值必须与 Hibernate 同源：`@Access(PROPERTY)` 的实体，脏检查与 UPDATE 语句都按 access type
+/// 读 getter，本层若只读字段，同一个对象在「托管实体 + flush」与「游离实体 + `update(entity)`」
+/// 两条路径下会落库两个不同的值（getter 做归一化时），且不抛任何异常。
 ///
 /// 只做「按名读写」：不转换值类型——`@Convert` / 枚举 / 时间类型的换算由 Hibernate 负责，
 /// 框架在这里再转一次就是双份语义。
@@ -20,6 +26,8 @@ final class JpaEntityAttribute implements EntityAttribute {
 
     private final String name;
     private final Field field;
+    /// 映射声明所在的 getter；`null` 表示字段访问（读字段）。
+    private final Method getter;
     private final boolean association;
     private final boolean columnUpdatable;
     private final boolean joinColumnUpdatable;
@@ -41,10 +49,16 @@ final class JpaEntityAttribute implements EntityAttribute {
         this.field = resolveField(Objects.requireNonNull(entityType, "entityType"), name);
         this.association = association;
         AnnotatedElement annotations = declared == null ? field : declared;
+        this.getter = annotations instanceof Method method ? accessible(method) : null;
         Column column = annotations.getAnnotation(Column.class);
         this.columnUpdatable = column == null || column.updatable();
         JoinColumn joinColumn = annotations.getAnnotation(JoinColumn.class);
         this.joinColumnUpdatable = joinColumn == null || joinColumn.updatable();
+    }
+
+    private static Method accessible(Method getter) {
+        getter.setAccessible(true);
+        return getter;
     }
 
     private static Field resolveField(Class<?> entityType, String name) {
@@ -87,6 +101,13 @@ final class JpaEntityAttribute implements EntityAttribute {
 
     @Override
     public Object get(Object entity) {
+        if (getter != null) {
+            try {
+                return getter.invoke(entity);
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("读取属性失败: " + getter, e);
+            }
+        }
         try {
             return field.get(entity);
         } catch (IllegalAccessException e) {
