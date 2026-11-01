@@ -29,6 +29,18 @@ final class JpaOperands {
         this.paths = paths;
     }
 
+    /// 谓词专用的操作数渲染：**只有属性路径**换成 [JpaPaths#predicatePath]（末段允许单值关联，
+    /// 表达本表外键列条件），其余形态仍走 [#expression] 的严格路径——因此 `having` 里的
+    /// `count(关联)`、算术里的关联路径继续按「关联对象不是一个列」拒绝，与投影 / 聚合同口径。
+    ///
+    /// @param operand 操作数
+    /// @return Criteria 表达式
+    Expression<?> predicateExpression(Operand operand) {
+        return operand instanceof AttributePath attributePath
+                ? paths.predicatePath(attributePath)
+                : expression(operand);
+    }
+
     /// 把操作数渲染成 Criteria 表达式。
     ///
     /// @param operand 操作数

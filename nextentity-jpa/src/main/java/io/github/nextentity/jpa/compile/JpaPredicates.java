@@ -45,11 +45,11 @@ final class JpaPredicates {
     }
 
     private Predicate comparison(Comparison comparison) {
-        Expression<?> left = operands.expression(comparison.left());
+        Expression<?> left = operands.predicateExpression(comparison.left());
         Operand right = comparison.right();
         return right instanceof Literal(Object value)
                 ? withValue(comparison.operator(), left, value)
-                : withExpression(comparison.operator(), left, operands.expression(right));
+                : withExpression(comparison.operator(), left, operands.predicateExpression(right));
     }
 
     /// 右值是字面量：走 JPA 的 `Object` 重载，保留参数绑定与 `@Convert`/时区转换行为。
@@ -86,18 +86,18 @@ final class JpaPredicates {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private Predicate between(Between between) {
-        Expression subject = operands.expression(between.subject());
+        Expression subject = operands.predicateExpression(between.subject());
         Operand lower = between.lower();
         Operand upper = between.upper();
         if (lower instanceof Literal(Object lowerValue) && upper instanceof Literal(Object upperValue)) {
             return builder.between(subject, (Comparable) lowerValue, (Comparable) upperValue);
         }
-        return builder.between(
-                subject, (Expression) operands.expression(lower), (Expression) operands.expression(upper));
+        return builder.between(subject, (Expression) operands.predicateExpression(lower), (Expression)
+                operands.predicateExpression(upper));
     }
 
     private Predicate in(In in) {
-        CriteriaBuilder.In<Object> criteriaIn = builder.in(paths.path(in.path()));
+        CriteriaBuilder.In<Object> criteriaIn = builder.in(paths.predicatePath(in.path()));
         for (Object value : in.values()) {
             criteriaIn.value(value);
         }
@@ -105,7 +105,7 @@ final class JpaPredicates {
     }
 
     private Predicate nullCheck(NullCheck nullCheck) {
-        Path<?> path = paths.path(nullCheck.path());
+        Path<?> path = paths.predicatePath(nullCheck.path());
         return nullCheck.negated() ? builder.isNotNull(path) : builder.isNull(path);
     }
 

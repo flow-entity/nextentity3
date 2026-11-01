@@ -49,12 +49,30 @@ final class JpaPaths {
     /// 只按路径本身解析，不回找 `@Embedded` 同名叶子：条件、排序、分组、聚合、条件更新的路径都是
     /// 调用方显式写的，解析不到属性就该报错；静默改写成嵌入列会让写错的路径变成对另一列过滤/排序。
     /// DTO 投影列不走这里，见 [#projectionPath]。
+    ///
+    /// 这是**严格**入口：末段是单值关联时拒绝（关联对象不是可投影的列，Criteria 在 `select` 里会把
+    /// 它渲染成 inner join）。谓词需要「外键列条件」这一形态，走 [#predicatePath]——宽松只开给谓词，
+    /// 投影 / 聚合 / 排序 / 分组仍走这里。
     Path<?> path(AttributePath attributePath) {
         List<String> names = attributePath.names();
         Path<?> parent = navigate(names.subList(0, names.size() - 1));
         String attribute = names.getLast();
         rejectPluralAssociation(parent.getJavaType(), attribute);
         rejectAssociationLeaf(attributePath, parent.getJavaType(), attribute);
+        return parent.get(attribute);
+    }
+
+    /// 谓词专用路径：与 [#path] 相同，但**跳过末段单值关联的拒绝**。
+    ///
+    /// 谓词主语里的 `where(关联).isNull()` / `eq(关联对象)` / `in(...)` 表达的是本表外键列的条件——
+    /// Hibernate 在谓词上下文把 `root.get(关联)` 渲染成 FK 列，不会像 `select` 那样补 inner join，
+    /// 因此是合法形态；它只和「关联对象不能当投影列 / 聚合参数」是两件事。集合关联仍拒绝（join 出
+    /// 子行会放大结果集），聚合、投影、排序、分组继续走严格的 [#path]。
+    Path<?> predicatePath(AttributePath attributePath) {
+        List<String> names = attributePath.names();
+        Path<?> parent = navigate(names.subList(0, names.size() - 1));
+        String attribute = names.getLast();
+        rejectPluralAssociation(parent.getJavaType(), attribute);
         return parent.get(attribute);
     }
 
