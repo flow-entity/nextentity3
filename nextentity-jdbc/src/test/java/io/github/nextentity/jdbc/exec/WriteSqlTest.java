@@ -211,7 +211,8 @@ class WriteSqlTest {
     void insertConvertsJavaTimeAndSqlTimeColumns() {
         LocalDate birthDate = LocalDate.of(1990, 1, 2);
         LocalDateTime createdAt = LocalDateTime.of(2024, 3, 4, 5, 6, 7);
-        LocalTime wakeTime = LocalTime.of(6, 30);
+        // 带小数秒：`LocalTime` 原样绑定（转 `java.sql.Time` 会把它截掉），见 `TemporalPrecisionTest`
+        LocalTime wakeTime = LocalTime.of(6, 30, 15, 123_456_789);
         Instant syncedAt = Instant.parse("2024-01-02T03:04:05Z");
         Date sqlDate = Date.valueOf(LocalDate.of(2020, 5, 6));
         Time sqlTime = Time.valueOf(LocalTime.of(7, 8, 9));
@@ -228,7 +229,7 @@ class WriteSqlTest {
                         1L,
                         Date.valueOf(birthDate),
                         Timestamp.valueOf(createdAt),
-                        Time.valueOf(wakeTime),
+                        wakeTime,
                         Timestamp.from(syncedAt),
                         sqlDate,
                         sqlTime,

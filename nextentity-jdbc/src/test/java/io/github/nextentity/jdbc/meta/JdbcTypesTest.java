@@ -78,12 +78,13 @@ class JdbcTypesTest {
         JdbcEntityAttribute numberAttribute = attribute(NumbersItem.class, "serial");
         LocalDate date = LocalDate.of(1990, 1, 2);
         LocalDateTime dateTime = LocalDateTime.of(2024, 3, 4, 5, 6, 7);
-        LocalTime time = LocalTime.of(6, 30);
+        LocalTime time = LocalTime.of(6, 30, 15, 123_456_789);
         Instant instant = Instant.parse("2024-01-02T03:04:05Z");
 
         assertThat(JdbcTypes.toJdbc(date, timeAttribute)).isEqualTo(Date.valueOf(date));
         assertThat(JdbcTypes.toJdbc(dateTime, timeAttribute)).isEqualTo(Timestamp.valueOf(dateTime));
-        assertThat(JdbcTypes.toJdbc(time, timeAttribute)).isEqualTo(Time.valueOf(time));
+        // `LocalTime` 不转 `java.sql.Time`：那个形态只到秒，会把列装得下的小数秒截掉（`TemporalPrecisionTest` 钉往返）
+        assertThat(JdbcTypes.toJdbc(time, timeAttribute)).isEqualTo(time);
         assertThat(JdbcTypes.toJdbc(instant, timeAttribute)).isEqualTo(Timestamp.from(instant));
         assertThat(JdbcTypes.toJdbc(new BigInteger("12"), numberAttribute)).isEqualTo(new BigDecimal("12"));
         assertThat(JdbcTypes.toJdbc(42, numberAttribute)).isEqualTo(42);

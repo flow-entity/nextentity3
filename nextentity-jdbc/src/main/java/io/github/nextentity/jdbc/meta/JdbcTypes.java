@@ -20,7 +20,10 @@ import java.util.List;
 ///
 /// 写侧把 `java.time` / `BigInteger` 转成驱动普遍接受的 `java.sql` / `BigDecimal` 形态：JDBC 4.2 的
 /// `setObject`/`getObject` 对时间类型的支持按驱动而异（MySQL 驱动不支持 `getObject(Instant.class)`），
-/// 统一走 `Timestamp` / `Date` / `Time` 才能跨四方言一致。
+/// 统一走 `Timestamp` / `Date` 才能跨四方言一致。**`LocalTime` 是例外**：`java.sql.Time` 只到秒，
+/// 转过去会把列装得下的小数秒丢掉（写进去与读回不等且不报错），所以 `LocalTime` 两侧都直接用
+/// java.time 形态（`setObject(LocalTime)` / `getObject(int, LocalTime.class)`），与同族的
+/// `LocalDateTime` / `Instant` 保持同一精度口径。
 /// 读侧按列的静态 Java 类型收窄；`NULL` 返回 `null`（带类型的 getter 对 `NULL` 直接返回空，不必 `wasNull`）。
 @SuppressWarnings("PMD.CyclomaticComplexity") // 读写分支都按 SUPPORTED 白名单穷尽，分支数由列类型集合决定
 public final class JdbcTypes {
@@ -129,8 +132,12 @@ public final class JdbcTypes {
         if (value instanceof LocalDate date) {
             return Date.valueOf(date);
         }
-        if (value instanceof LocalTime time) {
-            return Time.valueOf(time);
+        // `LocalTime` 原样交给 `setObject`：`java.sql.Time` 只到秒（`Time.valueOf` 把小数秒截掉），
+        // 而 TIME 列装得下小数秒——先转 `Time` 会让列装得下的精度在绑定这一步丢掉，
+        // 写进去的值与读回的值不等且不报错。同族的 `LocalDateTime` / `Instant` 走 `Timestamp` 不丢，
+        // 只有这一种类型丢。这是 JDBC 4.2 的 java.time 支持，读侧对称（见 `#read`）。
+        if (value instanceof LocalTime) {
+            return value;
         }
         if (value instanceof LocalDateTime dateTime) {
             return Timestamp.valueOf(dateTime);
@@ -186,8 +193,8 @@ public final class JdbcTypes {
             return value == null ? null : value.toLocalDateTime();
         }
         if (type == LocalTime.class) {
-            Time value = rows.getTime(index);
-            return value == null ? null : value.toLocalTime();
+            // 与写侧同口径：`getTime()` 会先把小数秒截掉，`getObject(LocalTime.class)` 才拿到列里的原值。
+            return rows.getObject(index, LocalTime.class);
         }
         if (type == Instant.class) {
             Timestamp value = rows.getTimestamp(index);
