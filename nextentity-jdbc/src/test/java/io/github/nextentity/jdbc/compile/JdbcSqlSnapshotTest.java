@@ -12,6 +12,7 @@ import io.github.nextentity.jdbc.dialect.H2Dialect;
 import io.github.nextentity.jdbc.meta.JdbcMeta;
 import io.github.nextentity.jdbc.support.ConvertedIdAssociationItem;
 import io.github.nextentity.jdbc.support.ConvertedIdOwner;
+import io.github.nextentity.jdbc.support.ConvertedTextItem;
 import io.github.nextentity.jdbc.support.SnapshotAsset;
 import io.github.nextentity.jdbc.support.SnapshotItem;
 import io.github.nextentity.jdbc.support.SnapshotOwner;
@@ -39,6 +40,10 @@ class JdbcSqlSnapshotTest {
 
     private QueryBuilder<ConvertedIdAssociationItem, JdbcQuery> convertedIdAssociations() {
         return new QueryBuilder<>(meta.entityType(ConvertedIdAssociationItem.class), compiler, executor);
+    }
+
+    private QueryBuilder<ConvertedTextItem, JdbcQuery> convertedTexts() {
+        return new QueryBuilder<>(meta.entityType(ConvertedTextItem.class), compiler, executor);
     }
 
     // ---------------------------------------------------------------- 实体查询
@@ -356,6 +361,26 @@ class JdbcSqlSnapshotTest {
                 .isEqualTo("select t1.id from converted_id_association t0"
                         + " left join converted_id_owner t1 on t1.id = t0.owner_id");
         assertThat(executor.last.columnTypes()).containsExactly(String.class);
+    }
+
+    // ---------------------------------------------------------------- @Convert 列上的函数操作数
+
+    @Test
+    void lengthOnConvertedColumnBindsTheRawInteger() {
+        convertedTexts().where(ConvertedTextItem::code).length().gt(3).list();
+
+        assertThat(executor.last.sql())
+                .isEqualTo("select t0.id, t0.code from converted_text_item t0 where length(t0.code) > ?");
+        assertThat(executor.last.parameters()).containsExactly(3);
+    }
+
+    @Test
+    void lowerOnConvertedColumnBindsTheRawString() {
+        convertedTexts().where(ConvertedTextItem::code).lower().eq("abc").list();
+
+        assertThat(executor.last.sql())
+                .isEqualTo("select t0.id, t0.code from converted_text_item t0 where lower(t0.code) = ?");
+        assertThat(executor.last.parameters()).containsExactly("abc");
     }
 
     // ---------------------------------------------------------------- 终止符

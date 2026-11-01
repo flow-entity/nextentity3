@@ -121,14 +121,22 @@ final class SqlPredicates {
         return String.join(separator, rendered);
     }
 
+    /// 参与比较的操作数如果是「列本身」，返回该列的映射信息（绑定字面量要按 `@Convert` / 枚举存储转换）。
+    /// 字符串函数与截取的结果是新的值，不在列的 domain 类型里；聚合里只有 max/min/sum 保形，
+    /// avg/count/countDistinct 各自变成 Double/Long。这些情况返回 null 表示**不转换**——
+    /// JPA 侧 Hibernate 同样只对属性比较施加转换器。算术沿用左侧列（`(score + 1) = ?` 的绑定值本就按该列标量化）。
     private JdbcEntityAttribute attributeOf(Operand operand) {
         return switch (operand) {
             case AttributePath path -> renderer.paths().resolve(path).attribute();
             case AggregateOperand aggregate ->
-                renderer.paths().resolve(aggregate.path()).attribute();
+                switch (aggregate.function()) {
+                    case MAX, MIN, SUM ->
+                        renderer.paths().resolve(aggregate.path()).attribute();
+                    case AVG, COUNT, COUNT_DISTINCT -> null;
+                };
             case ArithmeticOperand arithmetic -> attributeOf(arithmetic.left());
-            case StringFunctionOperand function -> attributeOf(function.subject());
-            case SubstringOperand substring -> attributeOf(substring.subject());
+            case StringFunctionOperand function -> null;
+            case SubstringOperand substring -> null;
             case Literal literal -> throw new IllegalStateException("字面量没有列类型: " + literal.value());
         };
     }
@@ -142,8 +150,9 @@ final class SqlPredicates {
 
     /// 字面量绑定值：枚举 → name/ordinal，`java.time` / `BigInteger` → 驱动普遍接受的 `java.sql` 形态，
     /// 与写侧共用 [JdbcTypes#toLiteral(Object, JdbcEntityAttribute)]（谓词不套 `@Version` 的 0 初值）。
+    /// `attribute == null`（比较的是函数/算术结果，不是列）时按原值绑定。
     private static Object convert(Object value, JdbcEntityAttribute attribute) {
-        return JdbcTypes.toLiteral(value, attribute);
+        return attribute == null ? value : JdbcTypes.toLiteral(value, attribute);
     }
 
     private static String operator(ComparisonOperator operator) {
