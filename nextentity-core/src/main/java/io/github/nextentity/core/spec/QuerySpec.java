@@ -105,10 +105,12 @@ public record QuerySpec(
 
     /// 是否含分组、聚合或 HAVING。
     ///
-    /// 它同时决定两件事：
+    /// 它同时决定三件事：
     /// 1. 分页是否自动补主键排序——聚合/分组/HAVING 查询不补；
     /// 2. `count()` 是否拒绝——这些形态的"行数"要么语义不明确、要么要子查询计数，
     ///    宁可抛 `UnsupportedOperationException` 也不能静默给出错数。
+    /// 3. `lock(...)` 是否拒绝——这些形态的行不是实体行，「加锁」在各方言与各 provider 上的
+    ///    行为不一致（JDBC 渲染出非法 SQL、Hibernate 静默换成 follow-on locking），只能整族拒绝。
     ///
     /// `having` 单独出现（无 `groupBy`、无聚合投影）也算：SQL 允许全表聚合后过滤，
     /// 而"只拼 where、丢掉 HAVING"的计数一定是错的。

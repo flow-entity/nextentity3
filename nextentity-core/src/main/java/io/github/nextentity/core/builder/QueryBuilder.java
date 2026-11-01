@@ -398,10 +398,37 @@ public final class QueryBuilder<T, S> implements EntityQuery<T> {
         return current == null ? spec : Logical.and(current, spec);
     }
 
-    @SuppressWarnings("unchecked")
     private List<T> fetch(Window window) {
-        List<Object> rows = executor.list(compiler.compile(spec(window)));
+        return fetch(spec(window));
+    }
+
+    /// 取行：`list(...)` / `first()` / `single()` / `Collector#list(...)` 的唯一漏斗。
+    ///
+    /// 锁的形态校验放在这里而不是 `lock(...)` / `groupBy(...)` 里：这两个步骤各自看不到对方
+    /// （`lock(...)` 返回终止符、`groupBy(...)` 返回步骤，调用顺序两种都合法），只有组装好的规格
+    /// 同时带着两者。放在 core 是因为两后端的后果不同但都违反同一条契约（见 [#requireLockable]），
+    /// 一处收口比改两处小。
+    @SuppressWarnings("unchecked")
+    private List<T> fetch(QuerySpec spec) {
+        requireLockable(spec);
+        List<Object> rows = executor.list(compiler.compile(spec));
         return (List<T>) RowAssembler.assemble(rows, selection);
+    }
+
+    /// 锁只允许加在「实体行」查询上：`groupBy` / `having` / 聚合投影之后的行不是实体行。
+    ///
+    /// 不放行的理由不是「后端渲染不出来」，而是**同一调用在不同后端上行为不一致**：JDBC 渲染
+    /// `... group by ... for update`（H2 / PostgreSQL 报语法错、MySQL 接受），Hibernate 则悄悄换成
+    /// follow-on locking（分组查询之后多发 N 条 `select ... for update`）。「炸 / 静默持锁 / 多发语句」
+    /// 三种行为本库都不猜，统一 fail-fast（DESIGN §7.1 CUT-20、USAGE §9）。
+    ///
+    /// `count()` / `exists()` 不经过这里：它们把锁清掉（[QuerySpec#forCounting] /
+    /// [QuerySpec#forExistence]），计数语句里没有 `for update`，所以同一条链上的计数仍然可用。
+    private void requireLockable(QuerySpec spec) {
+        if (spec.lock() != null && spec.aggregate()) {
+            throw new UnsupportedOperationException(
+                    "锁只支持实体查询: " + spec.entityType().getName());
+        }
     }
 
     /// 组装当前状态下的查询规格。
