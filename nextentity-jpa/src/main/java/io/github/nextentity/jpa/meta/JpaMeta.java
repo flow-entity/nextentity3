@@ -176,7 +176,7 @@ public final class JpaMeta {
         if (resolved == null) {
             return true;
         }
-        JoinColumn joinColumn = annotation(resolved, JoinColumn.class);
+        JoinColumn joinColumn = joinColumn(resolved, managedType.getName() + "." + attribute);
         return joinColumn == null || joinColumn.updatable();
     }
 
@@ -207,7 +207,6 @@ public final class JpaMeta {
         JoinColumn joinColumn = embeddedJoinColumn(ownerType, attribute, path);
         return joinColumn == null || joinColumn.updatable();
     }
-
     /// 取嵌入叶子生效的 `@Column`：覆盖声明优先（外层属性上的点号名，或内层 `@Embedded` 属性上的
     /// 直接名），都没有才回落到叶子字段自己的注解。
     private Column embeddedColumn(Class<?> ownerType, String attribute, String path) {
@@ -229,22 +228,30 @@ public final class JpaMeta {
     }
 
     /// 取嵌入叶子生效的 `@JoinColumn`：同 `embeddedColumn`，覆盖来源是 `@AssociationOverride`。
+    ///
+    /// 叶子回退走 [JpaEntityAttribute#joinColumns]：可重复注解的容器写法（`@JoinColumns(@JoinColumn)`）
+    /// 与单列 `@JoinColumn` 同义，复合外键（>1 列）本层单列建模表达不了、显式 UOE。
     private JoinColumn embeddedJoinColumn(Class<?> ownerType, String attribute, String path) {
+        return embeddedJoinColumn(ownerType, attribute, path, ownerType.getName() + "." + attribute + "." + path);
+    }
+
+    /// 带「实体.嵌入属性.叶子」全名的递归实现：路径每层只消费一段，报错全名保持不变。
+    private JoinColumn embeddedJoinColumn(Class<?> ownerType, String attribute, String path, String describe) {
         Attribute<?, ?> holder = attribute(ownerType, attribute);
         if (holder == null) {
             return null;
         }
-        JoinColumn override = associationOverride(holder, path);
+        JoinColumn override = associationOverride(holder, path, describe);
         if (override != null) {
             return override;
         }
         int separator = path.indexOf('.');
         if (separator > 0) {
             String head = path.substring(0, separator);
-            return embeddedJoinColumn(holder.getJavaType(), head, path.substring(separator + 1));
+            return embeddedJoinColumn(holder.getJavaType(), head, path.substring(separator + 1), describe);
         }
         Attribute<?, ?> leaf = attribute(holder.getJavaType(), path);
-        return leaf == null ? null : annotation(leaf, JoinColumn.class);
+        return leaf == null ? null : joinColumn(leaf, describe);
     }
 
     /// 在属性声明的成员（字段 / getter）上找名字匹配的 `@AttributeOverride`，取它声明的列。
@@ -261,13 +268,31 @@ public final class JpaMeta {
     }
 
     /// 在属性声明的成员上找名字匹配的 `@AssociationOverride`，取它声明的外键列。
-    private static JoinColumn associationOverride(Attribute<?, ?> holder, String name) {
+    ///
+    /// 覆盖里给了多列（复合外键）时与叶子注解同口径显式拒绝：本层只建模单列外键。
+    private static JoinColumn associationOverride(Attribute<?, ?> holder, String name, String describe) {
         for (AssociationOverride override : overrides(holder, AssociationOverride.class)) {
             if (override.name().equals(name) && override.joinColumns().length > 0) {
+                if (override.joinColumns().length > 1) {
+                    throw new UnsupportedOperationException("复合外键关联未支持: " + describe
+                            + "（@AssociationOverride.joinColumns 列数=" + override.joinColumns().length
+                            + "，本层只建模单列外键）");
+                }
                 return override.joinColumns()[0];
             }
         }
         return null;
+    }
+
+    /// 取关联属性的生效外键列：可重复注解（`@JoinColumns` 容器与单列 `@JoinColumn` 等价），
+    /// 复合外键（>1 列）显式 UOE。缺 `@JoinColumn` 返回 `null`（外键列名按 JPA 默认命名推断）。
+    private static JoinColumn joinColumn(Attribute<?, ?> attribute, String describe) {
+        Member member = attribute.getJavaMember();
+        if (!(member instanceof AnnotatedElement annotated)) {
+            return null;
+        }
+        JoinColumn[] joinColumns = JpaEntityAttribute.joinColumns(annotated, describe, true);
+        return joinColumns.length == 0 ? null : joinColumns[0];
     }
 
     /// 取属性声明成员上的指定类型注解（容器注解已展开）；成员不可注解时返回空清单。

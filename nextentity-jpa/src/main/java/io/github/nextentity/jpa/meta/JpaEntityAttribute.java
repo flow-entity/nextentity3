@@ -54,8 +54,28 @@ final class JpaEntityAttribute implements EntityAttribute {
         Column column = annotations.getAnnotation(Column.class);
         this.columnUpdatable = column == null || column.updatable();
         this.columnInsertable = column == null || column.insertable();
-        JoinColumn joinColumn = annotations.getAnnotation(JoinColumn.class);
-        this.joinColumnUpdatable = joinColumn == null || joinColumn.updatable();
+        JoinColumn[] joinColumns = joinColumns(annotations, entityType.getName() + "." + name, association);
+        this.joinColumnUpdatable = joinColumns.length == 0 || joinColumns[0].updatable();
+    }
+
+    /// 关联外键列的生效 `@JoinColumn`：**可重复注解**，`@JoinColumns(@JoinColumn(...))`（容器写法）
+    /// 与单列 `@JoinColumn` 是同义映射，`getAnnotation(JoinColumn.class)` 对容器写法返回 `null`
+    /// ——那会让 `@JoinColumns(@JoinColumn(updatable = false))` 的只读外键被静默写库（单列写法正常）。
+    ///
+    /// 复合外键（容器里 > 1 列）本层只建模单列外键（写侧按关联对象整体交给 provider 展开，无法逐列
+    /// 判可写），显式拒绝而不是静默取第一列。
+    ///
+    /// @param annotations 映射声明所在成员（字段 / getter）
+    /// @param describe    报错用的「实体.属性」全名
+    /// @param association 该属性是不是单值关联
+    /// @return 全部 `@JoinColumn`（容器写法已展开）；非关联属性为空数组
+    static JoinColumn[] joinColumns(AnnotatedElement annotations, String describe, boolean association) {
+        JoinColumn[] joinColumns = annotations.getAnnotationsByType(JoinColumn.class);
+        if (association && joinColumns.length > 1) {
+            throw new UnsupportedOperationException(
+                    "复合外键关联未支持: " + describe + "（@JoinColumns 列数=" + joinColumns.length + "，本层只建模单列外键）");
+        }
+        return joinColumns;
     }
 
     private static Method accessible(Method getter) {
