@@ -554,7 +554,7 @@ query().where(customer.get(Customer::getOrgId))
 query().where(orgName).eq("总部").list();
 ```
 
-**集合关联与反侧关联不在查询路径上提供**：`@OneToMany`/`@ManyToMany`/`@ElementCollection` 以及 `@OneToOne(mappedBy=...)` 反侧，写入列集里会被跳过（见 DESIGN §7.1 CUT-18）；查询路径穿过它们（例如 `EntityPath.of(Order::getItems).get(Item::getName)`）由**两个后端都显式拒绝**——JPA 在 `JpaPaths`、JDBC 在 `SqlPaths` 抛 `UnsupportedOperationException`（集合 join 出来是子行，`list()` 会重复、分页与 `total` 也会失去意义）。这不是「静默忽略」：静默只发生在写入列集上，查询路径是 fail-fast 的。
+**集合关联与反侧关联不在查询路径上提供**：`@OneToMany`/`@ManyToMany`/`@ElementCollection` 以及 `@OneToOne(mappedBy=...)` 反侧，写入列集里会被跳过（见 DESIGN §7.1 CUT-18）；查询路径穿过它们（例如 `EntityPath.of(Order::getItems).get(Item::getName)`）由**两个后端都显式拒绝**——JPA 在 `JpaPaths`、JDBC 在 `SqlPaths` 抛 `UnsupportedOperationException`（集合 join 出来是子行，`list()` 会重复、分页与 `total` 也会失去意义）。这不是「静默忽略」：静默只发生在写入列集上，查询路径是 fail-fast 的。反侧关联对象本身仍可交给 `fetch(...)`（§8.1；该能力只在 JPA 后端，`fetch` 走独立的 `fetchNode`、不经路径导航，因此不被上述检查拒绝）——上述拒绝只作用于「查询路径穿过它」。
 
 **裸关联路径（末段就是关联本身）**：JPA 后端支持 `where(EntityPath.of(X::getAssoc)).isNull()/isNotNull()` 与 `eq(...)/in(...)`——渲染成本表外键列条件（如 `customer_id is null`），不做 join；反侧 `@OneToOne(mappedBy=...)` 没有本表外键列，仍显式 `UOE`。**JDBC 后端对裸关联谓词显式 `UOE`**（尚未支持；该形态的多段路径与 `关联.id` 不受影响，见 §13.4.4）。要跨后端一致，判空用本表外键标量列（`where(X::getForeignKeyId).isNull()`）或写多段路径（`EntityPath.of(X::getAssoc).get(Target::getName)`，两后端都支持）。
 
@@ -658,6 +658,8 @@ int clearedFk = operations.update()
 ```
 
 `set(...)` 的合法目标只有三种，两个后端同规则：①本表标量列（方法引用重载即可）；②`@Embedded` 的叶子列（`EntityPath.of(X::getEmbedded).get(E::getLeaf)`）；③`关联.id`（`EntityPath.of(X::getAssociation).get(Target::getId)`，写本表外键列，`value = null` 即清外键）。其余形态——关联对象整体、嵌入对象整体、被关联表的其它列（如 `department.name`）、三段及以上路径——**两个后端都拒绝**（抛 `UnsupportedOperationException` 并点名路径；两个后端的消息措辞不同，不构成契约）。嵌套路径必须用 `EntityPath` 构造：`Path` 只有静态 `of(...)` 与 `refs()`，没有 `get(...)`。
+
+同一次 `update(...)` 里**每个属性路径至多 `set` 一次**：重复会由 DSL 在 `execute()` 期抛 `IllegalArgumentException` 并点名路径。理由不是洁癖——`update t set c = ?, c = ?` 在 H2 / PostgreSQL 报错（实测 `Duplicate column name` / `multiple assignments to same column`），MySQL 8.0 却接受并按左到右执行（前一次赋值静默丢失，实测落库为后一次的值），把「是否报错、哪次赋值生效」留给库等于结果随方言（见 §13.4.5）。同一物理列的不同写法（`关联.id` 与同名标量、嵌入叶子与同名标量）在元数据期已按列名重复显式拒绝，因此按属性路径判重是充分的。
 
 右值只支持**字面量**：不支持「列 = 列」或引用了其它列的表达式；`value = null` 表示置 `NULL`。条件面复用 §3 的谓词（含 §3.1 的可选条件与 §3.6 的组合），但**条件里的关联路径两个后端能力不同**：JPA 谓词路径按 Criteria 渲染——裸关联（`isNull()`/`isNotNull()`/`eq(实体)`/`in(...)`）渲染成本表外键列、`关联.id` 同；**条件 WHERE 里的跨表标量列路径**（如 `department.name`）在单条 `UPDATE`/`DELETE` 中未验证、不承诺（会经 join 渲染，方言可移植性存疑）。JDBC 只支持本表列、嵌入叶子与 `关联.id`。差异与拒绝清单见 §13.4.3 / §13.4.4。条件在语句里直接求值，不先取行。`execute()` 返回受影响行数；批量写不经过实体快照，因此不触发级联。
 
@@ -846,6 +848,7 @@ orders.updateAll(List.of(order));
 | `@Version` 自增 | 应用侧读取后 +1 写回；支持 `int`/`long`/`short` 三族，到类型上界显式 `UOE`（不回绕） | **无差异**：JPA 侧同样支持三族并同文案拒绝上界（`SET version = ?` 里自增）；`insert` 的初值 0 由各后端自己写（JPA 由 provider 在 flush 时写），版本列上的 `@Column(insertable=false)` 两后端同文案拒绝（§13.4.3） |
 | 条件更新命中只读列（`updatable=false`） | `UOE`（走共享 DSL 契约，消息点名列） | **无差异**：条件更新是 3.1.0 新增入口，两个后端同版落地并一致 fail-fast（DSL 契约见 §10.1）。与 3.0.0 的差别在**单实体**更新路径：JPA 侧曾静默写只读列；JDBC 侧 3.0.0 在映射期直接拒绝该标志，3.1.0 起改为「支持该标志、写侧裁列」（见 §13.4.1） |
 | 生成键回读 | 单列结果集取第 1 列；多列按列标签/列名匹配 id 列名；`BigInteger` 走 `getBigDecimal` 转换；窄类型做范围校验 | JPA 由提供方回填 |
+| 生成键实体 `insert` 时调用方已赋 id | **忽略入参**：生成键列不进 `INSERT`（写集按 `!isGenerated()` 裁掉），插入后用库生成值**回写**实体字段——不报错、不校验入参；落库行正确（id 由库生成） | **不同（错误信号差异，已登记）**：JPA 由 provider 抛 `PersistentObjectException`（Hibernate 对 DETACHED 实体 `persist` 的语义，7.1.8 源码口径、未容器实测），该次插入不产生行。不加运行期守卫：正确判定需要 unsaved-value 语义，primitive `long` 的未保存值是 `0`，naive `null` 检查会误杀所有 primitive-id 实体的 `insert` |
 | 分组 `count()`（`groupBy` + `count()`） | 派生表原生支持（子查询计数） | JPA 侧依赖 Hibernate 6+ 的 `createCountQuery()`（单条 SQL）；其它 provider 抛 `UOE`（文案指名 provider），见 §7.4 |
 | `fetch(...)` 预取 | 显式拒绝：`UOE`（JDBC 不组装实体图、无懒加载代理，没有可兑现的语义；不静默 no-op） | JPA 渲染为 `LEFT JOIN FETCH`（同一条 SQL 载入关联），消除 N+1；JDBC 侧要读关联列请用 `project(...)` 投影或原生 SQL |
 | `select(Class)` 的 `@Embedded` 同名叶子回找 | **未实现**：DTO 属性名必须是实体的直接属性名；嵌入叶子改用 `select(EntityPath.of(X::getEmbedded).get(E::getLeaf))` 单列投影或 `project(...)`（见 §6.3） | **不同（能力差异）**：JPA 后端 3.2.0 起按名回找到 `@Embedded` 组件（可多级），多个组件同名叶子显式 `IAE` |
@@ -863,6 +866,7 @@ orders.updateAll(List.of(order));
 - **字符串长度**：默认渲染 `length(x)`（H2 / PostgreSQL 的 `LENGTH` 按字符计数）；**MySQL 覆写为 `char_length(x)`——MySQL 的 `LENGTH()` 是字节数，utf8mb4 下多字节字符会多算**（与 JPA 侧 Hibernate 渲染的 `character_length(x)` 语义一致）；SQL Server 用 `len(x)`，而 `LEN` 会**裁掉尾随空格**（`LEN('ab ')` 与标准 `CHAR_LENGTH` 不等价），是已披露的方言语义差异、不是缺陷——**跨库依赖长度的查询在 SQL Server 上会少算尾随空格**。
 - **`substring` 省略长度**：H2/MySQL/PostgreSQL 可下发 `substring(x, pos)`；SQL Server 的 `SUBSTRING` 必须带长度参数，实现用 `substring(x, pos, 2147483647)`（int 上界）表达「到结尾」，该上界形态**已在 SQL Server 容器实测通过**（方言惯用法，语义为截取到结尾）。**JPA 后端未在 SQL Server 上跑过容器通道（本仓无该通道），以下为源码推断、非实测**：Hibernate 把 2 参 `substring` 改写成 `substring(?1, ?2, len(?1)-?2+1)`（`AbstractTransactSQLDialect.substring_substringLen`），与 JDBC 后端下发的 `substring(x, pos, 2147483647)` 在**尾随空格**（`len` 裁空格）和 **`offset ≥ 字符数`**（`len(x)-pos+1 <= 0` 时 Hibernate 路径可能报 Invalid length parameter）两个边界上不同。
 - **生成键策略**：四种内置方言都只支持 `IDENTITY`/`AUTO`；`SEQUENCE`/`TABLE` 统一拒绝（13.4.3）。
+- **`UPDATE` 的重复 `SET` 列**（`update t set c = ?, c = ?`）：H2 / PostgreSQL 报错（实测 `Duplicate column name` / `multiple assignments to same column`），MySQL 8.0 接受并按左到右求值（后一次生效、前一次赋值静默丢失）——同一调用结果随方言。DSL 在 `UpdateSpec` 构造期就拒绝重复属性路径（§10.1），后端拿不到这种语句；这里记为「若不拒绝就会随方言不同」的依据。
 - 以上差异的渲染钩子集中在 `JdbcDialect`，自定义方言必须遵守 [DESIGN.md](DESIGN.md) §6.1「方言接缝」的不变量；语义差异列入 §7.1 对应 CUT 的代价与触发器，而不是当作「实现细节」。
 
 ## 14. 何时不用本库

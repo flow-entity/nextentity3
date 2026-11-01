@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.nextentity.api.EntityPath;
 import io.github.nextentity.api.Expression;
 import io.github.nextentity.api.Path;
+import io.github.nextentity.api.UpdateSetStep;
 import io.github.nextentity.core.spec.Assignment;
 import io.github.nextentity.core.spec.AttributePath;
 import io.github.nextentity.core.spec.Comparison;
@@ -106,6 +107,16 @@ class UpdateDeleteStepBuilderTest {
                         new Assignment(path("status"), "A"),
                         new Assignment(path("quantity"), 5),
                         new Assignment(path("note"), null));
+    }
+
+    @Test
+    @DisplayName("同一列被 set 两次：execute() 期拒绝，点名属性路径")
+    void duplicateSetOnSameColumnRejected() {
+        UpdateSetStep<Order> update = update(1).set(Order::getStatus, "A").set(Order::getStatus, "B");
+
+        assertThatThrownBy(update::execute)
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Order.status");
     }
 
     @Test

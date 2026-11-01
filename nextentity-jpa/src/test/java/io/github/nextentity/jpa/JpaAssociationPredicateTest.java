@@ -216,6 +216,25 @@ class JpaAssociationPredicateTest extends JpaTestSupport {
     }
 
     @Test
+    @DisplayName("反侧 @OneToOne(mappedBy) 作为路径中间段：显式 UOE，且一条 SQL 都不发")
+    void inverseOneToOneMiddleSegmentIsRejected() {
+        drainSql();
+        inTx(entityManager -> {
+            assertThatThrownBy(() -> operations(entityManager, Seal.class)
+                            .query()
+                            .where(EntityPath.of(Seal::getHolder).get(SealHolder::getName))
+                            .eq("h1")
+                            .list())
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessageContaining("反侧关联不在查询路径上提供")
+                    .hasMessageContaining(Seal.class.getName() + ".holder");
+            return null;
+        });
+        // 静默 LEFT JOIN 会让 count()/slice().total() 数的是子行；拒绝必须发生在编译期，而不是灌了行再报错
+        assertThat(drainSql()).isEmpty();
+    }
+
+    @Test
     @DisplayName("持有外键的单值关联（owning @OneToOne）作为谓词末段：照常渲染本表外键列")
     void owningOneToOnePredicateIsAllowed() {
         drainSql();

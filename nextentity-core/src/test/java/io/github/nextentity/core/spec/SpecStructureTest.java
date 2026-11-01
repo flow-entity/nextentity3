@@ -624,6 +624,18 @@ class SpecStructureTest {
     }
 
     @Test
+    @DisplayName("条件更新：同一列被 set 两次就拒绝——SET 列表里每列只能出现一次")
+    void updateSpecRejectsDuplicateColumn() {
+        // 两条 SET 同列：H2/PG 报错（Duplicate column name / multiple assignments to same column），
+        // MySQL 8.0 却静默取后者——交给库裁决等于结果随方言
+        assertThatThrownBy(() -> new UpdateSpec(
+                        String.class, List.of(new Assignment(STATUS, "A"), new Assignment(STATUS, "B")), null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("同一列被 set(...) 了多次")
+                .hasMessageContaining(".status");
+    }
+
+    @Test
     @DisplayName("条件更新：赋值列表是拷贝，where 可空（整表更新）")
     void updateSpecCopiesAssignments() {
         List<Assignment> assignments = new ArrayList<>(List.of(new Assignment(STATUS, "ARCHIVED")));

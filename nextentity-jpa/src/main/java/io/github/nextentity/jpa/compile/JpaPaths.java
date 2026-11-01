@@ -184,6 +184,12 @@ final class JpaPaths {
         Path<?> parent = navigate(prefix.subList(0, prefix.size() - 1));
         String attribute = prefix.getLast();
         rejectPluralAssociation(parent.getJavaType(), attribute);
+        if (meta.association(parent.getJavaType(), attribute)
+                && !meta.owningAssociation(parent.getJavaType(), attribute)) {
+            throw new UnsupportedOperationException(
+                    "反侧关联不在查询路径上提供: " + parent.getJavaType().getName() + "." + attribute
+                            + "（@OneToOne(mappedBy) 的外键列在对端表，导航它会 LEFT JOIN 出子行、放大 count/total）");
+        }
         // 单值关联要在被关联表上 join；@Embedded 段也 join，是为了拿到 From 让「嵌入里的 to-one」
         // 能继续下钻（get 得到的是嵌入路径，不是 From），见上方关于可观测性的说明。
         boolean join =

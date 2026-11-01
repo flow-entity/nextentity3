@@ -21,6 +21,10 @@ public interface UpdateSetStep<T> extends UpdateWhereStep<T> {
 
     /// 设置一列的值（方法引用形态的路径）。
     ///
+    /// 同一属性路径只能 `set` 一次：重复时 `execute()` 会抛 `IllegalArgumentException` 并点名路径
+    /// （一条 `UPDATE` 的 `SET` 列表每列只能出现一次——重复在 H2 / PostgreSQL 是语法错，MySQL 8.0
+    /// 却静默取后者，故在两个后端共同的构造点统一拒绝）。
+    ///
     /// @param path  列路径
     /// @param value 新值，可为 null（表示置空）
     /// @param <U>   列类型

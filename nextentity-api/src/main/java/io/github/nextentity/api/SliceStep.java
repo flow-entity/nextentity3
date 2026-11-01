@@ -25,7 +25,8 @@ public interface SliceStep<T> {
     /// @param limit 页大小，不得为负；`0` 表示从 `offset` 起不限行数
     /// @return 一页数据 + 总数 + 本次请求的 `offset`/`limit`
     /// @throws IllegalArgumentException `offset` 或 `limit` 为负数
-    /// @throws UnsupportedOperationException 只有 `having` 而没有 `groupBy` 的聚合形态：这种查询恒为
-    ///     一行，`total` 没有稳定语义（后端契约，不是本方法自己抛的）
+    /// @throws UnsupportedOperationException `distinct()` 多列投影的计数（`COUNT(DISTINCT a, b)` 跨方言
+    ///     形态不同）；没有 `groupBy` 的聚合形态（只有 `having`，或投影里只有聚合）：这种查询恒为一行，
+    ///     `total` 没有稳定语义（后端契约，不是本方法自己抛的），口径同 [Collector#count]
     Slice<T> slice(int offset, int limit);
 }
