@@ -20,6 +20,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.MappedSuperclass;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OneToOne;
+import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
@@ -37,10 +38,13 @@ final class JdbcEntityRules {
 
     private static final String ID_REQUIRED = "实体必须有且只有一个 @Id 字段: ";
     private static final String PROPERTY_ACCESS = "只支持字段访问（注解须在字段上）: ";
+    private static final String TABLE_QUALIFIER_UNSUPPORTED = "@Table(schema/catalog) 未支持: ";
     private static final String INHERITANCE = "实体继承未支持: ";
     private static final String COMPOSITE_ID = "复合主键未支持: ";
     static final String VERSION_UNSUPPORTED = "@Version 只支持 int / long / short（含包装类型）: ";
     static final String VERSION_CONVERT_UNSUPPORTED = "@Version 不支持 @Convert: ";
+    static final String VERSION_INSERTABLE_UNSUPPORTED =
+            "@Version 列不支持 @Column(insertable=false)（版本初值由本层写入，insertable 只约束业务列）: ";
     private static final List<Class<? extends Annotation>> MAPPING_ANNOTATIONS = List.of(
             Id.class,
             Version.class,
@@ -59,7 +63,7 @@ final class JdbcEntityRules {
 
     private JdbcEntityRules() {}
 
-    /// 类级拒绝：`@Inheritance`、`@IdClass`、`@Access(PROPERTY)`。
+    /// 类级拒绝：`@Inheritance`、`@IdClass`、`@Access(PROPERTY)`、`@Table(schema/catalog)`。
     static void rejectClassLevel(Class<?> type) {
         if (type.isAnnotationPresent(Inheritance.class)) {
             throw new UnsupportedOperationException(INHERITANCE + type.getName());
@@ -70,6 +74,17 @@ final class JdbcEntityRules {
         Access access = type.getAnnotation(Access.class);
         if (access != null && access.value() == AccessType.PROPERTY) {
             throw new UnsupportedOperationException(PROPERTY_ACCESS + type.getName());
+        }
+        rejectTableQualifier(type);
+    }
+
+    /// `@Table(schema/catalog)` 拒绝：与其它类级拒绝同类——本后端的表名只取 `@Table(name)`，
+    /// schema / catalog 从不进 SQL，静默丢弃会让语句打到默认 schema 的同名表上（写入落到别处、
+    /// 查询读到别的数据，全程不报错）。未实现的映射一律 fail-fast，不静默降级。
+    private static void rejectTableQualifier(Class<?> type) {
+        Table table = type.getAnnotation(Table.class);
+        if (table != null && !(table.schema().isEmpty() && table.catalog().isEmpty())) {
+            throw new UnsupportedOperationException(TABLE_QUALIFIER_UNSUPPORTED + type.getName());
         }
     }
 
