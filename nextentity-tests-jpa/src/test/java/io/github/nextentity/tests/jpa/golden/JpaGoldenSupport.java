@@ -134,6 +134,20 @@ public final class JpaGoldenSupport implements AutoCloseable {
         harness.clearSql();
     }
 
+    /// 绕过本层查询路径，用原生 SQL 读一个标量（效果断言用）。
+    ///
+    /// 与 JDBC 侧 `GoldenJdbcSupport#queryString` 同款：用本层 `count()` 自证「表空了」时，同一个
+    /// bug 能让断言与实现一起错。
+    ///
+    /// @param sql 单列单行的原生查询
+    /// @return 结果转成的字符串；`null` 原样返回
+    public String queryString(String sql) {
+        return harness.inTransaction(() -> {
+            Object value = harness.entityManager().createNativeQuery(sql).getSingleResult();
+            return value == null ? null : value.toString();
+        });
+    }
+
     @Override
     public void close() {
         harness.close();

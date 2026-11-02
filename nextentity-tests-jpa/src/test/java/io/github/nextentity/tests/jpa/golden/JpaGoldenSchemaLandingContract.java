@@ -10,6 +10,7 @@ import io.github.nextentity.testing.golden.GoldenSchema.Tier;
 import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -212,6 +213,37 @@ public abstract class JpaGoldenSchemaLandingContract {
         assertThat(customer(1L).version()).isEqualTo(1L);
     }
 
+    /// **契约**（`docs/USAGE.md`「差异」表「单实体 `update(entity)` 的落库路径」一行）：JPA 对**托管**实体走
+    /// 脏检查——`update(entity)` 只 flush 持久化上下文，实体未被改动时一条 SQL 都不发、`@Version` 不自增、
+    /// 其他列不动；只有**游离**实体才走「按 id+version 条件更新 + 影响行数校验 + 版本回写」。
+    ///
+    /// 相邻的 [JpaGoldenSchemaLandingContract#entityUpdateIncrementsVersionOnCallerObject] 先 `detach()`，
+    /// 钉的是游离路径；两条路径必须各有证据，否则「托管 = 脏检查」这条契约没人看着。
+    @Test
+    @DisplayName("契约：托管实体未被改动时 update(entity) 不发 SQL、版本不动")
+    void managedUnmodifiedEntityUpdateSendsNoSqlAndKeepsVersion() {
+        support().clearSql();
+        GoldenSchema.Customer[] loaded = new GoldenSchema.Customer[1];
+
+        support().inTransaction(() -> {
+            // 事务内读出 = 仍是托管实例（这里刻意不 detach）
+            loaded[0] = customer(1L);
+            support().operations(GoldenSchema.Customer.class).update(loaded[0]);
+            return null;
+        });
+
+        assertThat(support().drainSql())
+                .as("托管且未改动的实体：update(entity) 只 flush 持久化上下文，不该发出任何 UPDATE")
+                .noneMatch(sql -> sql.trim().toLowerCase(Locale.ROOT).startsWith("update"));
+        assertThat(loaded[0].version()).as("内存对象的版本不该被改动").isEqualTo(0L);
+        assertThat(support().queryString("select version from golden_customer where id = 1"))
+                .as("库内版本仍是 0（原生 SQL 直查，不用本层读路径自证）")
+                .isEqualTo("0");
+        assertThat(support().queryString("select display_name from golden_customer where id = 1"))
+                .as("其他列未被改动")
+                .isEqualTo("alice");
+    }
+
     /// 条件 delete：只删匹配行，`execute()` 返回删除行数，其余子行不受影响。
     @Test
     @DisplayName("条件 delete：只删匹配行并返回行数")
@@ -231,6 +263,26 @@ public abstract class JpaGoldenSchemaLandingContract {
                         .eq(1004L)
                         .list())
                 .isEmpty();
+    }
+
+    /// 不带 `where` 的 delete 的**效果**断言：`execute()` 返回被删行数，表真的空了。
+    ///
+    /// 语句文本（`delete from golden_order_line` 且不含 `where`）由 [GoldenSchemaSqlSnapshotTest] 钉住；
+    /// 只钉文本的话，bulk delete 静默不生效（或 provider 拒了而异常被吞）照样绿，所以这条补效果。
+    /// 「表空了」用原生 SQL 直查而不是本层 `count()`：后者会让同一个 bug 同时错在断言与实现里。
+    /// 与 JDBC 侧 `GoldenSchemaLandingContract#deleteWithoutWhereEmptiesWholeTable` 对称。
+    @Test
+    @DisplayName("不带 where 的 delete：整表删除并返回全部行数")
+    void deleteWithoutWhereEmptiesWholeTable() {
+        int affected = support().inTransaction(() -> support()
+                .operations(GoldenSchema.OrderLine.class)
+                .delete()
+                .execute());
+
+        assertThat(affected).isEqualTo(5);
+        assertThat(support().queryString("select count(*) from golden_order_line"))
+                .as("整表 delete 之后子行表必须真的为空（原生 SQL 直查）")
+                .isEqualTo("0");
     }
 
     private GoldenSchema.Customer customer(long id) {
