@@ -2,6 +2,10 @@ package io.github.nextentity.jdbc.meta;
 
 import jakarta.persistence.Access;
 import jakarta.persistence.AccessType;
+import jakarta.persistence.AssociationOverride;
+import jakarta.persistence.AssociationOverrides;
+import jakarta.persistence.AttributeOverride;
+import jakarta.persistence.AttributeOverrides;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.ElementCollection;
@@ -33,12 +37,15 @@ import java.util.List;
 /// 注解层面的规则：哪些注解组合直接拒绝、哪些字段被静默忽略、以及表名 / 无参构造的解析。
 ///
 /// 映射规则只承认「字段访问」，getter 上的映射注解直接拒绝。
-@SuppressWarnings("PMD.CouplingBetweenObjects") // 规则要逐条认注解，天然引用 JPA 注解族，与 JpaMeta 侧一致
+@SuppressWarnings({"PMD.CouplingBetweenObjects", "PMD.TooManyMethods"}) // 规则要逐条认注解，天然引用 JPA 注解族，与 JpaMeta
+// 侧一致；类级拒绝本身就是一串并列规则，拆类只会把同族规则散开
 final class JdbcEntityRules {
 
     private static final String ID_REQUIRED = "实体必须有且只有一个 @Id 字段: ";
     private static final String PROPERTY_ACCESS = "只支持字段访问（注解须在字段上）: ";
     private static final String TABLE_QUALIFIER_UNSUPPORTED = "@Table(schema/catalog) 未支持: ";
+    private static final String CLASS_LEVEL_OVERRIDE_UNSUPPORTED = "类级 @AttributeOverride/@AssociationOverride 未支持: ";
+    private static final String CLASS_LEVEL_OVERRIDE_HINT = "（请声明到嵌入字段或关联字段上）";
     private static final String INHERITANCE = "实体继承未支持: ";
     static final String COMPOSITE_ID = "复合主键未支持: ";
     static final String VERSION_UNSUPPORTED = "@Version 只支持 int / long / short（含包装类型）: ";
@@ -63,7 +70,7 @@ final class JdbcEntityRules {
 
     private JdbcEntityRules() {}
 
-    /// 类级拒绝：`@Inheritance`、`@IdClass`、`@Access(PROPERTY)`、`@Table(schema/catalog)`。
+    /// 类级拒绝：`@Inheritance`、`@IdClass`、`@Access(PROPERTY)`、`@Table(schema/catalog)`、类级覆盖。
     static void rejectClassLevel(Class<?> type) {
         if (type.isAnnotationPresent(Inheritance.class)) {
             throw new UnsupportedOperationException(INHERITANCE + type.getName());
@@ -76,6 +83,24 @@ final class JdbcEntityRules {
             throw new UnsupportedOperationException(PROPERTY_ACCESS + type.getName());
         }
         rejectTableQualifier(type);
+        rejectClassLevelOverrides(type);
+    }
+
+    /// 类级（TYPE）`@AttributeOverride` / `@AssociationOverride`（点号路径形态）拒绝：本后端只建模
+    /// 成员级覆盖，类级形态既不读也不该静默降级——降级的后果是列名回落到默认列名，按 JPA 语义
+    /// 建的表在首次写入时报 `Column not found`，报错点离原因很远（JPA 后端经 Hibernate 支持该形态，
+    /// 不拒就是两后端分叉）。未实现的映射一律 fail-fast。
+    ///
+    /// 两处调用：本方法（实体类、`@Embeddable` 类）与 [JdbcEntityRules#fields] 的逐层循环
+    /// （`@MappedSuperclass` 链上声明时，只有逐层循环看得到）。
+    private static void rejectClassLevelOverrides(Class<?> type) {
+        if (type.isAnnotationPresent(AttributeOverride.class)
+                || type.isAnnotationPresent(AttributeOverrides.class)
+                || type.isAnnotationPresent(AssociationOverride.class)
+                || type.isAnnotationPresent(AssociationOverrides.class)) {
+            throw new UnsupportedOperationException(
+                    CLASS_LEVEL_OVERRIDE_UNSUPPORTED + type.getName() + CLASS_LEVEL_OVERRIDE_HINT);
+        }
     }
 
     /// `@Table(schema/catalog)` 拒绝：与其它类级拒绝同类——本后端的表名只取 `@Table(name)`，
@@ -95,6 +120,7 @@ final class JdbcEntityRules {
         Class<?> current = type;
         while (current != null) {
             rejectPropertyAnnotations(current, type);
+            rejectClassLevelOverrides(current);
             levels.add(declaredFields(current));
             Class<?> parent = current.getSuperclass();
             if (parent == null || parent == Object.class) {
