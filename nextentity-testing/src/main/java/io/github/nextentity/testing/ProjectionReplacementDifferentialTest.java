@@ -107,7 +107,7 @@ public abstract class ProjectionReplacementDifferentialTest<T extends Item> exte
     }
 
     /// 三列映射器：`id, score, status`。刻意与
-    // [ProjectionReplacementDifferentialTest#selectAfterSelectKeepsOnlyTheLastProjection]
+    /// [ProjectionReplacementDifferentialTest#selectAfterSelectKeepsOnlyTheLastProjection]
     /// 里的两列投影**不同列、不同列数**，替换没生效时一眼可辨。
     private final class BriefMapper implements ProjectionMapper<T, Brief> {
 
