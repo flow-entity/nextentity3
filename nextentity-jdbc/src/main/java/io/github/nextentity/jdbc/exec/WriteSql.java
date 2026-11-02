@@ -36,7 +36,11 @@ final class WriteSql {
     ///
     /// 版本列没有特例：它的 `insertable` 已在元数据期被约束成必须为 `true`
     /// （`JdbcEntityRules.VERSION_INSERTABLE_UNSUPPORTED`——该标志会让版本初值的责任在两后端分叉），
-    /// 因此这里按普通可插入列处理，初值 0 照常写。
+    /// 因此这里按普通可插入列处理：值为 `null` 时绑 0，非 `null` 时照写调用方给的值。
+    ///
+    /// 这是本层与 JPA 唯一不一致的一格：assigned id + 版本非 `null` 时 JPA 把它当游离实体拒绝
+    /// （见 USAGE §13.4.3），这里照写。**不要**在 JDBC 侧加 fail-fast 去「对齐」——生成键实体那格
+    /// JPA 照插，加了反而新造分叉，并打死「带版本号拷贝实体再插」的合法用法。
     static SqlStatement insert(JdbcMeta meta, JdbcEntityType<?> entityType, Object entity, JdbcDialect dialect) {
         List<String> columns = new ArrayList<>();
         List<Object> parameters = new ArrayList<>();
