@@ -171,6 +171,12 @@ def _local_name(tag: str) -> str:
     return tag.rpartition("}")[2]
 
 
+def _brief(names: list[str], limit: int = 5) -> str:
+    """用例名列表的短摘要：点名前几条，其余折成条数（`case_names` 差值可能上百条）。"""
+    head = ", ".join(names[:limit])
+    return head if len(names) <= limit else "%s …（另 %d 条）" % (head, len(names) - limit)
+
+
 def _static_violations(path: str, tool: str) -> tuple[int, bool]:
     """数报告里的违规条目。返回 (条数, 是否无法解析)。
 
@@ -682,15 +688,34 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
             # 下限相等也不保证是同一批用例。不计 finding，但必须在凭证里留痕，否则「守卫未生效」
             # 与「守卫通过」在 receipt.json 里长得一模一样。
             warnings_extra.append(
-                "%s：同一 receipt 内没有基础通道 %s:%s，方言矩阵等式未生效——"
-                "跨 receipt 的方言通道只由与该基础通道相等的 --min-tests 兜底，用例是否同一批无凭证"
+                "%s：同一 receipt 内没有基础通道 %s:%s，方言矩阵等式未生效——同 receipt 内已按"
+                "「条数 + 用例名集」双向比对，跨 receipt 的容器方言通道仍只由与该基础通道相等的"
+                " --min-tests 兜底，用例是否同一批无凭证"
                 % (name, kind.split("-", 1)[0], info["module"])
             )
             continue
-        if info["tests"] != base["tests"]:
+        # 只比条数等于允许「换掉同一批用例、只留条数」：`surefire-pg` 把 590 条换成另外 590 条
+        # （profile 改哑 + 补一堆无关用例）时条数不变、基线照样逐条命中，凭证仍绿。用例名集是
+        # 解析报告时就攒好的（`case_names`），所以这里按多重集双向比对，差值点名到用例。
+        if info["tests"] != base["tests"] or info["case_names"] != base["case_names"]:
+            base_label = "%s:%s" % (base["kind"], info["module"])
+            if info["tests"] != base["tests"]:
+                head = "%d 条 vs %s 的 %d 条" % (info["tests"], base_label, base["tests"])
+            else:
+                head = "条数同为 %d 但用例名集不同 vs %s" % (info["tests"], base_label)
+            extra = sorted(set(info["case_names"]) - set(base["case_names"]))
+            missing = sorted(set(base["case_names"]) - set(info["case_names"]))
+            detail = []
+            if extra:
+                detail.append("%s 多出 %d 条：%s" % (name, len(extra), _brief(extra)))
+            if missing:
+                detail.append("%s 少了 %d 条：%s" % (name, len(missing), _brief(missing)))
+            if not detail:
+                # 名字集合相同、次数不同：同一用例跑了多遍（`@RepeatedTest` 或被两个 suite 收录）。
+                detail.append("%s 用例名相同但出现次数不同（同一用例跑了多遍）" % name)
             problems.append(
-                "%s：%d 条 vs %s 的 %d 条——方言矩阵必须与基础通道同一批用例，少跑的就是没测"
-                % (name, info["tests"], "%s:%s" % (base["kind"], info["module"]), base["tests"])
+                "%s——方言矩阵必须与基础通道同一批用例（条数 + 用例名集），少跑/换掉的都是没测；%s"
+                % (head, "；".join(detail))
             )
 
     receipt = {

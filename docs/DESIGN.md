@@ -265,16 +265,16 @@ java -jar <同上> report tmp/cov/merged.exec \
 | 通道 | 收哪些类 | 依赖 | 跳过方式 |
 |---|---|---|---|
 | surefire | 除 `*IntegrationTest` 外的全部（H2，MySQL 兼容模式=默认） | 无 | — |
-| surefire-pg | 与 surefire **同一批** 655 条（条数相等由凭证强制，少跑即红），H2 的 **PostgreSQL** 兼容模式 | 无 | 报告落 `target/surefire-pg-reports/`，见下「方言矩阵通道」 |
+| surefire-pg | 与 surefire **同一批** 655 条（同一张 receipt 内由凭证按条数 + 用例名集双向比对，少跑/换掉即红），H2 的 **PostgreSQL** 兼容模式 | 无 | 报告落 `target/surefire-pg-reports/`，见下「方言矩阵通道」 |
 | failsafe | `**/*IntegrationTest.java`（显式 `<includes>`） | Docker + `mysql:8.0.18` | `-DskipITs` |
-| failsafe-pg（`nextentity-tests-jpa`） | `**/Postgres*IntegrationTest.java`：真 PostgreSQL 容器通道，与 MySQL failsafe **同一批 590 条 / 49 类**（方言矩阵等式由凭证强制） | Docker + `postgres:16` | 报告落 `target/failsafe-pg-reports/`；`-Pjpa-postgres` 激活；skip 预算 1 条（`PostgresTemporalWriteIntegrationTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode`，H2 兼容模式专属，容器通道不适用） |
+| failsafe-pg（`nextentity-tests-jpa`） | `**/Postgres*IntegrationTest.java`：真 PostgreSQL 容器通道，与 MySQL failsafe **同一批 590 条 / 49 类**（两步各出一张 receipt，凭证不做跨 receipt 比对；「同批」只由两侧相等的 `--min-tests` 兜底，用例名集无机械凭证） | Docker + `postgres:16` | 报告落 `target/failsafe-pg-reports/`；`-Pjpa-postgres` 激活；skip 预算 1 条（`PostgresTemporalWriteIntegrationTest#insertAndReloadLoseExactlyOneJvmOffsetOnPostgresCompatibleMode`，H2 兼容模式专属，容器通道不适用） |
 | surefire（`nextentity-tests-jdbc`） | 除 `*IntegrationTest` 外的全部（H2 MySQL 兼容模式；表由测试侧 DDL 建，不走 Hibernate） | 无 | — |
 | surefire（`nextentity-examples`） | 真语料通道：2.2.3 examples 移植后的 130 条 H2 集成用例（6 个类），只作回归证据、模块不发布 | 无 | 报告落默认 `target/surefire-reports/`；step 名 `surefire:nextentity-examples`，下限 130、skip 预算 0 |
 | failsafe（`nextentity-tests-jdbc`） | `**/MySql*IntegrationTest.java`：与 H2 通道**同一批 31 个基类的 `MySql*` 接线类** + 方言/锁/写入容器用例 | Docker + `mysql:8.0.18`（`MySqlL4Container` 同款约定） | `-DskipITs` |
 | failsafe-pg（`nextentity-tests-jdbc`） | `**/Postgres*IntegrationTest.java`：同一批 31 个基类的 `Postgres*` 接线类，跑在真 PostgreSQL | Docker + `postgres:16`（`PostgresL4Container`） | 报告落 `target/failsafe-pg-reports/`；`-Pjdbc-postgres` 激活 |
 | failsafe-mssql（`nextentity-tests-jdbc`） | `**/SqlServer*IntegrationTest.java`：同一批 31 个基类的 `SqlServer*` 接线类，跑在真 SQL Server | Docker + `mcr.microsoft.com/mssql/server:2022-latest`（`SqlServerL4Container`） | 报告落 `target/failsafe-mssql-reports/`；`-Pjdbc-sqlserver` 激活 |
 
-**`nextentity-tests-jpa` 的 PG 容器通道**：`-Pjpa-postgres` 与 JDBC 侧 `-Pjdbc-postgres` 同形（failsafe include 切到 `Postgres*IntegrationTest`、报告落 `target/failsafe-pg-reports/`、凭证认 `failsafe-pg:nextentity-tests-jpa`），`-Dnextentity.requireContainer=true` 固化在 profile 内——无 Docker 直接红，不静默降级。2026-10-30 容器实测：**590 条 / 49 类全绿**，与 MySQL failsafe 的 590 条同批，方言矩阵等式成立；skip 1 条是 H2 兼容模式专属的 `Instant` 偏移用例。`tools/gate.sh` 的 `ci` / `night` / `release` 档都已接入 `ci-jpa-pg` / `night-jpa-pg`（`STEP_MIN_TESTS=failsafe-pg:nextentity-tests-jpa=590`、`STEP_MAX_SKIP=1`）。
+**`nextentity-tests-jpa` 的 PG 容器通道**：`-Pjpa-postgres` 与 JDBC 侧 `-Pjdbc-postgres` 同形（failsafe include 切到 `Postgres*IntegrationTest`、报告落 `target/failsafe-pg-reports/`、凭证认 `failsafe-pg:nextentity-tests-jpa`），`-Dnextentity.requireContainer=true` 固化在 profile 内——无 Docker 直接红，不静默降级。2026-10-30 容器实测：**590 条 / 49 类全绿**，与 MySQL failsafe 的 590 条条数相同（两者分属两步、两张 receipt，凭证不做跨 receipt 比对，「同批」仅由相等的 `--min-tests` 兜底）；skip 1 条是 H2 兼容模式专属的 `Instant` 偏移用例。`tools/gate.sh` 的 `ci` / `night` / `release` 档都已接入 `ci-jpa-pg` / `night-jpa-pg`（`STEP_MIN_TESTS=failsafe-pg:nextentity-tests-jpa=590`、`STEP_MAX_SKIP=1`）。
 
 **方言矩阵通道（`surefire-pg`）**：`-Pdialect-pg` 在**同一次 `verify`** 里加第二个 surefire execution（`-Dnextentity.h2mode=postgresql`），报告写进独立目录 `target/surefire-pg-reports/`，凭证按目录名认成独立通道 `surefire-pg:<模块>`。三个设计点都是被具体失真逼出来的：
 
@@ -394,7 +394,7 @@ java -jar <同上> report tmp/cov/merged.exec \
 - **预期失败必须逐条申报且会腐烂**：某通道上「按设计就会红」的用例不能靠 `@Disabled` 藏起来（那样既不跑、也看不出哪天修好），改由 `--expected-failures <file>` 声明（`gate.sh` 用 `STEP_EXPECTED_FAILURES` 逐步点名）。判据是**双向完全相等**：实际失败集多出一条 = 新回归（不是已知差异，不许夹带）；少一条 = 基线腐化（已修好却未删条目，或用例被删/改名）。基线条目不在 `--require` 里也判红：那是「申报了却被静默忽略」。当前唯一的基线是 `tools/expected-failures/h2-postgresql.txt`（9 条 PG 兼容模式方言差异，见上「通道拆分」）。五条配套约束，缺一条基线就会变成垃圾桶：
   - **失败性质参与比对**：每条带 `type=failure|error`。`failure` 是断言不符（方言渲染差异），`error` 是被测代码抛异常。只比用例名的话，某条已知差异哪天变成生产代码 NPE，名字不变、失败条数不变，凭证照旧判绿。
   - **租约与字段都收紧**：`type` / `issue` / `expires` 三个字段必填，其余字段一律报错（拼错的字段写了不生效还不报错，比没写更危险）；`expires` 用 `date.fromisoformat` 校验（只校验形状的话 `2026-13-45` 能过且字典序比较下永不过期），且不得超过今天 + 180 天——期限长到看不见就等于没有期限。空基线文件按配置错误处理：空基线等于没有基线。
-  - **规模也要相等**：方言矩阵通道必须与基础通道跑同一批用例（`surefire-pg.tests == surefire.tests`）。只钉失败集不钉规模，等于允许把矩阵悄悄缩到只剩那几条预期红。同理，同名失败用例被折叠（`@ParameterizedTest` 的 display name 撞车）会判红——否则一条基线条目能盖住 N 条失败。
+  - **规模也要相等**：同一张 receipt 内的方言通道必须与基础通道跑同一批用例——凭证按「条数相等 + 用例名集双向比对」判（`surefire-pg.tests == surefire.tests`，且两侧 `classname#name` 集合相同，多出/少掉都点名判红）。只钉失败集不钉规模，等于允许把矩阵悄悄缩到只剩那几条预期红；只钉条数，等于允许换掉同条数的用例。跨 receipt 的容器方言通道（MySQL failsafe 与 PG failsafe 分属两步）做不到这项比对，只由相等的 `--min-tests` 兜底。同理，同名失败用例被折叠（`@ParameterizedTest` 的 display name 撞车）会判红——否则一条基线条目能盖住 N 条失败。
   - **必需通道必须列全反应堆，不是只列目标模块**：`-pl nextentity-tests-jpa -am` 会把 api/core/jpa/spring 一起拉进来跑测试，它们的 surefire 报告同样落盘。只点名 tests-jpa 的话，那四个模块的失败**不进凭证**（不在 `required` 里，失败检查那段根本不执行），而 mvn 的非零退出又被下面的基线降级分支当成「预期内」——真回归由此静默变绿。所以每档的 `--require` 都按 `-am` 实际反应堆列全，配 `STEP_MIN_TESTS` 卡住条数。
   - **申报基线的步骤不许 fail-fast，且豁免必须绑在 execution 上**：PG 那遍按设计必然红，默认 fail-fast 会让 `nextentity-tests-jpa` 的 checkstyle / PMD / SpotBugs / jacoco:report（全绑在 `verify`）**一次都不执行**——「静态检查根本没跑」会被「测试红是预期内」顺带盖过去。放行方式写在 `nextentity-tests-jpa/pom.xml` 的 `pg-dialect` execution 里（`<testFailureIgnore>true</testFailureIgnore>`），**不能**用 `-Dmaven.test.failure.ignore=true`：后者是全局 user property，会把同一次反应堆里 api / core / jpa / spring 的 surefire 失败一并吞掉（实测：那一遍 fail 4 error 4，mvn 仍 exit 0）。绑在 execution 上，只有 PG 兼容模式那一遍忽略失败，其余模块照旧 fail-fast。判定权完全交给凭证：mvn 退出码为 0 时只看基线逐条比对；退出码非零则必须同时满足「失败全部来自 surefire」且「receipt 判绿」才按预期内解释，否则照样红。
 
@@ -584,7 +584,7 @@ EntityOperationsFactory factory = new JdbcEntityOperationsFactory(dataSource, my
 | CUT-15 `@Column` / `@JoinColumn` 列标志 | 注解面不变 | 写侧列集跳过 | 无（列不出现在 INSERT/UPDATE 列表） | `ExtendedCapabilitiesE2ETest#notInsertableColumnIsSelectedButNotWritten`、`ConditionalSqlTest#updateRejectsNotUpdatableColumn`（条件更新 fail-fast）、`JpaConditionalWriteUpdatableTest`（JPA 侧两处 `assertThatThrownBy`，消息与 JDBC `ConditionalSql.java` 逐字一致，证明「两后端一致拒绝」有落点）、`JdbcEntityAttributeTest` 列标志 |
 | CUT-16 `@JoinColumn` 默认命名 | 注解面不变 | meta 按 JPA 默认规则推断列名 | 无 | `JdbcEntityAttributeTest#associationIdComesFromTheReferencedIdField`、`JdbcEntityRulesTest` |
 | CUT-17 写关联 | 注解面不变 | 写侧从关联对象 `@Id` 取外键列 | JPA：写 `@JoinColumn` 列；JDBC：绑定外键值 | `WriteSqlTest#insertWritesJoinColumnFromAssociationId`/`#insertSkipsNullAssociationColumn`/`#updateWritesJoinColumnFromAssociationId`、`RejectContractTest#associationWriteUsesReferencedIdAsForeignKey`；JPA `MySqlAssetWriteAssociationIntegrationTest`；两后端对等断言由 `nextentity-testing` 的 `AssociationWriteConsistencyTest` 承载（JPA/JDBC 接线类同批跑） |
-| CUT-23 PG 容器通道 | 无 | 无 | 无 | **已在 3.1.0 恢复并实测**：`nextentity-tests-jpa` 的 `-Pjpa-postgres` profile、通道 `failsafe-pg:nextentity-tests-jpa`、2026-10-30 实测 590 条 / 49 类全绿（与 MySQL failsafe 同批 590 条）、skip 1（H2 兼容模式专属）；MSSQL 的 JPA 组合仍未验证（触发器：引入对应 profile 与容器用例后重审） |
+| CUT-23 PG 容器通道 | 无 | 无 | 无 | **已在 3.1.0 恢复并实测**：`nextentity-tests-jpa` 的 `-Pjpa-postgres` profile、通道 `failsafe-pg:nextentity-tests-jpa`、2026-10-30 实测 590 条 / 49 类全绿（与 MySQL failsafe 条数相同；两者分属两步、两张 receipt，凭证不做跨 receipt 比对，「同批」只由相等的 `--min-tests` 兜底）、skip 1（H2 兼容模式专属）；MSSQL 的 JPA 组合仍未验证（触发器：引入对应 profile 与容器用例后重审） |
 
 ---
 
