@@ -268,7 +268,8 @@ public abstract class JpaGoldenSchemaLandingContract {
     /// 不带 `where` 的 delete 的**效果**断言：`execute()` 返回被删行数，表真的空了。
     ///
     /// 语句文本（`delete from golden_order_line` 且不含 `where`）由 [GoldenSchemaSqlSnapshotTest] 钉住；
-    /// 只钉文本的话，bulk delete 静默不生效（或 provider 拒了而异常被吞）照样绿，所以这条补效果。
+    /// 但那条断言只覆盖「语句长什么样」和「恰好发了 1 条语句」——语句发出去而**行数/效果不对**时它照样绿
+    /// （变异探针实测：`executeUpdate()` 之后把返回值改成 0，`sqlOf` 仍绿），所以这条补效果。
     /// 「表空了」用原生 SQL 直查而不是本层 `count()`：后者会让同一个 bug 同时错在断言与实现里。
     /// 与 JDBC 侧 `GoldenSchemaLandingContract#deleteWithoutWhereEmptiesWholeTable` 对称。
     @Test
